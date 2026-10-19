@@ -1,0 +1,55 @@
+{
+  "app_name": "Seddo",
+  "common": {
+    "welcome": "Bienvenue sur Seddo !",
+    "french": "Français",
+    "wolof": "Wolof"
+  },
+  "onboarding": {
+    "hero_title": "Votre chauffeur,\npayé en Orange Money.",
+    "hero_subtitle": "Prix fixe avant de partir.\nZéro cash.",
+    "start": "Commencer",
+    "legal_notice": "En continuant, vous acceptez les conditions\nd'utilisation et la politique de confidentialité."
+  },
+  "consent": {
+    "title": "Consentements obligatoires",
+    "subtitle": "Pour vous offrir un service fiable et sécurisé, veuillez accepter les éléments suivants :",
+    "cgu": "J'accepte les Conditions Générales d'Utilisation (CGU)",
+    "privacy": "J'accepte la Politique de protection des données",
+    "location": "J'autorise la géolocalisation pour trouver des trajets autour de moi",
+    "accept_start": "Accepter & Commencer"
+  },
+  "auth": {
+    "your_number": "Votre numéro",
+    "orange_money_notice": "Un numéro Orange Money est nécessaire pour payer vos courses.",
+    "phone_hint": "77 123 45 12",
+    "continue": "Continuer",
+    "code_received": "Code reçu par SMS",
+    "enter_code_sent_to": "Entrez le code envoyé au",
+    "resend_code_in": "Renvoyer le code dans",
+    "resend_code": "Renvoyer le code"
+  },
+  "home": {
+    "where_to": "Où allez-vous ?",
+    "search_subtitle": "Saisissez une destination, une adresse...",
+    "search_hint": "Rechercher à Dakar (ex: Ouakam)...",
+    "popular_destinations": "Destinations populaires à Dakar",
+    "current_position": "Ma position actuelle",
+    "recent_places": "Endroits récents",
+    "see_all": "Tout voir",
+    "almadies": "Almadies",
+    "almadies_sub": "Ngor-Almadies, Dakar",
+    "work": "Travail",
+    "work_sub": "Plateau, rue Carnot",
+    "suggestions": "Suggestions",
+    "seddo_eco": "Seddo Eco",
+    "eco_sub": "Économique",
+    "confort": "Confort",
+    "confort_sub": "Plus d'espace",
+    "airport": "Aéroport",
+    "airport_sub": "Transfert",
+    "tcu": "TCU",
+    "tcu_sub": "Transport public",
+    "drivers_around": "12 chauffeurs autour · 3 min"
+  }
+}

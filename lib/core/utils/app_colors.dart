@@ -1,0 +1,111 @@
+import 'package:flutter/material.dart';
+
+/// Centralized color palette for the Seddo application.
+/// Follows Innov & Impact Africa coding guidelines (placed in core/utils/app_colors.dart).
+abstract class AppColors {
+  // Brand / Primary Colors
+  /// Orange Seddo (primaire) - #FB5B00 (exact reference orange)
+  /// Usage: Boutons principaux, marqueur de destination, en-têtes
+  static const Color primary = Color(0xFFFB5B00);
+
+  /// Orange foncé - #CC4C00
+  /// Usage: États pressés, texte orange sur fond blanc (contraste)
+  static const Color primaryDark = Color(0xFFCC4C00);
+
+  // Text Colors
+  /// Noir texte - #1A1A1A
+  /// Usage: Titres et textes principaux, bouton noir principal
+  static const Color textPrimary = Color(0xFF1A1A1A);
+
+  /// Gris texte secondaire - #8A8A8A
+  /// Usage: Textes secondaires, sous-titres, placeholders
+  static const Color textSecondary = Color(0xFF8A8A8A);
+
+  // Surface & Background Colors
+  /// Gris interface - #F2F2F2
+  /// Usage: Fonds de cartes, arrière-plans légers
+  static const Color surfaceGrey = Color(0xFFF2F2F2);
+  static const Color cardBackground = Color(0xFFF2F2F2);
+
+  /// Pure white
+  static const Color white = Color(0xFFFFFFFF);
+
+  /// Semi-transparent whites for overlays & subtitles on orange background
+  static const Color white90 = Color(0xE6FFFFFF);
+  static const Color white80 = Color(0xCCFFFFFF);
+  static const Color white70 = Color(0xB3FFFFFF);
+  static const Color white25 = Color(0x40FFFFFF);
+  static const Color white20 = Color(0x33FFFFFF);
+
+  /// Transparent
+  static const Color transparent = Colors.transparent;
+
+  /// Main black button color - #111111
+  static const Color buttonBlack = Color(0xFF111111);
+
+  /// Disabled primary button background
+  static const Color buttonDisabled = Color(0x66FB5B00);
+
+  /// Auth and OTP input colors
+  static const Color inputBackground = Color(0xFFF2F2F2);
+  static const Color otpBoxFilled = Color(0xFF111111);
+  static const Color otpBoxEmpty = Color(0xFFF2F2F2);
+  static const Color shadowLight = Color(0x14000000);
+
+  /// Language selector pill container background
+  static const Color languageContainerBackground = Color(0x33FFFFFF);
+  static const Color languageContainerBorder = Color(0x26FFFFFF);
+
+  /// Decorative background contour rings
+  static const Color decorativeArc = Color(0x1AFFFFFF);
+
+  /// Onboarding scene illustration colors (Vector skyline, pin & road)
+  static const Color skylineSilhouette = Color(0xFF8A2500);
+  static const Color pinFill = Color(0x66FFFFFF);
+  static const Color pinBorder = Color(0x8AFFFFFF);
+  static const Color roadCurve = Color(0xB3FFFFFF);
+
+  /// Border and divider color
+  static const Color border = Color(0xFFE5E5E5);
+
+  /// Home design specific card & container colors (matching new mockup)
+  /// Soft peach circular container for Almadies home icon
+  static const Color peachContainer = Color(0xFFFFF0E6);
+
+  /// Soft grey/slate circular container for Travail briefcase icon
+  static const Color greyContainer = Color(0xFFF2F4F7);
+
+  /// Soft subtle card border
+  static const Color cardBorder = Color(0xFFEEEEEE);
+
+  /// Subtle card shadow
+  static const Color cardShadow = Color(0x0D000000);
+
+  /// Eco card selected subtle background tint
+  static const Color ecoCardSelectedBackground = Color(0xFFFFF9F5);
+
+  /// Unread notification dot badge
+  static const Color unreadDot = Color(0xFFFF5F00);
+
+  /// Inactive indicator dot color
+  static const Color inactiveIndicator = Color(0xFFD4D4D4);
+
+  // Feedback & Status Colors
+  /// Vert succès - #1E9E5A
+  /// Usage: Paiement confirmé, chauffeur en ligne, succès
+  static const Color success = Color(0xFF1E9E5A);
+
+  /// Rouge alerte - #D93025
+  /// Usage: Erreurs, SOS, alertes critiques
+  static const Color alert = Color(0xFFD93025);
+  static const Color error = Color(0xFFD93025);
+
+  // Car Animation Colors
+  static const Color carBody = Color(0xFFFFFFFF);
+  static const Color carShadow = Color(0x26000000);
+  static const Color carWheel = Color(0xFF1A1A1A);
+  static const Color carWheelRim = Color(0xFF9CA3AF);
+  static const Color carWindow = Color(0xFFE0E7FF);
+  static const Color carHeadlight = Color(0xFFFEF08A);
+  static const Color carTaillight = Color(0xFFEF4444);
+}

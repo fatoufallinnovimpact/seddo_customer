@@ -1,0 +1,55 @@
+{
+  "app_name": "Seddo",
+  "common": {
+    "welcome": "Dalal ak jamm ci Seddo !",
+    "french": "Français",
+    "wolof": "Wolof"
+  },
+  "onboarding": {
+    "hero_title": "Sa chauffeur,\nfey ko ci Orange Money.",
+    "hero_subtitle": "Njëg bu tëju bala nga dem.\nAmul cash.",
+    "start": "Tambali",
+    "legal_notice": "Booy wéy, d'accord nga ak sart yu mbay yi\nak kaaraangey dëkkukaay yi."
+  },
+  "consent": {
+    "title": "Sart yi ak kaaraange",
+    "subtitle": "Ngir gënë jëm ci kanam ak Seddo, d'accordal ci sart yii ci suuf.",
+    "cgu": "D'accord naa ak Sart yu Mbay yi (CGU)",
+    "privacy": "D'accord naa ak Kaaraangey dëkkukaay ak denc yu Seddo",
+    "location": "Maye naa ngir xam fi ma nekk ngir yoon yi ma jége",
+    "accept_start": "D'accord, tambali"
+  },
+  "auth": {
+    "your_number": "Sa numéro",
+    "orange_money_notice": "Numéro Orange Money lañuy laaj ngir fay sa yoon yi.",
+    "phone_hint": "77 123 45 12",
+    "continue": "Wéy",
+    "code_received": "Kood bu ñu la yónnee ci SMS",
+    "enter_code_sent_to": "Dugalal kood bu ñu yónnee ci",
+    "resend_code_in": "Yónneewaat kood bi ci",
+    "resend_code": "Yónneewaat kood bi"
+  },
+  "home": {
+    "where_to": "Fan ngay dem ?",
+    "search_subtitle": "Bindal fa ngay dem...",
+    "search_hint": "Seet ci Ndakaaru (ci misaal: Ouakam)...",
+    "popular_destinations": "Béréb yi siiw ci Ndakaaru",
+    "current_position": "Fi ma nekk nii",
+    "recent_places": "Béréb yi weesu",
+    "see_all": "Gis lépp",
+    "almadies": "Almadies",
+    "almadies_sub": "Ngor-Almadies, Ndakaaru",
+    "work": "Liggeyukaay",
+    "work_sub": "Plateau, mbeddu Carnot",
+    "suggestions": "Tànnéef yi",
+    "seddo_eco": "Seddo Eco",
+    "eco_sub": "Kom-kom",
+    "confort": "Confort",
+    "confort_sub": "Yaa yaatu",
+    "airport": "Aéroport",
+    "airport_sub": "Yóbbu",
+    "tcu": "TCU",
+    "tcu_sub": "Gaal gi",
+    "drivers_around": "12 chauffeur ñu ngi ci wet gi · 3 min"
+  }
+}
