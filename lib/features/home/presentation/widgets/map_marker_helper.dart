@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 
 /// Helper to generate high-definition custom BitmapDescriptors for Google Maps.
 abstract class MapMarkerHelper {
@@ -163,5 +164,128 @@ abstract class MapMarkerHelper {
 
     _userMarkerIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
     return _userMarkerIcon!;
+  }
+
+  static BitmapDescriptor? _destSquareIcon;
+
+  /// Generate destination anchor marker (Orange square with crisp white border matching design)
+  static Future<BitmapDescriptor> getDestinationSquareMarker() async {
+    if (_destSquareIcon != null) return _destSquareIcon!;
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    const double size = 26.0;
+
+    // Outer drop shadow
+    final shadowPaint = Paint()
+      ..color = AppColors.shadowPinBox
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(4, 4, 18, 18),
+        const Radius.circular(AppConstants.radiusXs),
+      ),
+      shadowPaint,
+    );
+
+    // Orange square center
+    final orangePaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(4, 4, 18, 18),
+        const Radius.circular(AppConstants.radiusXs),
+      ),
+      orangePaint,
+    );
+
+    // Crisp white border
+    final borderPaint = Paint()
+      ..color = AppColors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(4, 4, 18, 18),
+        const Radius.circular(AppConstants.radiusXs),
+      ),
+      borderPaint,
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    _destSquareIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    return _destSquareIcon!;
+  }
+
+  /// Generate pickup badge marker matching screenshot:
+  /// Black circle dot on road + floating pill badge "• Prise en charge · 4 min"
+  static Future<BitmapDescriptor> getPickupBadgeMarker({
+    String label = 'Prise en charge · 4 min',
+  }) async {
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+
+    const double pillHeight = 28.0;
+    const double pillWidth = 168.0;
+    const double dotRadius = 5.0;
+    const double totalHeight = 50.0;
+    const double totalWidth = pillWidth;
+
+    // 1. Draw floating black pill
+    final pillPaint = Paint()
+      ..color = AppColors.buttonBlack
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(0, 0, pillWidth, pillHeight),
+        const Radius.circular(14),
+      ),
+      pillPaint,
+    );
+
+    // Orange dot inside pill
+    final orangeDotPaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(const Offset(14, pillHeight / 2), 3.5, orangeDotPaint);
+
+    // Label text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: AppColors.white,
+          fontSize: 12.0,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset(24, (pillHeight - textPainter.height) / 2),
+    );
+
+    // 2. Draw black pickup dot with white border at bottom center
+    const dotCenter = Offset(pillWidth / 2, totalHeight - dotRadius - 2);
+    final dotOuterPaint = Paint()
+      ..color = AppColors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(dotCenter, dotRadius + 2.0, dotOuterPaint);
+
+    final dotInnerPaint = Paint()
+      ..color = AppColors.buttonBlack
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(dotCenter, dotRadius, dotInnerPaint);
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(totalWidth.toInt(), totalHeight.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
   }
 }

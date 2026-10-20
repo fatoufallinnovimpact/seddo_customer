@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
+import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/services/places_service.dart';
 
 class MockSearchAssetLoader extends AssetLoader {
@@ -148,12 +149,16 @@ void main() {
       await tester.tap(find.text('Ouakam'));
       await tester.pumpAndSettle();
 
-      // Verify page is popped and result is returned
-      expect(find.byType(PlaceSearchPage), findsNothing);
-      expect(selectedPlace, isNotNull);
-      expect(selectedPlace!.mainText, 'Ouakam');
-      expect(selectedPlace!.latitude, 14.7231);
-      expect(selectedPlace!.longitude, -17.4912);
+      // Verify arrival text is updated and Confirmer le trajet button is shown
+      expect(find.text('Ouakam'), findsWidgets);
+      expect(find.text('Confirmer le trajet'), findsOneWidget);
+
+      // Tap Confirmer le trajet to go to RideBookingPage
+      await tester.tap(find.text('Confirmer le trajet'));
+      await tester.pumpAndSettle();
+
+      // Verify RideBookingPage is displayed
+      expect(find.byType(RideBookingPage), findsOneWidget);
     });
 
     testWidgets(

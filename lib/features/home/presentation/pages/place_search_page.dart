@@ -7,6 +7,7 @@ import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
@@ -306,17 +307,93 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     );
 
     if (_isEditingArrival) {
-      _selectedArrivalResult = placeResult;
-      Navigator.of(context).pop(placeResult);
+      setState(() {
+        _selectedArrivalResult = placeResult;
+        _arrivalController.text = placeResult.mainText;
+        _isLoading = false;
+        _suggestions = [];
+      });
+      FocusScope.of(context).unfocus();
     } else {
       setState(() {
         _selectedDepartureResult = placeResult;
         _departureController.text = placeResult.mainText;
         _isEditingArrival = true;
         _isLoading = false;
+        _suggestions = [];
       });
       _arrivalFocusNode.requestFocus();
       _searchPlaces(_arrivalController.text);
+    }
+  }
+
+  Future<void> _confirmTrip() async {
+    FocusScope.of(context).unfocus();
+
+    // 1. Prepare departure
+    PlaceSearchResult departure = _selectedDepartureResult ??
+        PlaceSearchResult(
+          id: 'departure_current',
+          mainText: _departureController.text.isNotEmpty
+              ? _departureController.text
+              : currentPositionText,
+          secondaryText: 'Dakar, Sénégal',
+          fullAddress: _departureController.text.isNotEmpty
+              ? _departureController.text
+              : currentPositionText,
+          latitude: widget.currentUserLocation?.latitude ?? 14.7167,
+          longitude: widget.currentUserLocation?.longitude ?? -17.4677,
+        );
+
+    // 2. Prepare arrival
+    PlaceSearchResult arrival = _selectedArrivalResult ??
+        PlaceSearchResult(
+          id: 'arrival_selected',
+          mainText: _arrivalController.text.isNotEmpty
+              ? _arrivalController.text
+              : 'Destination',
+          secondaryText: 'Dakar, Sénégal',
+          fullAddress: _arrivalController.text,
+          latitude: 14.7450,
+          longitude: -17.5180,
+        );
+
+    // If destination was typed manually, attempt geocoding
+    if (_selectedArrivalResult == null && _arrivalController.text.isNotEmpty) {
+      try {
+        final suggestions =
+            await _placesService.autocomplete(_arrivalController.text);
+        if (suggestions.isNotEmpty) {
+          final first = suggestions.first;
+          final details = await _placesService.details(first.placeId);
+          arrival = PlaceSearchResult(
+            id: first.placeId,
+            mainText: first.mainText ?? _arrivalController.text,
+            secondaryText: first.secondaryText ?? 'Dakar, Sénégal',
+            fullAddress: details.address,
+            latitude: details.lat,
+            longitude: details.lng,
+          );
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    final bookingResult = await Navigator.of(context).push(
+      SlideRightToLeftRoute(
+        page: RideBookingPage(
+          departure: departure,
+          destination: arrival,
+          placesService: _placesService,
+        ),
+      ),
+    );
+
+    if (bookingResult != null && mounted) {
+      Navigator.of(context).pop(
+        bookingResult is PlaceSearchResult ? bookingResult : arrival,
+      );
     }
   }
 
@@ -393,17 +470,20 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               padding: const EdgeInsets.symmetric(
                 horizontal: AppConstants.spacingMd,
               ),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.warmCream, // Soft cream warm grey background
-                  borderRadius: BorderRadius.circular(AppConstants.radiusContainer),
-                  border: Border.all(
-                    color: AppColors.cardBorder,
-                    width: 1,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => FocusScope.of(context).unfocus(),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.warmCream, // Soft cream warm grey background
+                    borderRadius: BorderRadius.circular(AppConstants.radiusContainer),
+                    border: Border.all(
+                      color: AppColors.cardBorder,
+                      width: 1,
+                    ),
                   ),
-                ),
-                child: Row(
+                  child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Left Column: Icons + Connecting Line
@@ -632,6 +712,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                 ),
               ),
             ),
+          ),
 
             const SizedBox(height: 12),
 
@@ -736,6 +817,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     )
                   : ListView.separated(
                       physics: const BouncingScrollPhysics(),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
                       itemCount: _suggestions.length,
                       separatorBuilder: (context, index) => const SizedBox(
                         height: AppConstants.spacingXs,
@@ -820,74 +903,54 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       ),
     ),
     bottomNavigationBar: _arrivalController.text.isNotEmpty
-          ? SafeArea(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingMd,
-                  vertical: 10,
-                ),
-                decoration: const BoxDecoration(
-                  color: AppColors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.shadowSubtleBlack,
-                      blurRadius: 10,
-                      offset: Offset(0, -3),
+        ? SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppConstants.spacingMd,
+                4,
+                AppConstants.spacingMd,
+                12,
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                  ],
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    onPressed: () {
-                      final result = _selectedArrivalResult ??
-                          PlaceSearchResult(
-                            id: 'arrival_selected',
-                            mainText: _arrivalController.text,
-                            secondaryText:
-                                _selectedArrivalResult?.secondaryText ?? '',
-                            fullAddress: _arrivalController.text,
-                            latitude: _selectedArrivalResult?.latitude ?? 14.7547,
-                            longitude: _selectedArrivalResult?.longitude ?? -17.5142,
-                          );
-                      Navigator.of(context).pop(result);
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Confirmer le trajet',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                  ),
+                  onPressed: _confirmTrip,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Confirmer le trajet',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 8),
-                        const Icon(
-                          Icons.arrow_forward_rounded,
-                          size: 18,
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 18,
+                      ),
+                    ],
                   ),
                 ),
               ),
-            )
-          : null,
+            ),
+          )
+        : null,
     );
   }
 }
