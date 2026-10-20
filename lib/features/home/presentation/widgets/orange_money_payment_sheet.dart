@@ -77,10 +77,6 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
     Navigator.of(context).pop(OrangeMoneyPaymentResult.success);
   }
 
-  void _onSimulateInsufficientBalance() {
-    Navigator.of(context).pop(OrangeMoneyPaymentResult.insufficientBalance);
-  }
-
   @override
   Widget build(BuildContext context) {
     final systemBottom = MediaQuery.of(context).padding.bottom;
@@ -253,21 +249,6 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          // Link: Simuler : solde insuffisant
-          GestureDetector(
-            onTap: _onSimulateInsufficientBalance,
-            child: Text(
-              'Simuler : solde insuffisant',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                decoration: TextDecoration.underline,
-                decorationColor: AppColors.textSecondary,
-              ),
-            ),
-          ),
         ],
       ),
     );

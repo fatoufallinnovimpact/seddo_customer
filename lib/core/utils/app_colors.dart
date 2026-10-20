@@ -101,6 +101,9 @@ abstract class AppColors {
   /// Tracé d'itinéraire style Yango - Vert dynamique #00C853
   static const Color yangoRouteGreen = Color(0xFF00C853);
 
+  /// Tracé d'itinéraire déjà parcouru - Gris discret #BDBDBD
+  static const Color routeTraveled = Color(0xFFBDBDBD);
+
   /// Rouge alerte - #D93025
   /// Usage: Erreurs, SOS, alertes critiques
   static const Color alert = Color(0xFFD93025);

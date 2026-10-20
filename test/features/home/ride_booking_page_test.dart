@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
-import 'package:seddo/features/home/presentation/pages/active_ride_page.dart';
+import 'package:seddo/features/home/presentation/pages/driver_approaching_page.dart';
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/home/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
@@ -80,7 +80,6 @@ void main() {
       // Verify Orange Money Payment sheet appears matching Screenshot 1
       expect(find.text('Confirmer le paiement'), findsOneWidget);
       expect(find.text('Valider'), findsOneWidget);
-      expect(find.text('Simuler : solde insuffisant'), findsOneWidget);
 
       // 9. Tap Valider to confirm payment
       await tester.tap(find.text('Valider'));
@@ -91,22 +90,20 @@ void main() {
       expect(find.byType(DriverSearchPage), findsOneWidget);
       expect(find.text('Recherche d\'un chauffeur'), findsOneWidget);
 
-      // Verify simulated shortcut button exists
-      expect(find.text('Simuler : chauffeur trouvé'), findsOneWidget);
-
-      // 10. Tap "Simuler : chauffeur trouvé" to match driver immediately
-      await tester.tap(find.text('Simuler : chauffeur trouvé'));
+      // 10. Wait for auto-match timer (5 seconds)
+      await tester.pump(const Duration(seconds: 5));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify ActiveRidePage is displayed with driver Moussa and contact buttons
-      expect(find.byType(ActiveRidePage), findsOneWidget);
+      // Verify DriverApproachingPage is displayed matching the reference design
+      expect(find.byType(DriverApproachingPage), findsOneWidget);
+      expect(find.textContaining('Rendez-vous'), findsWidgets);
       expect(find.textContaining('Moussa'), findsWidgets);
-      expect(find.text('Message'), findsOneWidget);
-      expect(find.text('Appeler'), findsOneWidget);
+      expect(find.text('Code de départ'), findsOneWidget);
+      expect(find.text('Envoyer un message...'), findsOneWidget);
 
-      // 11. Tap Message to open chat
-      await tester.tap(find.text('Message'));
+      // 11. Tap message placeholder to open chat
+      await tester.tap(find.text('Envoyer un message...'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

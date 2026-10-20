@@ -229,10 +229,13 @@ void main() {
       expect(find.text('Payé'), findsOneWidget);
       expect(find.text('Message'), findsOneWidget);
       expect(find.text('Appeler'), findsOneWidget);
+
+      // Drag bottom sheet up to reveal route details and safety options
+      await tester.drag(find.text('En route vers Almadies'), const Offset(0, -400));
+      await tester.pumpAndSettle();
+
       expect(find.text('Partager le trajet'), findsOneWidget);
       expect(find.text('Sécurité'), findsOneWidget);
-      expect(find.text('Annuler la course'), findsOneWidget);
-      expect(find.text('Simuler : arrivée'), findsOneWidget);
       expect(find.byIcon(Icons.notifications_active_rounded), findsOneWidget);
 
       // Tap Sécurité tile
@@ -287,7 +290,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Comment s\'est passée votre'), findsOneWidget);
-      expect(find.text('👍 Conduite prudente'), findsOneWidget);
+      expect(find.text('Conduite prudente'), findsOneWidget);
       expect(find.text('Ponctuel'), findsOneWidget);
       expect(find.text('Voiture propre'), findsOneWidget);
       expect(find.text('Sympathique'), findsOneWidget);
@@ -301,6 +304,7 @@ void main() {
       await tester.pump();
 
       // Open receipt
+      await tester.ensureVisible(find.text('Voir le reçu'));
       await tester.tap(find.text('Voir le reçu'));
       await tester.pumpAndSettle();
 

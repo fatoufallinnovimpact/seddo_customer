@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -11,7 +14,6 @@ import 'package:seddo/features/home/domain/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
-import 'package:seddo/features/home/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/home/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/home/presentation/widgets/active_driver_card_widget.dart';
@@ -36,6 +38,7 @@ class ActiveRidePage extends StatefulWidget {
   final RideOptionModel rideOption;
   final DriverModel driver;
   final List<LatLng> polylinePoints;
+  final bool autoStartSimulation;
 
   const ActiveRidePage({
     super.key,
@@ -44,28 +47,392 @@ class ActiveRidePage extends StatefulWidget {
     required this.rideOption,
     required this.driver,
     this.polylinePoints = const [],
+    this.autoStartSimulation = true,
   });
 
   @override
   State<ActiveRidePage> createState() => _ActiveRidePageState();
 }
 
-class _ActiveRidePageState extends State<ActiveRidePage> {
+class _ActiveRidePageState extends State<ActiveRidePage>
+    with SingleTickerProviderStateMixin {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupBadgeIcon;
   BitmapDescriptor? _destBadgeIcon;
 
+  // Route & Simulation State
+  AnimationController? _animController;
+  late List<LatLng> _effectiveRoute;
+  late List<double> _segmentLengths;
+  late double _totalRouteDistanceMeters;
+  late LatLng _currentCarPosition;
+  double _currentCarHeading = 0.0;
+  List<LatLng> _traveledPoints = [];
+  List<LatLng> _remainingPoints = [];
+  late double _initialDistanceKm;
+  late double _remainingDistanceKm;
+  late int _initialEtaMinutes;
+  late int _remainingEtaMinutes;
+  double _progressRatio = 0.0;
+  bool _isStopped = false;
+  String _stopReason = 'Arrêt feu rouge';
+  bool _followCar = true;
+  DateTime _lastCameraUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
+
   @override
   void initState() {
     super.initState();
+    _initRoute();
     _loadCustomMarkers();
+
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(minutes: 2),
+    )
+      ..addListener(() {
+        _updateProgress(_animController!.value);
+      })
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          if (mounted) {
+            // Arrivée automatique à destination après les 2 minutes de simulation
+            Future.delayed(const Duration(milliseconds: 800), () {
+              if (mounted) {
+                _onTripCompleted();
+              }
+            });
+          }
+        }
+      });
+
+    if (widget.autoStartSimulation &&
+        widget.polylinePoints.isNotEmpty &&
+        !isTest) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) {
+          _startSimulation();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _animController?.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  void _initRoute() {
+    if (widget.polylinePoints.length >= 2) {
+      _effectiveRoute = List<LatLng>.from(widget.polylinePoints);
+    } else {
+      final start =
+          LatLng(widget.departure.latitude, widget.departure.longitude);
+      final end =
+          LatLng(widget.destination.latitude, widget.destination.longitude);
+      const steps = 30;
+      _effectiveRoute = List.generate(steps, (i) {
+        final t = i / (steps - 1);
+        return LatLng(
+          start.latitude + (end.latitude - start.latitude) * t,
+          start.longitude + (end.longitude - start.longitude) * t,
+        );
+      });
+    }
+
+    _segmentLengths = [];
+    _totalRouteDistanceMeters = 0.0;
+    for (int i = 0; i < _effectiveRoute.length - 1; i++) {
+      final len = _haversineMeters(_effectiveRoute[i], _effectiveRoute[i + 1]);
+      _segmentLengths.add(len);
+      _totalRouteDistanceMeters += len;
+    }
+
+    // Car starts at departure point of the ride
+    _currentCarPosition = _effectiveRoute.first;
+    if (_effectiveRoute.length >= 2) {
+      _currentCarHeading =
+          _calculateBearing(_effectiveRoute[0], _effectiveRoute[1]);
+    }
+
+    _initialDistanceKm = widget.driver.distanceKm > 0
+        ? widget.driver.distanceKm
+        : (_totalRouteDistanceMeters / 1000.0);
+    _remainingDistanceKm = _initialDistanceKm;
+
+    _initialEtaMinutes =
+        widget.driver.etaMinutes > 0 ? widget.driver.etaMinutes : 12;
+    _remainingEtaMinutes = _initialEtaMinutes;
+
+    _traveledPoints = [_currentCarPosition];
+    _remainingPoints = List<LatLng>.from(_effectiveRoute);
+    _progressRatio = 0.0;
+  }
+
+  double _haversineMeters(LatLng p1, LatLng p2) {
+    const r = 6371000.0;
+    final dLat = (p2.latitude - p1.latitude) * (math.pi / 180.0);
+    final dLon = (p2.longitude - p1.longitude) * (math.pi / 180.0);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(p1.latitude * (math.pi / 180.0)) *
+            math.cos(p2.latitude * (math.pi / 180.0)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return r * c;
+  }
+
+  double _calculateBearing(LatLng start, LatLng end) {
+    final lat1 = start.latitude * (math.pi / 180.0);
+    final lon1 = start.longitude * (math.pi / 180.0);
+    final lat2 = end.latitude * (math.pi / 180.0);
+    final lon2 = end.longitude * (math.pi / 180.0);
+    final dLon = lon2 - lon1;
+
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
+    final radians = math.atan2(y, x);
+    return (radians * (180.0 / math.pi) + 360.0) % 360.0;
+  }
+
+  double _interpolateAngle(double from, double to, double t) {
+    double diff = (to - from) % 360.0;
+    if (diff > 180.0) diff -= 360.0;
+    if (diff < -180.0) diff += 360.0;
+    return (from + diff * t) % 360.0;
+  }
+
+  void _updateProgress(double progress) {
+    if (!mounted ||
+        _effectiveRoute.length < 2 ||
+        _totalRouteDistanceMeters <= 0) {
+      return;
+    }
+
+    final clampedT = progress.clamp(0.0, 1.0);
+
+    // Profil de navigation réaliste sur 2 minutes (120 secondes) :
+    // 0:00 - 0:25 (t: 0.00 -> 0.21) : Départ fluide et accélération sur la première artère (0% -> 22% du trajet)
+    // 0:25 - 0:38 (t: 0.21 -> 0.32) : 1er arrêt au feu tricolore / carrefour (13s d'arrêt visible avec badge 'Arrêt feu rouge')
+    // 0:38 - 1:05 (t: 0.32 -> 0.54) : Redémarrage au feu vert, passage sur grande avenue (22% -> 55% du trajet)
+    // 1:05 - 1:22 (t: 0.54 -> 0.68) : Négociation du rond-point avec virages continus et lissage angulaire (55% -> 68% du trajet)
+    // 1:22 - 1:35 (t: 0.68 -> 0.79) : 2e arrêt temporaire : priorité / passage piéton (13s d'arrêt visible avec badge 'Arrêt priorité')
+    // 1:35 - 1:54 (t: 0.79 -> 0.95) : Reprise et approche de la zone de destination (68% -> 96% du trajet)
+    // 1:54 - 2:00 (t: 0.95 -> 1.00) : Décélération douce et stationnement à l'adresse finale (96% -> 100% du trajet)
+    double routeProgress = 0.0;
+    bool isStoppedNow = false;
+    String currentStopReason = 'Arrêt feu rouge';
+
+    if (clampedT <= 0.21) {
+      final localT = clampedT / 0.21;
+      routeProgress = 0.22 * Curves.easeInOut.transform(localT);
+      isStoppedNow = false;
+    } else if (clampedT <= 0.32) {
+      routeProgress = 0.22;
+      isStoppedNow = true;
+      currentStopReason = 'Arrêt feu rouge';
+    } else if (clampedT <= 0.54) {
+      final localT = (clampedT - 0.32) / 0.22;
+      routeProgress = 0.22 + (0.55 - 0.22) * Curves.easeInOut.transform(localT);
+      isStoppedNow = false;
+    } else if (clampedT <= 0.68) {
+      final localT = (clampedT - 0.54) / 0.14;
+      routeProgress = 0.55 + (0.68 - 0.55) * Curves.linear.transform(localT);
+      isStoppedNow = false;
+    } else if (clampedT <= 0.79) {
+      routeProgress = 0.68;
+      isStoppedNow = true;
+      currentStopReason = 'Arrêt priorité';
+    } else if (clampedT <= 0.95) {
+      final localT = (clampedT - 0.79) / 0.16;
+      routeProgress = 0.68 + (0.96 - 0.68) * Curves.easeInOut.transform(localT);
+      isStoppedNow = false;
+    } else {
+      final localT = (clampedT - 0.95) / 0.05;
+      routeProgress = 0.96 + (1.0 - 0.96) * Curves.easeOut.transform(localT);
+      isStoppedNow = false;
+    }
+
+    final clampedS = routeProgress.clamp(0.0, 1.0);
+    final targetDistance = clampedS * _totalRouteDistanceMeters;
+
+    double acc = 0.0;
+    int segIndex = 0;
+    double segRatio = 0.0;
+
+    for (int i = 0; i < _segmentLengths.length; i++) {
+      final segLen = _segmentLengths[i];
+      if (acc + segLen >= targetDistance || i == _segmentLengths.length - 1) {
+        segIndex = i;
+        segRatio = segLen > 0 ? (targetDistance - acc) / segLen : 0.0;
+        break;
+      }
+      acc += segLen;
+    }
+
+    final p1 = _effectiveRoute[segIndex];
+    final p2 = _effectiveRoute[segIndex + 1];
+
+    final curLat = p1.latitude + (p2.latitude - p1.latitude) * segRatio;
+    final curLng = p1.longitude + (p2.longitude - p1.longitude) * segRatio;
+    final newPos = LatLng(curLat, curLng);
+
+    // Orientation dynamique avec lissage doux dans les virages et rond-points (style Yango)
+    final rawHeading = _calculateBearing(p1, p2);
+    double heading = rawHeading;
+    if (segIndex < _effectiveRoute.length - 2 && segRatio > 0.65) {
+      final nextHeading = _calculateBearing(
+        _effectiveRoute[segIndex + 1],
+        _effectiveRoute[segIndex + 2],
+      );
+      final turnRatio = (segRatio - 0.65) / 0.35;
+      heading = _interpolateAngle(rawHeading, nextHeading, turnRatio);
+    }
+
+    // Micro-animation subtile de vibration moteur (+/- 0.6°) en marche
+    if (!isStoppedNow && clampedS > 0.005 && clampedS < 0.995) {
+      final engineVibration = math.sin(clampedS * 90 * math.pi) * 0.6;
+      heading = (heading + engineVibration) % 360.0;
+    }
+
+    final traveled = <LatLng>[];
+    for (int i = 0; i <= segIndex; i++) {
+      traveled.add(_effectiveRoute[i]);
+    }
+    traveled.add(newPos);
+
+    final remaining = <LatLng>[newPos];
+    for (int i = segIndex + 1; i < _effectiveRoute.length; i++) {
+      remaining.add(_effectiveRoute[i]);
+    }
+
+    final remDist = (_initialDistanceKm * (1.0 - clampedS))
+        .clamp(0.0, _initialDistanceKm);
+    final remainingSeconds = ((1.0 - clampedS) * 120).ceil();
+    final remEta = (remainingSeconds / 60).ceil().clamp(1, 2);
+
+    // Recentrage automatique fluide si le mode suivi est activé
+    if (_followCar && _mapController != null) {
+      final now = DateTime.now();
+      if (now.difference(_lastCameraUpdateTime).inMilliseconds > 450) {
+        _lastCameraUpdateTime = now;
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(newPos),
+        );
+      }
+    }
+
+    setState(() {
+      _currentCarPosition = newPos;
+      _currentCarHeading = heading;
+      _traveledPoints = traveled;
+      _remainingPoints = remaining;
+      _remainingDistanceKm = remDist;
+      _remainingEtaMinutes = remEta;
+      _progressRatio = clampedS;
+      _isStopped = isStoppedNow;
+      _stopReason = currentStopReason;
+    });
+  }
+
+  void _startSimulation() {
+    if (_animController == null) return;
+    if (_animController!.value >= 1.0) {
+      _animController!.reset();
+    }
+    _animController!.forward();
+  }
+
+  /// Méthode publique prête pour connecter l'API backend / WebSockets en temps réel.
+  /// Lorsque le serveur ou l'application chauffeur envoie une mise à jour GPS,
+  /// appelez cette méthode pour mettre à jour la position du véhicule en direct.
+  void updateCarLocation(LatLng newPosition, {double? heading}) {
+    if (_animController != null && _animController!.isAnimating) {
+      _animController!.stop();
+    }
+    _applyExternalGpsLocation(newPosition, heading: heading);
+  }
+
+  void _applyExternalGpsLocation(LatLng newPosition, {double? heading}) {
+    if (!mounted || _effectiveRoute.isEmpty) return;
+
+    int closestIndex = 0;
+    double minDistance = double.infinity;
+    for (int i = 0; i < _effectiveRoute.length; i++) {
+      final d = _haversineMeters(newPosition, _effectiveRoute[i]);
+      if (d < minDistance) {
+        minDistance = d;
+        closestIndex = i;
+      }
+    }
+
+    final computedHeading = heading ??
+        (closestIndex < _effectiveRoute.length - 1
+            ? _calculateBearing(_effectiveRoute[closestIndex],
+                _effectiveRoute[closestIndex + 1])
+            : _currentCarHeading);
+
+    final traveled = <LatLng>[];
+    for (int i = 0; i <= closestIndex; i++) {
+      traveled.add(_effectiveRoute[i]);
+    }
+    traveled.add(newPosition);
+
+    final remaining = <LatLng>[newPosition];
+    for (int i = closestIndex + 1; i < _effectiveRoute.length; i++) {
+      remaining.add(_effectiveRoute[i]);
+    }
+
+    final ratio = (closestIndex /
+            (_effectiveRoute.length - 1).clamp(1, double.infinity))
+        .clamp(0.0, 1.0);
+
+    setState(() {
+      _currentCarPosition = newPosition;
+      _currentCarHeading = computedHeading;
+      _traveledPoints = traveled;
+      _remainingPoints = remaining;
+      _progressRatio = ratio;
+      _remainingDistanceKm =
+          (_initialDistanceKm * (1.0 - ratio)).clamp(0.0, _initialDistanceKm);
+      _remainingEtaMinutes = (_initialEtaMinutes * (1.0 - ratio))
+          .ceil()
+          .clamp(1, _initialEtaMinutes);
+    });
+  }
+
+  void _fitRouteBounds() {
+    if (_mapController == null || _effectiveRoute.isEmpty) return;
+    try {
+      double minLat = _effectiveRoute.first.latitude;
+      double maxLat = _effectiveRoute.first.latitude;
+      double minLng = _effectiveRoute.first.longitude;
+      double maxLng = _effectiveRoute.first.longitude;
+
+      for (final p in _effectiveRoute) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat, minLng),
+            northeast: LatLng(maxLat, maxLng),
+          ),
+          65.0,
+        ),
+      );
+    } catch (_) {}
   }
 
   Future<void> _loadCustomMarkers() async {
@@ -325,7 +692,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
     );
   }
 
-  void _simulateArrival() {
+  void _onTripCompleted() {
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: RideRatingPage(
@@ -334,66 +701,6 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
           rideOption: widget.rideOption,
           arrivalTime: widget.rideOption.estimatedArrival,
         ),
-      ),
-    );
-  }
-
-  void _confirmCancelRide() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
-        ),
-        title: Text(
-          'Annuler la course ?',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        content: Text(
-          'L\'annulation est gratuite dans les 2 minutes. Votre compte Orange Money sera instantanément remboursé de ${widget.rideOption.formattedPrice}.',
-          style: GoogleFonts.inter(
-            fontSize: 14,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              'Conserver la course',
-              style: GoogleFonts.inter(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.deleteRed,
-              foregroundColor: AppColors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-              ),
-            ),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).pushReplacement(
-                SlideRightToLeftRoute(
-                  page: RideCancelledPage(
-                    rideOption: widget.rideOption,
-                    departure: widget.departure,
-                    destination: widget.destination,
-                  ),
-                ),
-              );
-            },
-            child: const Text('Oui, annuler'),
-          ),
-        ],
       ),
     );
   }
@@ -431,14 +738,16 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
       );
     }
 
-    // 3. Driver car marker moving along route
+    // 3. Driver car marker moving along route from departure to destination
     if (_carMarkerIcon != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('driver_car_marker'),
-          position: widget.driver.location,
+          position: _currentCarPosition,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
+          rotation: _currentCarHeading,
+          flat: true,
         ),
       );
     }
@@ -447,19 +756,44 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
   }
 
   Set<Polyline> _buildPolylines() {
-    if (widget.polylinePoints.isEmpty) return {};
-    return {
+    if (_effectiveRoute.isEmpty) return {};
+
+    final polylines = <Polyline>{};
+
+    // 1. Distance déjà parcourue avec couleur différenciée (gris discret AppColors.routeTraveled)
+    if (_traveledPoints.length >= 2 && _progressRatio > 0.005) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('traveled_route'),
+          points: _traveledPoints,
+          color: AppColors.routeTraveled,
+          width: 4,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      );
+    }
+
+    // 2. Distance restante avec couleur verte dynamique Yango (AppColors.yangoRouteGreen)
+    final activePts =
+        _remainingPoints.length >= 2 ? _remainingPoints : _effectiveRoute;
+    polylines.add(
       Polyline(
         polylineId: const PolylineId('active_route'),
-        points: widget.polylinePoints,
+        points: activePts,
         color: AppColors.yangoRouteGreen,
         width: 4,
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
       ),
-    };
+    );
+
+    return polylines;
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -469,23 +803,44 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Fullscreen Google Map
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: LatLng(
-                (widget.departure.latitude + widget.destination.latitude) / 2,
-                (widget.departure.longitude + widget.destination.longitude) / 2,
+          // 1. Fullscreen Google Map avec pinch-to-zoom et contrôle gestuel fluide
+          Listener(
+            onPointerDown: (_) {
+              if (_followCar) {
+                setState(() {
+                  _followCar = false;
+                });
+              }
+            },
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(
+                  (widget.departure.latitude + widget.destination.latitude) / 2,
+                  (widget.departure.longitude + widget.destination.longitude) / 2,
+                ),
+                zoom: 13.8,
               ),
-              zoom: 13.8,
+              onMapCreated: (ctrl) {
+                _mapController = ctrl;
+                _fitRouteBounds();
+              },
+              markers: _buildMarkers(),
+              polylines: _buildPolylines(),
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              zoomGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              tiltGesturesEnabled: true,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
+              gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
             ),
-            onMapCreated: (ctrl) => _mapController = ctrl,
-            markers: _buildMarkers(),
-            polylines: _buildPolylines(),
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
           ),
 
           // 2. Floating Top Bar with back button, center status, and red safety siren button
@@ -549,14 +904,20 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                             Container(
                               width: 8,
                               height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppColors.success,
+                              decoration: BoxDecoration(
+                                color: _isStopped
+                                    ? AppColors.orangeMoneyOrange
+                                    : AppColors.success,
                                 shape: BoxShape.circle,
                               ),
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Arrive dans ${widget.driver.etaMinutes} min',
+                              _progressRatio >= 0.99
+                                  ? 'Arrivé à destination !'
+                                  : (_isStopped
+                                      ? _stopReason
+                                      : 'Arrive dans $_remainingEtaMinutes min'),
                               style: GoogleFonts.inter(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w800,
@@ -598,44 +959,85 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
             ),
           ),
 
-          // 3. Bottom Sheet Modal with Driver Information & Communication
+          // 3. Floating Recenter & Auto-Follow Button
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
+            right: 16,
+            bottom: MediaQuery.of(context).size.height * 0.38 + 12,
             child: Container(
-              decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(AppConstants.radiusSheet),
-                ),
-                boxShadow: [
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _followCar ? AppColors.primary : AppColors.white,
+                shape: BoxShape.circle,
+                boxShadow: const [
                   BoxShadow(
-                    color: AppColors.shadowCardBlack,
-                    blurRadius: 24,
-                    offset: Offset(0, -6),
+                    color: AppColors.shadowMarker,
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
                   ),
                 ],
               ),
-              padding: EdgeInsets.fromLTRB(
-                AppConstants.spacingLg,
-                10,
-                AppConstants.spacingLg,
-                systemBottom + 10,
+              child: IconButton(
+                icon: Icon(
+                  Icons.my_location_rounded,
+                  color:
+                      _followCar ? AppColors.white : AppColors.textPrimary,
+                  size: 20,
+                ),
+                tooltip: 'Centrer sur la voiture',
+                onPressed: () {
+                  setState(() {
+                    _followCar = true;
+                  });
+                  _mapController?.animateCamera(
+                    CameraUpdate.newLatLngZoom(_currentCarPosition, 16.5),
+                  );
+                },
               ),
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+            ),
+          ),
+
+          // 4. Draggable Bottom Sheet with Driver Information & Communication
+          DraggableScrollableSheet(
+            initialChildSize: 0.38,
+            minChildSize: 0.14,
+            maxChildSize: 0.78,
+            snap: true,
+            snapSizes: const [0.14, 0.38, 0.78],
+            builder: (context, scrollController) {
+              return Container(
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(AppConstants.radiusSheet),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.shadowCardBlack,
+                      blurRadius: 24,
+                      offset: Offset(0, -6),
+                    ),
+                  ],
+                ),
+                child: ListView(
+                  controller: scrollController,
+                  padding: EdgeInsets.fromLTRB(
+                    AppConstants.spacingLg,
+                    10,
+                    AppConstants.spacingLg,
+                    systemBottom + 16,
+                  ),
                   children: [
                     // Drag handle
-                    Container(
-                      width: AppConstants.circularIconContainerSize,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.dragHandle,
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusXs,
+                    Center(
+                      child: Container(
+                        width: AppConstants.circularIconContainerSize,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.dragHandle,
+                          borderRadius: BorderRadius.circular(
+                            AppConstants.radiusXs,
+                          ),
                         ),
                       ),
                     ),
@@ -654,7 +1056,9 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.liveStatusBg,
+                                color: _isStopped
+                                    ? AppColors.peachContainer
+                                    : AppColors.liveStatusBg,
                                 borderRadius: BorderRadius.circular(
                                   AppConstants.radiusPill,
                                 ),
@@ -665,18 +1069,28 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                                   Container(
                                     width: 7,
                                     height: 7,
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.yangoRouteGreen,
+                                    decoration: BoxDecoration(
+                                      color: _isStopped
+                                          ? AppColors.orangeMoneyOrange
+                                          : (_progressRatio >= 0.99
+                                              ? AppColors.success
+                                              : AppColors.yangoRouteGreen),
                                       shape: BoxShape.circle,
                                     ),
                                   ),
                                   const SizedBox(width: 5),
                                   Text(
-                                    'En direct',
+                                    _progressRatio >= 0.99
+                                        ? 'Arrivé'
+                                        : (_isStopped
+                                            ? _stopReason
+                                            : 'En direct'),
                                     style: GoogleFonts.inter(
                                       fontSize: 11.5,
                                       fontWeight: FontWeight.w800,
-                                      color: AppColors.liveStatusText,
+                                      color: _isStopped
+                                          ? AppColors.primaryDark
+                                          : AppColors.liveStatusText,
                                     ),
                                   ),
                                 ],
@@ -704,7 +1118,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          'Arrivée prévue ${widget.rideOption.estimatedArrival} · ${widget.driver.distanceKm} km restants',
+                          'Arrivée prévue ${widget.rideOption.estimatedArrival} · ${_remainingDistanceKm.toStringAsFixed(1)} km restants',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             color: AppColors.textSecondary,
@@ -725,7 +1139,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                               ),
                             ),
                             FractionallySizedBox(
-                              widthFactor: 0.68,
+                              widthFactor: _progressRatio.clamp(0.04, 1.0),
                               child: Container(
                                 height: 4,
                                 decoration: BoxDecoration(
@@ -866,54 +1280,10 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                       subtitle: 'Urgence, contacts d\'urgence, signaler',
                       onTap: _openSafetyModal,
                     ),
-
-                    const SizedBox(height: 10),
-
-                    // Annuler la course Link
-                    SizedBox(
-                      width: double.infinity,
-                      height: 40,
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.deleteRed,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(
-                              AppConstants.radiusDefault,
-                            ),
-                          ),
-                        ),
-                        onPressed: _confirmCancelRide,
-                        child: Text(
-                          'Annuler la course',
-                          style: GoogleFonts.inter(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.deleteRed,
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    // Simulator shortcut: "Simuler : arrivée"
-                    GestureDetector(
-                      onTap: _simulateArrival,
-                      child: Text(
-                        'Simuler : arrivée',
-                        style: GoogleFonts.inter(
-                          fontSize: 12.5,
-                          color: AppColors.textSecondary,
-                          decoration: TextDecoration.underline,
-                          decorationColor: AppColors.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),

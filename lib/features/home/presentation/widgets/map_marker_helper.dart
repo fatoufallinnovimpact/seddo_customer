@@ -12,23 +12,39 @@ abstract class MapMarkerHelper {
   static BitmapDescriptor? _departurePinIcon;
   static BitmapDescriptor? _destinationPinIcon;
 
-  /// Generate high-fidelity car marker matching user's exact vehicle design:
-  /// Sleek yellow sports car with soft ground shadow and crisp transparency.
+  /// Clear in-memory cached marker icons to force reload on hot restart or asset updates.
+  static void clearCache() {
+    _carMarkerIcon = null;
+    _userMarkerIcon = null;
+    _departurePinIcon = null;
+    _destinationPinIcon = null;
+  }
+
+  /// Generate high-fidelity compact top-view car marker (Yango-style):
+  /// Sleek aerodynamic vehicle facing North/UP, with transparent alpha and soft shadow.
+  /// Scaled compactly (26x32) to match road widths and location pins.
   static Future<BitmapDescriptor> get3DCarMarker() async {
     if (_carMarkerIcon != null) return _carMarkerIcon!;
 
     try {
-      final byteData =
-          await rootBundle.load('assets/images/map_car_marker_hd.png');
+      final byteData = await rootBundle.load('assets/images/car.png');
       _carMarkerIcon = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
       return _carMarkerIcon!;
     } catch (_) {
-      // Graceful fallback for headless tests without asset bundle
+      try {
+        final byteData =
+            await rootBundle.load('assets/images/confort_car_marker.png');
+        _carMarkerIcon = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
+        return _carMarkerIcon!;
+      } catch (_) {
+        // Fallback for headless tests without asset bundle
+      }
     }
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const size = Size(64, 64);
+    const size = Size(26, 32);
+    canvas.scale(26.0 / 64.0, 32.0 / 64.0);
 
     // 1. Realistic ground shadow (offset diagonal blurred ellipse)
     final shadowPaint = Paint()
@@ -497,6 +513,180 @@ abstract class MapMarkerHelper {
 
     final picture = pictureRecorder.endRecording();
     final image = await picture.toImage(totalWidth.toInt(), totalHeight.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  /// Generate Departure marker with floating white badge "Rendez-vous ici"
+  /// matching the approaching driver screenshot.
+  static Future<BitmapDescriptor> getRendezVousIciMarker() async {
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+
+    const double pillWidth = 132.0;
+    const double pillHeight = 30.0;
+    const double pinWidth = 26.0;
+    const double pinHeight = 32.0;
+    const double spacing = 6.0;
+    const double totalHeight = pillHeight + spacing + pinHeight;
+    const double totalWidth = pillWidth;
+
+    // 1. Floating white pill badge "Rendez-vous ici" with soft shadow
+    final badgeRect = const Rect.fromLTWH(0, 0, pillWidth, pillHeight);
+    final shadowPaint = Paint()
+      ..color = const Color(0x30000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect.shift(const Offset(0, 2)), const Radius.circular(15)),
+      shadowPaint,
+    );
+
+    final bgPaint = Paint()
+      ..color = AppColors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(15)),
+      bgPaint,
+    );
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFFE5E7EB)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(15)),
+      borderPaint,
+    );
+
+    final textPainter = TextPainter(
+      text: const TextSpan(
+        text: 'Rendez-vous ici',
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w800,
+          fontFamily: 'Inter',
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((pillWidth - textPainter.width) / 2, (pillHeight - textPainter.height) / 2),
+    );
+
+    // 2. Orange Teardrop Location Pin below badge
+    final pinLeft = (totalWidth - pinWidth) / 2;
+    final pinTop = pillHeight + spacing;
+
+    final pinPath = Path();
+    pinPath.moveTo(pinLeft + pinWidth / 2, pinTop + pinHeight - 2.5);
+    pinPath.cubicTo(
+      pinLeft + pinWidth * 0.16,
+      pinTop + pinHeight * 0.65,
+      pinLeft + pinWidth * 0.04,
+      pinTop + pinHeight * 0.45,
+      pinLeft + pinWidth * 0.04,
+      pinTop + pinHeight * 0.32,
+    );
+    pinPath.arcToPoint(
+      Offset(pinLeft + pinWidth * 0.96, pinTop + pinHeight * 0.32),
+      radius: const Radius.circular(pinWidth * 0.46),
+      clockwise: true,
+    );
+    pinPath.cubicTo(
+      pinLeft + pinWidth * 0.96,
+      pinTop + pinHeight * 0.45,
+      pinLeft + pinWidth * 0.84,
+      pinTop + pinHeight * 0.65,
+      pinLeft + pinWidth / 2,
+      pinTop + pinHeight - 2.5,
+    );
+    pinPath.close();
+
+    final pinGradient = ui.Gradient.linear(
+      Offset(pinLeft + pinWidth / 2, pinTop),
+      Offset(pinLeft + pinWidth / 2, pinTop + pinHeight),
+      [
+        const Color(0xFFFF9500),
+        AppColors.primary,
+        const Color(0xFFD64400),
+      ],
+      [0.0, 0.5, 1.0],
+    );
+    canvas.drawPath(
+      pinPath,
+      Paint()
+        ..shader = pinGradient
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawPath(
+      pinPath,
+      Paint()
+        ..color = AppColors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+
+    final centerOffset = Offset(pinLeft + pinWidth / 2, pinTop + pinHeight * 0.33);
+    canvas.drawCircle(centerOffset, 4.5, Paint()..color = AppColors.white);
+    canvas.drawCircle(centerOffset, 2.4, Paint()..color = AppColors.primary);
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(totalWidth.toInt(), totalHeight.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  /// Generate floating pill badge marker on route (e.g. "4 min")
+  static Future<BitmapDescriptor> getEtaPillMarker(String text) async {
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+
+    const double pillWidth = 58.0;
+    const double pillHeight = 28.0;
+
+    final badgeRect = const Rect.fromLTWH(0, 0, pillWidth, pillHeight);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect.shift(const Offset(0, 2)), const Radius.circular(14)),
+      Paint()
+        ..color = const Color(0x30000000)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(14)),
+      Paint()..color = AppColors.white,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(14)),
+      Paint()
+        ..color = const Color(0xFFE5E7EB)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0,
+    );
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 12.0,
+          fontWeight: FontWeight.w800,
+          fontFamily: 'Inter',
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((pillWidth - textPainter.width) / 2, (pillHeight - textPainter.height) / 2),
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(pillWidth.toInt(), pillHeight.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
     return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());

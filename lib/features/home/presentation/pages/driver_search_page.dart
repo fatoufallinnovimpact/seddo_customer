@@ -9,7 +9,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
-import 'package:seddo/features/home/presentation/pages/active_ride_page.dart';
+import 'package:seddo/features/home/presentation/pages/driver_approaching_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
@@ -111,7 +111,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
-        page: ActiveRidePage(
+        page: DriverApproachingPage(
           departure: widget.departure,
           destination: widget.destination,
           rideOption: widget.rideOption,
@@ -135,7 +135,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     );
   }
 
-  Future<void> _onNoDriverAvailable() async {
+  /// Prêt pour l'API : appelé lorsque le backend signale qu'aucun chauffeur n'est disponible
+  @visibleForTesting
+  Future<void> onNoDriverAvailable() async {
     _autoMatchTimer?.cancel();
     final action = await NoDriverFoundSheet.show(
       context,
@@ -597,42 +599,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                     ),
                   ),
 
-                  const SizedBox(height: 14),
-
-                  // Simulator Shortcuts
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 20,
-                    runSpacing: 6,
-                    children: [
-                      GestureDetector(
-                        onTap: _onDriverFound,
-                        child: Text(
-                          'Simuler : chauffeur trouvé',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: AppColors.primary,
-                            decoration: TextDecoration.underline,
-                            decorationColor: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: _onNoDriverAvailable,
-                        child: Text(
-                          'Simuler : aucun chauffeur',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: AppColors.textSecondary,
-                            decoration: TextDecoration.underline,
-                            decorationColor: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
