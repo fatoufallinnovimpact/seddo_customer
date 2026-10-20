@@ -6,6 +6,7 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/widgets/safety_incident_report_sheet.dart';
 
 /// Bottom sheet modal displayed when tapping the red siren button or "Sécurité" tile:
 /// - Emergency dialer for Police (17) and SAMU (1515)
@@ -192,15 +193,7 @@ class SafetyModalWidget extends StatelessWidget {
             subtitle: 'Notre équipe support vous assiste',
             onTap: () {
               Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: AppColors.buttonBlack,
-                  content: Text(
-                    'Signalement transmis au support Seddo.',
-                    style: GoogleFonts.inter(color: AppColors.white),
-                  ),
-                ),
-              );
+              SafetyIncidentReportSheet.show(context, driver: driver);
             },
           ),
         ],

@@ -31,6 +31,7 @@ class _HomeMapCardState extends State<HomeMapCard> {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carIcon;
   BitmapDescriptor? _userIcon;
+  BitmapDescriptor? _destPinIcon;
 
   @override
   void initState() {
@@ -39,12 +40,14 @@ class _HomeMapCardState extends State<HomeMapCard> {
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.getCarMarker();
+    final car = await MapMarkerHelper.get3DCarMarker();
     final user = await MapMarkerHelper.getUserLocationMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
     if (mounted) {
       setState(() {
         _carIcon = car;
         _userIcon = user;
+        _destPinIcon = dest;
       });
     }
   }
@@ -138,9 +141,11 @@ class _HomeMapCardState extends State<HomeMapCard> {
             Marker(
               markerId: const MarkerId('destination_location'),
               position: state.destinationLocation!,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueOrange,
-              ),
+              icon: _destPinIcon ??
+                  BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueOrange,
+                  ),
+              anchor: const Offset(0.5, 1.0),
               infoWindow: InfoWindow(
                 title: state.destinationAddress ?? 'Destination',
               ),

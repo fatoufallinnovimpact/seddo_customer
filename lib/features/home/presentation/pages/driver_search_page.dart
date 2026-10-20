@@ -50,7 +50,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _orangeCarMarkerIcon;
   BitmapDescriptor? _offerSentBadgeIcon;
-  BitmapDescriptor? _destSquareIcon;
+  BitmapDescriptor? _destPinIcon;
+  BitmapDescriptor? _pickupPinIcon;
 
   @override
   void initState() {
@@ -79,8 +80,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.getCarMarker();
-    final dest = await MapMarkerHelper.getDestinationSquareMarker();
+    final car = await MapMarkerHelper.get3DCarMarker();
+    final pickup = await MapMarkerHelper.getDeparturePinMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
     final offerBadge = await MapMarkerHelper.getPickupBadgeMarker(
       label: 'Offre envoyée · 1,2 km',
       dotColor: AppColors.primary,
@@ -91,7 +93,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         _carMarkerIcon = car;
         _orangeCarMarkerIcon = car;
         _offerSentBadgeIcon = offerBadge;
-        _destSquareIcon = dest;
+        _destPinIcon = dest;
+        _pickupPinIcon = pickup;
       });
     }
   }
@@ -178,20 +181,34 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
 
-    // 1. Pickup point (black circle)
-    markers.add(
-      Marker(
-        markerId: const MarkerId('pickup_center'),
-        position: LatLng(
-          widget.departure.latitude,
-          widget.departure.longitude,
+    // 1. Pickup departure location pin
+    if (_pickupPinIcon != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('pickup_center'),
+          position: LatLng(
+            widget.departure.latitude,
+            widget.departure.longitude,
+          ),
+          icon: _pickupPinIcon!,
+          anchor: const Offset(0.5, 1.0),
         ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      ),
-    );
+      );
+    } else {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('pickup_center'),
+          position: LatLng(
+            widget.departure.latitude,
+            widget.departure.longitude,
+          ),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        ),
+      );
+    }
 
-    // 2. Destination marker
-    if (_destSquareIcon != null) {
+    // 2. Destination arrival location pin
+    if (_destPinIcon != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('dest_square'),
@@ -199,8 +216,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             widget.destination.latitude,
             widget.destination.longitude,
           ),
-          icon: _destSquareIcon!,
-          anchor: const Offset(0.5, 0.5),
+          icon: _destPinIcon!,
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }
@@ -381,6 +398,55 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  // Top Live Status Bar with 3D Vehicle Preview
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withAlpha(25),
+                          borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'RECHERCHE EN DIRECT',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Image.asset(
+                          widget.rideOption.type == RideType.confort
+                              ? 'assets/images/seddo_confort_3d.jpg'
+                              : 'assets/images/seddo_eco_3d.jpg',
+                          width: 44,
+                          height: 32,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
 
                   // Title: Recherche d'un chauffeur
                   Align(

@@ -270,12 +270,13 @@ class _HomePageContent extends StatelessWidget {
                         label: 'home.seddo_eco'.tr(),
                         subtitle: 'home.eco_sub'.tr(),
                         isSelected: state.selectedCategory == 'seddo_eco',
-                        icon: SvgPicture.asset(
-                          'assets/icons/ecocar.svg',
-                          height: 28,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
+                        icon: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.asset(
+                            'assets/images/seddo_eco_3d.jpg',
+                            height: 42,
+                            width: 42,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         onTap: () {
@@ -291,12 +292,13 @@ class _HomePageContent extends StatelessWidget {
                         label: 'home.confort'.tr(),
                         subtitle: 'home.confort_sub'.tr(),
                         isSelected: state.selectedCategory == 'confort',
-                        icon: SvgPicture.asset(
-                          'assets/icons/confortcar.svg',
-                          height: 24,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
+                        icon: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.asset(
+                            'assets/images/seddo_confort_3d.jpg',
+                            height: 42,
+                            width: 42,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         onTap: () {
@@ -312,12 +314,13 @@ class _HomePageContent extends StatelessWidget {
                         label: 'home.airport'.tr(),
                         subtitle: 'home.airport_sub'.tr(),
                         isSelected: state.selectedCategory == 'airport',
-                        icon: SvgPicture.asset(
-                          'assets/icons/airplane-svgrepo-com.svg',
-                          height: 26,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
+                        icon: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.asset(
+                            'assets/images/seddo_airport_3d.jpg',
+                            height: 42,
+                            width: 42,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         onTap: () {
@@ -333,12 +336,13 @@ class _HomePageContent extends StatelessWidget {
                         label: 'home.tcu'.tr(),
                         subtitle: 'home.tcu_sub'.tr(),
                         isSelected: state.selectedCategory == 'tcu',
-                        icon: SvgPicture.asset(
-                          'assets/icons/bus-svgrepo-com.svg',
-                          height: 26,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
+                        icon: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.asset(
+                            'assets/images/seddo_bus_3d.jpg',
+                            height: 42,
+                            width: 42,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         onTap: () {

@@ -213,32 +213,15 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                       ),
                     ),
 
-                    // Vertical black stem line
-                    Container(
-                      width: 2,
-                      height: 12,
-                      color: AppColors.mapPinAnchor,
-                    ),
+                    const SizedBox(height: 2),
 
-                    // Square anchor box: orange center with crisp white border
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(AppConstants.radiusXs),
-                        border: Border.all(
-                          color: AppColors.white,
-                          width: 2.5,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: AppColors.shadowPinBox,
-                            blurRadius: 4,
-                            offset: Offset(0, 2),
-                          ),
-                        ],
-                      ),
+                    // Modern Location Pin Icon (replaces previous orange square anchor)
+                    Icon(
+                      Icons.location_on_rounded,
+                      size: 34,
+                      color: widget.isArrival
+                          ? AppColors.buttonBlack
+                          : AppColors.primary,
                     ),
                   ],
                 ),

@@ -209,32 +209,43 @@ class _DriverChatPageState extends State<DriverChatPage> {
         titleSpacing: 0,
         title: Row(
           children: [
-            // Driver Avatar
+            // Driver Initials Avatar with Verified Status Dot
             Stack(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 42,
+                  height: 42,
                   decoration: const BoxDecoration(
-                    color: AppColors.surfaceGrey,
+                    color: AppColors.avatarBeige,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    color: AppColors.textSecondary,
-                    size: 24,
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.driver.name.isNotEmpty
+                        ? widget.driver.name
+                            .split(' ')
+                            .map((e) => e.isNotEmpty ? e[0] : '')
+                            .take(2)
+                            .join()
+                            .toUpperCase()
+                        : 'MS',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
                 Positioned(
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    width: 10,
-                    height: 10,
+                    width: 12,
+                    height: 12,
                     decoration: BoxDecoration(
-                      color: AppColors.success,
+                      color: AppColors.refundGreen,
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.white, width: 1.5),
+                      border: Border.all(color: AppColors.white, width: 2),
                     ),
                   ),
                 ),
@@ -418,7 +429,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
             SafeArea(
               top: false,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(16, 6, 12, 10),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                 decoration: const BoxDecoration(
                   color: AppColors.white,
                   border: Border(
@@ -427,6 +438,24 @@ class _DriverChatPageState extends State<DriverChatPage> {
                 ),
                 child: Row(
                   children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.camera_alt_outlined,
+                        color: AppColors.textSecondary,
+                        size: 23,
+                      ),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: AppColors.buttonBlack,
+                            content: Text(
+                              'Partage de photo disponible prochainement.',
+                              style: GoogleFonts.inter(color: AppColors.white),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                     Expanded(
                       child: Container(
                         height: 44,

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
@@ -13,6 +12,7 @@ import 'package:seddo/features/home/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/home/presentation/widgets/insufficient_balance_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/home/presentation/widgets/orange_money_payment_sheet.dart';
+import 'package:seddo/features/home/presentation/widgets/ride_option_card_widget.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
 
@@ -111,11 +111,9 @@ class _RideBookingPageState extends State<RideBookingPage> {
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.getCarMarker();
-    final pickup = await MapMarkerHelper.getPickupBadgeMarker(
-      label: 'Prise en charge · 4 min',
-    );
-    final dest = await MapMarkerHelper.getDestinationSquareMarker();
+    final car = await MapMarkerHelper.get3DCarMarker();
+    final pickup = await MapMarkerHelper.getDeparturePinMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
 
     if (mounted) {
       setState(() {
@@ -183,7 +181,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
 
-    // 1. Pickup marker with black badge
+    // 1. Pickup departure location pin marker
     if (_pickupBadgeIcon != null) {
       markers.add(
         Marker(
@@ -193,12 +191,12 @@ class _RideBookingPageState extends State<RideBookingPage> {
             widget.departure.longitude,
           ),
           icon: _pickupBadgeIcon!,
-          anchor: const Offset(0.5, 0.95),
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }
 
-    // 2. Destination marker with orange square
+    // 2. Destination arrival location pin marker
     if (_destSquareIcon != null) {
       markers.add(
         Marker(
@@ -208,7 +206,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
             widget.destination.longitude,
           ),
           icon: _destSquareIcon!,
-          anchor: const Offset(0.5, 0.5),
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }
@@ -484,23 +482,21 @@ class _RideBookingPageState extends State<RideBookingPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Option 1: Seddo Eco Card
-                  _RideOptionCard(
+                  // Option 1: Seddo Eco Card (3D Vehicle)
+                  RideOptionCardWidget(
                     option: _ecoOption,
                     isSelected: _selectedRideType == RideType.eco,
-                    carSvgPath: 'assets/icons/ecocar.svg',
-                    carColor: AppColors.buttonBlack,
+                    imagePath: 'assets/images/seddo_eco_3d.jpg',
                     onTap: () => setState(() => _selectedRideType = RideType.eco),
                   ),
 
                   const SizedBox(height: 10),
 
-                  // Option 2: Seddo Confort Card
-                  _RideOptionCard(
+                  // Option 2: Seddo Confort Card (3D Vehicle)
+                  RideOptionCardWidget(
                     option: _confortOption,
                     isSelected: _selectedRideType == RideType.confort,
-                    carSvgPath: 'assets/icons/confortcar.svg',
-                    carColor: AppColors.primary,
+                    imagePath: 'assets/images/seddo_confort_3d.jpg',
                     onTap: () =>
                         setState(() => _selectedRideType = RideType.confort),
                   ),
@@ -609,119 +605,4 @@ class _RideBookingPageState extends State<RideBookingPage> {
 }
 
 /// Ride option tile card with custom border for selected state
-class _RideOptionCard extends StatelessWidget {
-  final RideOptionModel option;
-  final bool isSelected;
-  final String carSvgPath;
-  final Color carColor;
-  final VoidCallback onTap;
 
-  const _RideOptionCard({
-    required this.option,
-    required this.isSelected,
-    required this.carSvgPath,
-    required this.carColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 12,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-            border: Border.all(
-              color: isSelected
-                  ? AppColors.textPrimary
-                  : AppColors.cardBorder,
-              width: isSelected ? 2.0 : 1.0,
-            ),
-          ),
-          child: Row(
-            children: [
-              // Car Icon
-              SizedBox(
-                width: 52,
-                height: 38,
-                child: SvgPicture.asset(
-                  carSvgPath,
-                  colorFilter: ColorFilter.mode(carColor, BlendMode.srcIn),
-                ),
-              ),
-              const SizedBox(width: 14),
-
-              // Title, Passenger Capacity and Time Subtitle
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            option.title,
-                            style: GoogleFonts.inter(
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.person_rounded,
-                          size: 13,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${option.capacity}',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      option.subtitle,
-                      style: GoogleFonts.inter(
-                        fontSize: 12.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Price
-              Text(
-                option.formattedPrice,
-                style: GoogleFonts.inter(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

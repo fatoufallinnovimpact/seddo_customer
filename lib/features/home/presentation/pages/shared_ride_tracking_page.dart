@@ -41,7 +41,8 @@ class SharedRideTrackingPage extends StatefulWidget {
 class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
-  BitmapDescriptor? _destSquareIcon;
+  BitmapDescriptor? _pickupPinIcon;
+  BitmapDescriptor? _destPinIcon;
 
   @override
   void initState() {
@@ -56,12 +57,14 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   }
 
   Future<void> _loadMarkers() async {
-    final car = await MapMarkerHelper.getCarMarker();
-    final dest = await MapMarkerHelper.getDestinationSquareMarker();
+    final car = await MapMarkerHelper.get3DCarMarker();
+    final pickup = await MapMarkerHelper.getDeparturePinMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
     if (mounted) {
       setState(() {
         _carMarkerIcon = car;
-        _destSquareIcon = dest;
+        _pickupPinIcon = pickup;
+        _destPinIcon = dest;
       });
     }
   }
@@ -69,20 +72,37 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
 
-    if (_destSquareIcon != null) {
+    // 1. Departure location pin
+    if (_pickupPinIcon != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId('dest_square'),
+          markerId: const MarkerId('pickup_pin'),
           position: LatLng(
-            widget.destination.latitude,
-            widget.destination.longitude,
+            widget.departure.latitude,
+            widget.departure.longitude,
           ),
-          icon: _destSquareIcon!,
-          anchor: const Offset(0.5, 0.5),
+          icon: _pickupPinIcon!,
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }
 
+    // 2. Destination location pin
+    if (_destPinIcon != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('dest_pin'),
+          position: LatLng(
+            widget.destination.latitude,
+            widget.destination.longitude,
+          ),
+          icon: _destPinIcon!,
+          anchor: const Offset(0.5, 1.0),
+        ),
+      );
+    }
+
+    // 3. 3D Driver car
     if (_carMarkerIcon != null) {
       markers.add(
         Marker(

@@ -69,14 +69,9 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.getCarMarker();
-    final pickup = await MapMarkerHelper.getPickupBadgeMarker(
-      label: 'Prise en charge · 3 min',
-    );
-    final dest = await MapMarkerHelper.getPickupBadgeMarker(
-      label: 'Arrivée ${widget.rideOption.estimatedArrival}',
-      dotColor: AppColors.buttonBlack,
-    );
+    final car = await MapMarkerHelper.get3DCarMarker();
+    final pickup = await MapMarkerHelper.getDeparturePinMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
 
     if (mounted) {
       setState(() {
@@ -406,7 +401,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
 
-    // 1. Pickup marker
+    // 1. Pickup departure location pin
     if (_pickupBadgeIcon != null) {
       markers.add(
         Marker(
@@ -416,12 +411,12 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
             widget.departure.longitude,
           ),
           icon: _pickupBadgeIcon!,
-          anchor: const Offset(0.5, 0.95),
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }
 
-    // 2. Destination ETA marker (Screenshot 1: "Arrivée 18:42")
+    // 2. Destination arrival location pin
     if (_destBadgeIcon != null) {
       markers.add(
         Marker(
@@ -431,7 +426,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
             widget.destination.longitude,
           ),
           icon: _destBadgeIcon!,
-          anchor: const Offset(0.5, 0.95),
+          anchor: const Offset(0.5, 1.0),
         ),
       );
     }

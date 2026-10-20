@@ -52,9 +52,9 @@ class HomeSuggestionCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 1. Icon
+                // 1. Icon / 3D Vehicle
                 SizedBox(
-                  height: 32,
+                  height: 46,
                   child: Center(child: icon),
                 ),
                 const SizedBox(height: 6),
