@@ -49,7 +49,9 @@ class _HomePageContent extends StatelessWidget {
     final PlaceSearchResult? selectedPlace =
         await Navigator.of(context).push<PlaceSearchResult>(
       SlideRightToLeftRoute(
-        page: const PlaceSearchPage(),
+        page: PlaceSearchPage(
+          currentUserLocation: homeBloc.state.userLocation,
+        ),
       ),
     );
 

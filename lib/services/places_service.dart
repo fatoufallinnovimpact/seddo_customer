@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:seddo/core/utils/map_config.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
@@ -34,15 +36,20 @@ class PlaceDetails {
 class PlacesService {
   final String _apiKey;
   final Dio _dio;
+  final Future<LatLng?> Function()? _locationFetcher;
   String _sessionToken = const Uuid().v4();
 
-  PlacesService([String? apiKey, Dio? dio])
-      : _apiKey = apiKey ??
+  PlacesService([
+    String? apiKey,
+    Dio? dio,
+    Future<LatLng?> Function()? locationFetcher,
+  ])  : _apiKey = apiKey ??
             const String.fromEnvironment(
               'PLACES_API_KEY',
               defaultValue: MapConfig.googleMapsApiKeyAndroid,
             ),
-        _dio = dio ?? Dio();
+        _dio = dio ?? Dio(),
+        _locationFetcher = locationFetcher;
 
   /// Curated database of verified Dakar places for instant fallback & matching
   static final List<PlaceSuggestion> _dakarPresets = [
@@ -431,5 +438,48 @@ class PlacesService {
       longitude: lng,
     );
   }
+
+  /// Attempts to fetch the current user GPS coordinates
+  Future<LatLng?> getCurrentCoordinates() async {
+    if (_locationFetcher != null) {
+      return await _locationFetcher();
+    }
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return null;
+      }
+      if (permission == LocationPermission.deniedForever) return null;
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 4),
+        ),
+      );
+      return LatLng(position.latitude, position.longitude);
+    } catch (_) {
+      try {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null) {
+          return LatLng(lastKnown.latitude, lastKnown.longitude);
+        }
+      } catch (_) {}
+      return null;
+    }
+  }
+
+  /// Resolves the current user location to a real physical PlaceSearchResult address in Dakar
+  Future<PlaceSearchResult?> getCurrentPlace({LatLng? fallbackLocation}) async {
+    final location = await getCurrentCoordinates() ?? fallbackLocation;
+    if (location == null) return null;
+    return await reverseGeocode(location.latitude, location.longitude);
+  }
 }
+
 

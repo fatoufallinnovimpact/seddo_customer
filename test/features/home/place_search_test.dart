@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/services/places_service.dart';
@@ -154,5 +155,54 @@ void main() {
       expect(selectedPlace!.latitude, 14.7231);
       expect(selectedPlace!.longitude, -17.4912);
     });
+
+    testWidgets(
+        'Tapping "Utiliser ma position actuelle" writes real physical address into the field',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      final placesService = PlacesService(
+        null,
+        null,
+        () async => const LatLng(14.7431, -17.5195), // Almadies coordinates
+      );
+
+      await tester.pumpWidget(
+        EasyLocalization(
+          supportedLocales: const [Locale('fr')],
+          path: 'assets/translations',
+          assetLoader: const MockSearchAssetLoader(),
+          fallbackLocale: const Locale('fr'),
+          startLocale: const Locale('fr'),
+          saveLocale: false,
+          useOnlyLangCode: true,
+          child: MaterialApp(
+            home: PlaceSearchPage(
+              placesService: placesService,
+              currentUserLocation: const LatLng(14.7431, -17.5195),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Find "Utiliser ma position actuelle pour l'arrivée"
+      final useCurrentLocationBtn =
+          find.text('Utiliser ma position actuelle pour l\'arrivée');
+      expect(useCurrentLocationBtn, findsOneWidget);
+
+      await tester.tap(useCurrentLocationBtn);
+      await tester.pumpAndSettle();
+
+      // Arrival field should now contain real address (e.g. Almadies)
+      final arrivalField = find.byType(TextField).last;
+      final TextField fieldWidget = tester.widget(arrivalField);
+      expect(fieldWidget.controller?.text, isNot('Ma position actuelle'));
+      expect(fieldWidget.controller?.text, isNotEmpty);
+      expect(fieldWidget.controller?.text, contains('Almadies'));
+    });
   });
 }
+

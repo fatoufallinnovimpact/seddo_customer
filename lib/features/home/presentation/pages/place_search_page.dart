@@ -26,17 +26,20 @@ class PlaceSearchPage extends StatefulWidget {
   final PlacesService? placesService;
   final String? initialPickup;
   final String? initialDestination;
+  final LatLng? currentUserLocation;
 
   const PlaceSearchPage({
     super.key,
     this.placesService,
     this.initialPickup,
     this.initialDestination,
+    this.currentUserLocation,
   });
 
   @override
   State<PlaceSearchPage> createState() => _PlaceSearchPageState();
 }
+
 
 class _PlaceSearchPageState extends State<PlaceSearchPage> {
   late final PlacesService _placesService;
@@ -91,6 +94,32 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
     // Initial search for arrival
     _searchPlaces(_arrivalController.text);
+
+    // Resolve real physical address for current position
+    _resolveInitialCurrentPosition();
+  }
+
+  Future<void> _resolveInitialCurrentPosition() async {
+    if (widget.initialPickup != null &&
+        widget.initialPickup != currentPositionText) {
+      return;
+    }
+
+    try {
+      final currentPlace = await _placesService.getCurrentPlace(
+        fallbackLocation: widget.currentUserLocation,
+      );
+
+      if (currentPlace != null && mounted) {
+        if (_departureController.text.isEmpty ||
+            _departureController.text == currentPositionText) {
+          setState(() {
+            _departureController.text = currentPlace.mainText;
+            _selectedDepartureResult = currentPlace;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   void _onArrivalChanged() {
@@ -143,15 +172,43 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     _searchPlaces(activeText);
   }
 
-  /// Sets current position on the currently focused field
-  void _useCurrentPositionForActiveField() {
+  /// Sets real physical address of current position on the currently focused field
+  Future<void> _useCurrentPositionForActiveField() async {
+    final targetFieldIsArrival = _isEditingArrival;
+    final targetController =
+        targetFieldIsArrival ? _arrivalController : _departureController;
+
     setState(() {
-      if (_isEditingArrival) {
-        _arrivalController.text = currentPositionText;
-      } else {
-        _departureController.text = currentPositionText;
-      }
+      _isLoading = true;
     });
+
+    try {
+      final currentPlace = await _placesService.getCurrentPlace(
+        fallbackLocation: widget.currentUserLocation,
+      );
+
+      if (currentPlace != null && mounted) {
+        setState(() {
+          targetController.text = currentPlace.mainText;
+          if (targetFieldIsArrival) {
+            _selectedArrivalResult = currentPlace;
+          } else {
+            _selectedDepartureResult = currentPlace;
+            _isEditingArrival = true;
+            _arrivalFocusNode.requestFocus();
+          }
+          _isLoading = false;
+        });
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        targetController.text = currentPositionText;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _openMapPicker({required bool isArrival}) async {
