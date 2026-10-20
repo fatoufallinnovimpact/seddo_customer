@@ -7,6 +7,7 @@ import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
 
@@ -256,6 +257,36 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       _searchPlaces(
         isArrival ? _arrivalController.text : _departureController.text,
       );
+    }
+  }
+
+  Future<void> _openSavedPlaces() async {
+    _departureFocusNode.unfocus();
+    _arrivalFocusNode.unfocus();
+
+    final PlaceSearchResult? selectedSavedPlace =
+        await Navigator.of(context).push<PlaceSearchResult>(
+      SlideRightToLeftRoute(
+        page: SavedPlacesPage(
+          placesService: _placesService,
+          currentUserLocation: widget.currentUserLocation,
+        ),
+      ),
+    );
+
+    if (selectedSavedPlace != null && mounted) {
+      setState(() {
+        if (_isEditingArrival) {
+          _selectedArrivalResult = selectedSavedPlace;
+          _arrivalController.text = selectedSavedPlace.mainText;
+        } else {
+          _selectedDepartureResult = selectedSavedPlace;
+          _departureController.text = selectedSavedPlace.mainText;
+          _isEditingArrival = true;
+          _arrivalFocusNode.requestFocus();
+        }
+        _suggestions = [];
+      });
     }
   }
 
@@ -651,11 +682,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               iconSvgPath: 'assets/icons/star-svgrepo-com.svg',
               title: 'Lieux enregistrés',
               subtitle: 'Maison, Travail, Aéroport',
-              onTap: () {
-                // Pre-fill or open saved places
-                _arrivalController.text = 'Almadies';
-                _searchPlaces('Almadies');
-              },
+              onTap: _openSavedPlaces,
             ),
 
             _QuickActionTile(

@@ -203,6 +203,46 @@ void main() {
       expect(fieldWidget.controller?.text, isNotEmpty);
       expect(fieldWidget.controller?.text, contains('Almadies'));
     });
+
+    testWidgets('Tapping "Lieux enregistrés" opens SavedPlacesPage and selecting auto-fills the field',
+        (tester) async {
+      await tester.pumpWidget(
+        EasyLocalization(
+          supportedLocales: const [Locale('fr')],
+          path: 'assets/translations',
+          assetLoader: const MockSearchAssetLoader(),
+          fallbackLocale: const Locale('fr'),
+          startLocale: const Locale('fr'),
+          saveLocale: false,
+          useOnlyLangCode: true,
+          child: const MaterialApp(
+            home: PlaceSearchPage(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Tap on Lieux enregistrés
+      final savedPlacesTile = find.text('Lieux enregistrés');
+      expect(savedPlacesTile, findsOneWidget);
+
+      await tester.tap(savedPlacesTile);
+      await tester.pumpAndSettle();
+
+      // Verify SavedPlacesPage is shown with default presets
+      expect(find.text('Maison'), findsOneWidget);
+      expect(find.text('Travail'), findsOneWidget);
+
+      // Select "Maison"
+      await tester.tap(find.text('Maison'));
+      await tester.pumpAndSettle();
+
+      // Verify we are back on PlaceSearchPage and the arrival field is auto-filled with "Maison"
+      final arrivalField = find.byType(TextField).last;
+      final TextField arrivalWidget = tester.widget(arrivalField);
+      expect(arrivalWidget.controller?.text, 'Maison');
+    });
   });
 }
 
