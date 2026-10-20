@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 import 'package:seddo/core/utils/map_config.dart';
+import 'package:seddo/features/home/domain/models/place_search_result.dart';
 
 class PlaceSuggestion {
   final String placeId;
@@ -299,4 +300,136 @@ class PlacesService {
       );
     }
   }
+
+  /// Reverse geocode coordinates (lat, lng) to a clean human-readable address in Dakar
+  Future<PlaceSearchResult> reverseGeocode(double lat, double lng) async {
+    try {
+      final res = await _dio.get(
+        'https://maps.googleapis.com/maps/api/geocode/json',
+        queryParameters: {
+          'latlng': '$lat,$lng',
+          'key': _apiKey,
+          'language': 'fr',
+        },
+        options: Options(
+          sendTimeout: const Duration(seconds: 4),
+          receiveTimeout: const Duration(seconds: 4),
+        ),
+      );
+
+      final results = (res.data['results'] as List?) ?? [];
+      if (results.isNotEmpty) {
+        // 1. Look for a result with a clean route / street and sublocality
+        for (final item in results) {
+          final components = (item['address_components'] as List?) ?? [];
+          String? streetNumber;
+          String? route;
+          String? sublocality;
+          String? locality;
+
+          for (final c in components) {
+            final types = (c['types'] as List?) ?? [];
+            if (types.contains('street_number')) {
+              streetNumber = c['long_name'];
+            } else if (types.contains('route')) {
+              route = c['long_name'];
+            } else if (types.contains('sublocality') ||
+                types.contains('sublocality_level_1') ||
+                types.contains('neighborhood')) {
+              sublocality = c['long_name'];
+            } else if (types.contains('locality')) {
+              locality = c['long_name'];
+            }
+          }
+
+          if (route != null) {
+            final main = streetNumber != null
+                ? '$streetNumber $route${sublocality != null ? ', $sublocality' : ''}'
+                : '$route${sublocality != null ? ', $sublocality' : ''}';
+            final secondary = sublocality != null
+                ? '$sublocality, ${locality ?? 'Dakar'}, Sénégal'
+                : '${locality ?? 'Dakar'}, Sénégal';
+            final full =
+                item['formatted_address'] as String? ?? '$main, $secondary';
+
+            return PlaceSearchResult(
+              id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+              mainText: _cleanAddress(main),
+              secondaryText: _cleanAddress(secondary),
+              fullAddress: _cleanAddress(full),
+              latitude: lat,
+              longitude: lng,
+            );
+          }
+        }
+
+        // 2. Fallback to first result formatted address stripped of Plus Codes
+        final rawFormatted =
+            results.first['formatted_address'] as String? ?? 'Dakar, Sénégal';
+        final cleaned = _cleanAddress(rawFormatted);
+        final parts = cleaned.split(',');
+        final main = parts.first.trim();
+        final secondary = parts.length > 1
+            ? parts.sublist(1).join(',').trim()
+            : 'Dakar, Sénégal';
+
+        return PlaceSearchResult(
+          id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+          mainText: main,
+          secondaryText: secondary,
+          fullAddress: cleaned,
+          latitude: lat,
+          longitude: lng,
+        );
+      }
+    } catch (_) {
+      // Graceful fallback to nearest preset
+    }
+
+    return _findNearestDakarPreset(lat, lng);
+  }
+
+  static String _cleanAddress(String input) {
+    return input
+        .replaceFirst(RegExp(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,4}[,\s]*'), '')
+        .trim();
+  }
+
+  PlaceSearchResult _findNearestDakarPreset(double lat, double lng) {
+    PlaceSuggestion? best;
+    double minDistance = double.infinity;
+
+    for (final item in _dakarPresets) {
+      if (item.latitude != null && item.longitude != null) {
+        final dLat = lat - item.latitude!;
+        final dLng = lng - item.longitude!;
+        final distSq = (dLat * dLat) + (dLng * dLng);
+        if (distSq < minDistance) {
+          minDistance = distSq;
+          best = item;
+        }
+      }
+    }
+
+    if (best != null) {
+      return PlaceSearchResult(
+        id: best.placeId,
+        mainText: best.mainText ?? best.description,
+        secondaryText: best.secondaryText ?? 'Dakar, Sénégal',
+        fullAddress: best.description,
+        latitude: lat,
+        longitude: lng,
+      );
+    }
+
+    return PlaceSearchResult(
+      id: 'default_location',
+      mainText: 'Rue NG-112, Ngor',
+      secondaryText: 'Près de la mosquée de Ngor',
+      fullAddress: 'Rue NG-112, Ngor, Dakar, Sénégal',
+      latitude: lat,
+      longitude: lng,
+    );
+  }
 }
+

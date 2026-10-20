@@ -2,9 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
 
 /// Interactive place search screen matching the reference design:
@@ -43,6 +46,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   final FocusNode _departureFocusNode = FocusNode();
   final FocusNode _arrivalFocusNode = FocusNode();
+
+  PlaceSearchResult? _selectedDepartureResult;
+  PlaceSearchResult? _selectedArrivalResult;
 
   // true if currently typing in arrival, false if typing in departure
   bool _isEditingArrival = true;
@@ -148,6 +154,54 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     });
   }
 
+  Future<void> _openMapPicker({required bool isArrival}) async {
+    _departureFocusNode.unfocus();
+    _arrivalFocusNode.unfocus();
+
+    LatLng? initialLocation;
+    if (isArrival && _selectedArrivalResult != null) {
+      initialLocation = LatLng(
+        _selectedArrivalResult!.latitude,
+        _selectedArrivalResult!.longitude,
+      );
+    } else if (!isArrival && _selectedDepartureResult != null) {
+      initialLocation = LatLng(
+        _selectedDepartureResult!.latitude,
+        _selectedDepartureResult!.longitude,
+      );
+    }
+
+    final PlaceSearchResult? result =
+        await Navigator.of(context).push<PlaceSearchResult>(
+      SlideRightToLeftRoute(
+        page: SelectOnMapPage(
+          isArrival: isArrival,
+          initialLocation: initialLocation,
+          placesService: _placesService,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        if (isArrival) {
+          _selectedArrivalResult = result;
+          _arrivalController.text = result.mainText;
+          _isEditingArrival = true;
+        } else {
+          _selectedDepartureResult = result;
+          _departureController.text = result.mainText;
+          // Switch to arrival after choosing departure on map
+          _isEditingArrival = true;
+          _arrivalFocusNode.requestFocus();
+        }
+      });
+      _searchPlaces(
+        isArrival ? _arrivalController.text : _departureController.text,
+      );
+    }
+  }
+
   Future<void> _onSelectSuggestion(PlaceSuggestion suggestion) async {
     setState(() => _isLoading = true);
     final details = await _placesService.details(suggestion.placeId);
@@ -163,7 +217,19 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       longitude: details.lng,
     );
 
-    Navigator.of(context).pop(placeResult);
+    if (_isEditingArrival) {
+      _selectedArrivalResult = placeResult;
+      Navigator.of(context).pop(placeResult);
+    } else {
+      setState(() {
+        _selectedDepartureResult = placeResult;
+        _departureController.text = placeResult.mainText;
+        _isEditingArrival = true;
+        _isLoading = false;
+      });
+      _arrivalFocusNode.requestFocus();
+      _searchPlaces(_arrivalController.text);
+    }
   }
 
   @override
@@ -329,15 +395,35 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                   ),
                                 ),
                                 if (_departureController.text.isNotEmpty &&
-                                    !_isEditingArrival)
+                                    !_isEditingArrival) ...[
                                   GestureDetector(
-                                    onTap: () => _departureController.clear(),
+                                    onTap: () {
+                                      _departureController.clear();
+                                      _selectedDepartureResult = null;
+                                    },
                                     child: const Icon(
                                       Icons.close_rounded,
                                       size: 18,
                                       color: AppColors.textPrimary,
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                ],
+                                GestureDetector(
+                                  onTap: () =>
+                                      _openMapPicker(isArrival: false),
+                                  child: SvgPicture.asset(
+                                    'assets/icons/map-svgrepo-com.svg',
+                                    width: 17,
+                                    height: 17,
+                                    colorFilter: ColorFilter.mode(
+                                      !_isEditingArrival
+                                          ? AppColors.primary
+                                          : AppColors.textSecondary,
+                                      BlendMode.srcIn,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -390,15 +476,35 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                     ),
                                   ),
                                 ),
-                                if (_arrivalController.text.isNotEmpty)
+                                if (_arrivalController.text.isNotEmpty) ...[
                                   GestureDetector(
-                                    onTap: () => _arrivalController.clear(),
+                                    onTap: () {
+                                      _arrivalController.clear();
+                                      _selectedArrivalResult = null;
+                                    },
                                     child: const Icon(
                                       Icons.close_rounded,
                                       size: 18,
                                       color: AppColors.textPrimary,
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                ],
+                                GestureDetector(
+                                  onTap: () =>
+                                      _openMapPicker(isArrival: true),
+                                  child: SvgPicture.asset(
+                                    'assets/icons/map-svgrepo-com.svg',
+                                    width: 17,
+                                    height: 17,
+                                    colorFilter: ColorFilter.mode(
+                                      _isEditingArrival
+                                          ? AppColors.primary
+                                          : AppColors.textSecondary,
+                                      BlendMode.srcIn,
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -498,10 +604,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             _QuickActionTile(
               iconSvgPath: 'assets/icons/map-svgrepo-com.svg',
               title: 'Choisir sur la carte',
-              subtitle: 'Placer le point d\'arrivée à la main',
-              onTap: () {
-                Navigator.of(context).pop();
-              },
+              subtitle: _isEditingArrival
+                  ? 'Placer le point d\'arrivée à la main'
+                  : 'Placer le point de départ à la main',
+              onTap: () => _openMapPicker(isArrival: _isEditingArrival),
             ),
 
             const Divider(
@@ -642,9 +748,78 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           ],
         ),
       ),
+      bottomNavigationBar: _arrivalController.text.isNotEmpty
+          ? SafeArea(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingMd,
+                  vertical: 10,
+                ),
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x0C000000),
+                      blurRadius: 10,
+                      offset: Offset(0, -3),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: () {
+                      final result = _selectedArrivalResult ??
+                          PlaceSearchResult(
+                            id: 'arrival_selected',
+                            mainText: _arrivalController.text,
+                            secondaryText: 'Dakar, Sénégal',
+                            fullAddress: _arrivalController.text,
+                            latitude: 14.7547,
+                            longitude: -17.5142,
+                          );
+                      Navigator.of(context).pop(result);
+                    },
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Confirmer le trajet',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.arrow_forward_rounded,
+                          size: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }
+
 
 class _QuickActionTile extends StatelessWidget {
   final String iconSvgPath;
