@@ -839,10 +839,11 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                           PlaceSearchResult(
                             id: 'arrival_selected',
                             mainText: _arrivalController.text,
-                            secondaryText: 'Dakar, Sénégal',
+                            secondaryText:
+                                _selectedArrivalResult?.secondaryText ?? '',
                             fullAddress: _arrivalController.text,
-                            latitude: 14.7547,
-                            longitude: -17.5142,
+                            latitude: _selectedArrivalResult?.latitude ?? 14.7547,
+                            longitude: _selectedArrivalResult?.longitude ?? -17.5142,
                           );
                       Navigator.of(context).pop(result);
                     },

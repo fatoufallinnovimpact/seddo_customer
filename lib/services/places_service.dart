@@ -308,7 +308,7 @@ class PlacesService {
     }
   }
 
-  /// Reverse geocode coordinates (lat, lng) to a clean human-readable address in Dakar
+  /// Reverse geocode coordinates (lat, lng) to a clean human-readable address in any country
   Future<PlaceSearchResult> reverseGeocode(double lat, double lng) async {
     try {
       final res = await _dio.get(
@@ -326,13 +326,15 @@ class PlacesService {
 
       final results = (res.data['results'] as List?) ?? [];
       if (results.isNotEmpty) {
-        // 1. Look for a result with a clean route / street and sublocality
+        // 1. Look for a result with real street/neighborhood/city/country components
         for (final item in results) {
           final components = (item['address_components'] as List?) ?? [];
           String? streetNumber;
           String? route;
           String? sublocality;
           String? locality;
+          String? adminArea;
+          String? country;
 
           for (final c in components) {
             final types = (c['types'] as List?) ?? [];
@@ -344,26 +346,56 @@ class PlacesService {
                 types.contains('sublocality_level_1') ||
                 types.contains('neighborhood')) {
               sublocality = c['long_name'];
-            } else if (types.contains('locality')) {
+            } else if (types.contains('locality') ||
+                types.contains('postal_town')) {
               locality = c['long_name'];
+            } else if (types.contains('administrative_area_level_1')) {
+              adminArea = c['long_name'];
+            } else if (types.contains('country')) {
+              country = c['long_name'];
             }
           }
 
-          if (route != null) {
-            final main = streetNumber != null
-                ? '$streetNumber $route${sublocality != null ? ', $sublocality' : ''}'
-                : '$route${sublocality != null ? ', $sublocality' : ''}';
-            final secondary = sublocality != null
-                ? '$sublocality, ${locality ?? 'Dakar'}, Sénégal'
-                : '${locality ?? 'Dakar'}, Sénégal';
-            final full =
-                item['formatted_address'] as String? ?? '$main, $secondary';
+          final isUnnamedRoad = route != null &&
+              (route.toLowerCase().contains('route sans nom') ||
+                  route.toLowerCase().contains('unnamed road'));
+
+          // Build clean, human-friendly mainText
+          String? main;
+          if (route != null && !isUnnamedRoad) {
+            main = streetNumber != null ? '$streetNumber $route' : route;
+            if (sublocality != null && !main.contains(sublocality)) {
+              main = '$main, $sublocality';
+            }
+          } else {
+            // When on an unnamed road or no named street, use neighborhood, locality, or admin area
+            main = sublocality ?? locality ?? adminArea;
+          }
+
+          if (main != null && main.isNotEmpty) {
+            // Build real country-aware secondaryText
+            final city = locality ?? adminArea ?? sublocality;
+            String secondary;
+            if (city != null && country != null) {
+              secondary = city != country ? '$city, $country' : country;
+            } else if (country != null) {
+              secondary = country;
+            } else if (city != null) {
+              secondary = city;
+            } else {
+              secondary = '';
+            }
+
+            final formatted = item['formatted_address'] as String? ??
+                (secondary.isNotEmpty ? '$main, $secondary' : main);
 
             return PlaceSearchResult(
               id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
               mainText: _cleanAddress(main),
-              secondaryText: _cleanAddress(secondary),
-              fullAddress: _cleanAddress(full),
+              secondaryText: _cleanAddress(
+                secondary.isNotEmpty ? secondary : _cleanAddress(formatted),
+              ),
+              fullAddress: _cleanAddress(formatted),
               latitude: lat,
               longitude: lng,
             );
@@ -372,25 +404,27 @@ class PlacesService {
 
         // 2. Fallback to first result formatted address stripped of Plus Codes
         final rawFormatted =
-            results.first['formatted_address'] as String? ?? 'Dakar, Sénégal';
+            results.first['formatted_address'] as String? ?? '';
         final cleaned = _cleanAddress(rawFormatted);
         final parts = cleaned.split(',');
         final main = parts.first.trim();
         final secondary = parts.length > 1
             ? parts.sublist(1).join(',').trim()
-            : 'Dakar, Sénégal';
+            : cleaned;
 
         return PlaceSearchResult(
           id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
-          mainText: main,
-          secondaryText: secondary,
-          fullAddress: cleaned,
+          mainText: main.isNotEmpty ? main : 'Position sélectionnée',
+          secondaryText: secondary.isNotEmpty ? secondary : '',
+          fullAddress: cleaned.isNotEmpty
+              ? cleaned
+              : '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}',
           latitude: lat,
           longitude: lng,
         );
       }
     } catch (_) {
-      // Graceful fallback to nearest preset
+      // Graceful fallback
     }
 
     return _findNearestDakarPreset(lat, lng);
@@ -418,7 +452,8 @@ class PlacesService {
       }
     }
 
-    if (best != null) {
+    // Only use local Dakar preset if within ~60km (distSq < 0.3)
+    if (best != null && minDistance < 0.3) {
       return PlaceSearchResult(
         id: best.placeId,
         mainText: best.mainText ?? best.description,
@@ -429,15 +464,17 @@ class PlacesService {
       );
     }
 
+    // If outside Dakar or in another country (e.g. Guinée)
     return PlaceSearchResult(
-      id: 'default_location',
-      mainText: 'Rue NG-112, Ngor',
-      secondaryText: 'Près de la mosquée de Ngor',
-      fullAddress: 'Rue NG-112, Ngor, Dakar, Sénégal',
+      id: 'custom_pin_${lat.toStringAsFixed(4)}_${lng.toStringAsFixed(4)}',
+      mainText: 'Position sur la carte',
+      secondaryText: '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}',
+      fullAddress: '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}',
       latitude: lat,
       longitude: lng,
     );
   }
+
 
   /// Attempts to fetch the current user GPS coordinates
   Future<LatLng?> getCurrentCoordinates() async {

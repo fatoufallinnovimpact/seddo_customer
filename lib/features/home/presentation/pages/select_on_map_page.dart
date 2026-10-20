@@ -111,7 +111,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
         : (widget.isArrival ? "Point d'arrivée" : "Point de départ");
     final subtitle = _addressSubtitle.isNotEmpty
         ? _addressSubtitle
-        : "Dakar, Sénégal";
+        : '${_currentCenter.latitude.toStringAsFixed(4)}, ${_currentCenter.longitude.toStringAsFixed(4)}';
     final full = _fullAddress.isNotEmpty ? _fullAddress : '$title, $subtitle';
 
     final result = PlaceSearchResult(
@@ -380,7 +380,9 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                   Text(
                     _addressSubtitle.isNotEmpty
                         ? _addressSubtitle
-                        : "Dakar, Sénégal",
+                        : (_isLoadingAddress
+                            ? "Recherche..."
+                            : "${_currentCenter.latitude.toStringAsFixed(4)}, ${_currentCenter.longitude.toStringAsFixed(4)}"),
                     style: GoogleFonts.inter(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w400,
