@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/services/places_service.dart';
 
@@ -170,11 +171,11 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                         vertical: 7,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF161616),
-                        borderRadius: BorderRadius.circular(10),
+                        color: AppColors.mapPinAnchor,
+                        borderRadius: BorderRadius.circular(AppConstants.radiusItem),
                         boxShadow: const [
                           BoxShadow(
-                            color: Color(0x33000000),
+                            color: AppColors.shadowHeavy,
                             blurRadius: 8,
                             offset: Offset(0, 3),
                           ),
@@ -195,7 +196,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                     Container(
                       width: 2,
                       height: 12,
-                      color: const Color(0xFF161616),
+                      color: AppColors.mapPinAnchor,
                     ),
 
                     // Square anchor box: orange center with crisp white border
@@ -204,14 +205,14 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                       height: 14,
                       decoration: BoxDecoration(
                         color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(2),
+                        borderRadius: BorderRadius.circular(AppConstants.radiusXs),
                         border: Border.all(
                           color: AppColors.white,
                           width: 2.5,
                         ),
                         boxShadow: const [
                           BoxShadow(
-                            color: Color(0x3D000000),
+                            color: AppColors.shadowPinBox,
                             blurRadius: 4,
                             offset: Offset(0, 2),
                           ),
@@ -229,14 +230,14 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
             child: Padding(
               padding: const EdgeInsets.only(left: 16, top: 12),
               child: Container(
-                width: 44,
-                height: 44,
+                width: AppConstants.circularIconContainerSize,
+                height: AppConstants.circularIconContainerSize,
                 decoration: const BoxDecoration(
                   color: AppColors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Color(0x1F000000),
+                      color: AppColors.shadowMarker,
                       blurRadius: 10,
                       offset: Offset(0, 3),
                     ),
@@ -259,14 +260,14 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
             right: 16,
             bottom: 220 + MediaQuery.of(context).padding.bottom,
             child: Container(
-              width: 44,
-              height: 44,
+              width: AppConstants.circularIconContainerSize,
+              height: AppConstants.circularIconContainerSize,
               decoration: const BoxDecoration(
                 color: AppColors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0x1F000000),
+                    color: AppColors.shadowMarker,
                     blurRadius: 10,
                     offset: Offset(0, 3),
                   ),
@@ -296,11 +297,11 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
               decoration: const BoxDecoration(
                 color: AppColors.white,
                 borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(28),
+                  top: Radius.circular(AppConstants.radiusSheet),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0x18000000),
+                    color: AppColors.shadowDarkBlack,
                     blurRadius: 24,
                     offset: Offset(0, -4),
                   ),
@@ -319,11 +320,11 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                   // Center drag handle
                   Center(
                     child: Container(
-                      width: 44,
+                      width: AppConstants.circularIconContainerSize,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE2E2E2),
-                        borderRadius: BorderRadius.circular(2),
+                        color: AppColors.dragHandle,
+                        borderRadius: BorderRadius.circular(AppConstants.radiusXs),
                       ),
                     ),
                   ),
@@ -335,7 +336,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF757575),
+                      color: AppColors.textMuted,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -386,7 +387,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                     style: GoogleFonts.inter(
                       fontSize: 13.5,
                       fontWeight: FontWeight.w400,
-                      color: const Color(0xFF757575),
+                      color: AppColors.textMuted,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -396,7 +397,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                   // Orange "Confirmer ce point" Button
                   SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: AppConstants.buttonHeight,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,

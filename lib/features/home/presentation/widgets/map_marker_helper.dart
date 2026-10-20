@@ -19,7 +19,7 @@ abstract class MapMarkerHelper {
 
     // 1. Car Body Shadow
     final shadowPaint = Paint()
-      ..color = const Color(0x33000000)
+      ..color = AppColors.shadowHeavy
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
@@ -60,7 +60,7 @@ abstract class MapMarkerHelper {
 
     // 4. Windshield & Windows (Tinted glass)
     final glassPaint = Paint()
-      ..color = const Color(0xFFC7D2FE)
+      ..color = AppColors.mapCarWindow
       ..style = PaintingStyle.fill;
 
     // Front windshield
@@ -82,7 +82,7 @@ abstract class MapMarkerHelper {
     );
 
     // Roof
-    final roofPaint = Paint()..color = const Color(0xFF262626);
+    final roofPaint = Paint()..color = AppColors.mapCarRoof;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(size.width * 0.45, 5, size.width * 0.24, size.height - 10),
@@ -92,7 +92,7 @@ abstract class MapMarkerHelper {
     );
 
     // Headlights (Warm white)
-    final lightPaint = Paint()..color = const Color(0xFFFFFBEB);
+    final lightPaint = Paint()..color = AppColors.mapCarLight;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(3, 4, 3, 5),

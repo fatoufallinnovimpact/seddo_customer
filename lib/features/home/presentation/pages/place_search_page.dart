@@ -347,14 +347,14 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               child: Row(
                 children: [
                   Container(
-                    width: 42,
-                    height: 42,
+                    width: AppConstants.circularButtonSize,
+                    height: AppConstants.circularButtonSize,
                     decoration: BoxDecoration(
                       color: AppColors.white,
                       shape: BoxShape.circle,
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x0F000000),
+                          color: AppColors.shadowSoftBlack,
                           blurRadius: 8,
                           offset: Offset(0, 2),
                         ),
@@ -393,8 +393,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF7F5F0), // Soft cream warm grey background
-                  borderRadius: BorderRadius.circular(22),
+                  color: AppColors.warmCream, // Soft cream warm grey background
+                  borderRadius: BorderRadius.circular(AppConstants.radiusContainer),
                   border: Border.all(
                     color: AppColors.cardBorder,
                     width: 1,
@@ -597,8 +597,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     GestureDetector(
                       onTap: _swapLocations,
                       child: Container(
-                        width: 44,
-                        height: 44,
+                        width: AppConstants.circularIconContainerSize,
+                        height: AppConstants.circularIconContainerSize,
                         decoration: BoxDecoration(
                           color: AppColors.white,
                           shape: BoxShape.circle,
@@ -607,7 +607,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                           ),
                           boxShadow: const [
                             BoxShadow(
-                              color: Color(0x14000000),
+                              color: AppColors.shadowCardBlack,
                               blurRadius: 8,
                               offset: Offset(0, 2),
                             ),
@@ -763,10 +763,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                 children: [
                                   // Circular icon container with location.svg
                                   Container(
-                                    width: 44,
-                                    height: 44,
+                                    width: AppConstants.circularIconContainerSize,
+                                    height: AppConstants.circularIconContainerSize,
                                     decoration: const BoxDecoration(
-                                      color: Color(0xFFF3F3F3),
+                                      color: AppColors.iconCircleBg,
                                       shape: BoxShape.circle,
                                     ),
                                     alignment: Alignment.center,
@@ -834,7 +834,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                   color: AppColors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: Color(0x0C000000),
+                      color: AppColors.shadowSubtleBlack,
                       blurRadius: 10,
                       offset: Offset(0, -3),
                     ),
@@ -924,10 +924,10 @@ class _QuickActionTile extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: AppConstants.circularIconContainerSize,
+                height: AppConstants.circularIconContainerSize,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFF3F3F3),
+                  color: AppColors.iconCircleBg,
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,

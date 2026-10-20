@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/saved_place_model.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
@@ -58,12 +59,12 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
   List<PlaceSuggestion> _autocompleteSuggestions = [];
 
   final List<Map<String, dynamic>> _iconOptions = [
-    {'type': 'home', 'label': 'Maison', 'color': Color(0xFFFFECE5)},
-    {'type': 'work', 'label': 'Travail', 'color': Color(0xFFF1F1F1)},
-    {'type': 'star', 'label': 'Favori', 'color': Color(0xFFFFF7D6)},
-    {'type': 'airport', 'label': 'Aéroport', 'color': Color(0xFFE5F4FF)},
-    {'type': 'heart', 'label': 'Cœur', 'color': Color(0xFFFFE6EB)},
-    {'type': 'gym', 'label': 'Sport', 'color': Color(0xFFE6F7EC)},
+    {'type': 'home', 'label': 'Maison', 'color': AppColors.savedPlaceHomeBg},
+    {'type': 'work', 'label': 'Travail', 'color': AppColors.savedPlaceWorkBg},
+    {'type': 'star', 'label': 'Favori', 'color': AppColors.savedPlaceStarBg},
+    {'type': 'airport', 'label': 'Aéroport', 'color': AppColors.savedPlaceAirportBg},
+    {'type': 'heart', 'label': 'Cœur', 'color': AppColors.savedPlaceHeartBg},
+    {'type': 'gym', 'label': 'Sport', 'color': AppColors.savedPlaceGymBg},
   ];
 
   final List<String> _quickNameSuggestions = [
@@ -242,19 +243,19 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
           'assets/icons/airplane-svgrepo-com.svg',
           width: size,
           height: size,
-          colorFilter: const ColorFilter.mode(Color(0xFF0288D1), BlendMode.srcIn),
+          colorFilter: const ColorFilter.mode(AppColors.savedPlaceAirportIcon, BlendMode.srcIn),
         );
       case 'heart':
         return Icon(
           Icons.favorite_rounded,
           size: size,
-          color: const Color(0xFFE91E63),
+          color: AppColors.savedPlaceHeartIcon,
         );
       case 'gym':
         return Icon(
           Icons.fitness_center_rounded,
           size: size,
-          color: const Color(0xFF2E7D32),
+          color: AppColors.savedPlaceGymIcon,
         );
       case 'star':
       default:
@@ -289,11 +290,11 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
             // Drag Handle
             Center(
               child: Container(
-                width: 44,
+                width: AppConstants.circularIconContainerSize,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E2E2),
-                  borderRadius: BorderRadius.circular(2),
+                  color: AppColors.dragHandle,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusXs),
                 ),
               ),
             ),
@@ -365,8 +366,8 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
             const SizedBox(height: 6),
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFF7F7F7),
-                borderRadius: BorderRadius.circular(14),
+                color: AppColors.fieldBackground,
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
                 border: Border.all(color: AppColors.cardBorder),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -405,7 +406,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.primary
-                              : const Color(0xFFF2F2F2),
+                              : AppColors.chipBackground,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
@@ -491,8 +492,8 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: _selectedAddress.isNotEmpty
-                    ? const Color(0xFFFBF8F4)
-                    : const Color(0xFFF7F7F7),
+                    ? AppColors.addressCardBg
+                    : AppColors.fieldBackground,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: _selectedAddress.isNotEmpty
@@ -624,8 +625,8 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
             // Optional: Search address autocomplete input
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFF7F7F7),
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.fieldBackground,
+                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(

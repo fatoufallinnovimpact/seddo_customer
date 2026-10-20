@@ -170,14 +170,14 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       case 'work':
         return AppColors.greyContainer;
       case 'airport':
-        return const Color(0xFFE5F4FF);
+        return AppColors.savedPlaceAirportBg;
       case 'heart':
-        return const Color(0xFFFFE6EB);
+        return AppColors.savedPlaceHeartBg;
       case 'gym':
-        return const Color(0xFFE6F7EC);
+        return AppColors.savedPlaceGymBg;
       case 'star':
       default:
-        return const Color(0xFFFFF7D6);
+        return AppColors.savedPlaceStarBg;
     }
   }
 
@@ -200,21 +200,21 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       case 'airport':
         return SvgPicture.asset(
           'assets/icons/airplane-svgrepo-com.svg',
-          width: 20,
-          height: 20,
-          colorFilter: const ColorFilter.mode(Color(0xFF0288D1), BlendMode.srcIn),
+          width: AppConstants.iconSizeMd,
+          height: AppConstants.iconSizeMd,
+          colorFilter: const ColorFilter.mode(AppColors.savedPlaceAirportIcon, BlendMode.srcIn),
         );
       case 'heart':
         return const Icon(
           Icons.favorite_rounded,
-          size: 20,
-          color: Color(0xFFE91E63),
+          size: AppConstants.iconSizeMd,
+          color: AppColors.savedPlaceHeartIcon,
         );
       case 'gym':
         return const Icon(
           Icons.fitness_center_rounded,
-          size: 20,
-          color: Color(0xFF2E7D32),
+          size: AppConstants.iconSizeMd,
+          color: AppColors.savedPlaceGymIcon,
         );
       case 'star':
       default:
@@ -243,14 +243,14 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
               child: Row(
                 children: [
                   Container(
-                    width: 42,
-                    height: 42,
+                    width: AppConstants.circularButtonSize,
+                    height: AppConstants.circularButtonSize,
                     decoration: const BoxDecoration(
                       color: AppColors.white,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Color(0x0F000000),
+                          color: AppColors.shadowSoftBlack,
                           blurRadius: 8,
                           offset: Offset(0, 2),
                         ),
@@ -332,7 +332,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFFFF5EE), Color(0xFFF9F5EC)],
+                    colors: [AppColors.bannerGradientStart, AppColors.bannerGradientEnd],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -536,7 +536,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                                         icon: const Icon(
                                           Icons.delete_outline_rounded,
                                           size: 19,
-                                          color: Color(0xFFD32F2F),
+                                          color: AppColors.deleteRed,
                                         ),
                                         tooltip: 'Supprimer',
                                         onPressed: () => _deletePlace(place),

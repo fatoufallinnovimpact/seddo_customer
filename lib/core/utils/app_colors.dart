@@ -108,4 +108,42 @@ abstract class AppColors {
   static const Color carWindow = Color(0xFFE0E7FF);
   static const Color carHeadlight = Color(0xFFFEF08A);
   static const Color carTaillight = Color(0xFFEF4444);
+
+  // Surface tints & warm backgrounds
+  static const Color warmCream = Color(0xFFF7F5F0);
+  static const Color bannerGradientStart = Color(0xFFFFF5EE);
+  static const Color bannerGradientEnd = Color(0xFFF9F5EC);
+  static const Color fieldBackground = Color(0xFFF7F7F7);
+  static const Color chipBackground = Color(0xFFF2F2F2);
+  static const Color addressCardBg = Color(0xFFFBF8F4);
+  static const Color iconCircleBg = Color(0xFFF3F3F3);
+  static const Color dragHandle = Color(0xFFE2E2E2);
+  static const Color mapPinAnchor = Color(0xFF161616);
+  static const Color textMuted = Color(0xFF757575);
+  static const Color deleteRed = Color(0xFFD32F2F);
+
+  // Saved place category badges & icons
+  static const Color savedPlaceHomeBg = Color(0xFFFFECE5);
+  static const Color savedPlaceWorkBg = Color(0xFFF1F1F1);
+  static const Color savedPlaceStarBg = Color(0xFFFFF7D6);
+  static const Color savedPlaceAirportBg = Color(0xFFE5F4FF);
+  static const Color savedPlaceAirportIcon = Color(0xFF0288D1);
+  static const Color savedPlaceHeartBg = Color(0xFFFFE6EB);
+  static const Color savedPlaceHeartIcon = Color(0xFFE91E63);
+  static const Color savedPlaceGymBg = Color(0xFFE6F7EC);
+  static const Color savedPlaceGymIcon = Color(0xFF2E7D32);
+
+  // Map pin & helper colors
+  static const Color mapCarWindow = Color(0xFFC7D2FE);
+  static const Color mapCarRoof = Color(0xFF262626);
+  static const Color mapCarLight = Color(0xFFFFFBEB);
+
+  // Shadows
+  static const Color shadowSubtleBlack = Color(0x0C000000);
+  static const Color shadowSoftBlack = Color(0x0F000000);
+  static const Color shadowCardBlack = Color(0x14000000);
+  static const Color shadowDarkBlack = Color(0x18000000);
+  static const Color shadowMarker = Color(0x1F000000);
+  static const Color shadowHeavy = Color(0x33000000);
+  static const Color shadowPinBox = Color(0x3D000000);
 }
