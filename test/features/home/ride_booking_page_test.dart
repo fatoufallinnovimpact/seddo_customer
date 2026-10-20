@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
-import 'package:seddo/features/home/domain/models/ride_option_model.dart';
+import 'package:seddo/features/home/presentation/pages/active_ride_page.dart';
+import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
+import 'package:seddo/features/home/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
-import 'package:seddo/services/route_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -76,13 +77,41 @@ void main() {
       await tester.tap(find.text('Commander Seddo Confort'));
       await tester.pumpAndSettle();
 
-      // Verify confirmation dialog appears
-      expect(find.text('Course Seddo Confort confirmée !'), findsOneWidget);
-      expect(find.text('Compris'), findsOneWidget);
+      // Verify Orange Money Payment sheet appears matching Screenshot 1
+      expect(find.text('Confirmer le paiement'), findsOneWidget);
+      expect(find.text('Valider'), findsOneWidget);
+      expect(find.text('Simuler : solde insuffisant'), findsOneWidget);
 
-      // 9. Tap on "Compris" to dismiss
-      await tester.tap(find.text('Compris'));
-      await tester.pumpAndSettle();
+      // 9. Tap Valider to confirm payment
+      await tester.tap(find.text('Valider'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify DriverSearchPage is displayed matching Screenshot 3
+      expect(find.byType(DriverSearchPage), findsOneWidget);
+      expect(find.text('Recherche d\'un chauffeur'), findsOneWidget);
+
+      // Verify simulated shortcut button exists
+      expect(find.text('Simuler : chauffeur trouvé'), findsOneWidget);
+
+      // 10. Tap "Simuler : chauffeur trouvé" to match driver immediately
+      await tester.tap(find.text('Simuler : chauffeur trouvé'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify ActiveRidePage is displayed with driver Moussa Diop and contact buttons
+      expect(find.byType(ActiveRidePage), findsOneWidget);
+      expect(find.text('Moussa Diop'), findsOneWidget);
+      expect(find.text('Message'), findsOneWidget);
+      expect(find.text('Appeler'), findsOneWidget);
+
+      // 11. Tap Message to open chat
+      await tester.tap(find.text('Message'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify DriverChatPage is displayed
+      expect(find.byType(DriverChatPage), findsOneWidget);
     });
   });
 }

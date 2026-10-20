@@ -138,6 +138,20 @@ abstract class AppColors {
   static const Color mapCarRoof = Color(0xFF262626);
   static const Color mapCarLight = Color(0xFFFFFBEB);
 
+  // Orange Money & Payment Flow tokens
+  static const Color orangeMoneyOrange = Color(0xFFFF6600);
+  static const Color walletContainerBg = Color(0xFFFFECEB);
+  static const Color walletIconColor = Color(0xFFE53935);
+  static const Color cancelSecondaryBtnBg = Color(0xFFF3F1ED);
+  static const Color refundContainerBg = Color(0xFFE8F8F0);
+  static const Color refundGreen = Color(0xFF1E8E4D);
+  static const Color refundPillBg = Color(0xFFE8F8F0);
+  static const Color radarRingColor = Color(0x4DFB5B00);
+  static const Color radarFillColor = Color(0x0FFB5B00);
+  static const Color licensePlateBg = Color(0xFF1E293B);
+  static const Color chatBubbleCustomer = Color(0xFFFB5B00);
+  static const Color chatBubbleDriver = Color(0xFFF2F4F7);
+
   // Shadows
   static const Color shadowSubtleBlack = Color(0x0C000000);
   static const Color shadowSoftBlack = Color(0x0F000000);

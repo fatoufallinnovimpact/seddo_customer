@@ -72,8 +72,6 @@ void main() {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
 
-      PlaceSearchResult? selectedPlace;
-
       await tester.pumpWidget(
         EasyLocalization(
           supportedLocales: const [Locale('fr')],
@@ -94,13 +92,11 @@ void main() {
                     return Scaffold(
                       body: ElevatedButton(
                         onPressed: () async {
-                          final result =
-                              await Navigator.of(ctx).push<PlaceSearchResult>(
+                          await Navigator.of(ctx).push<PlaceSearchResult>(
                             MaterialPageRoute(
                               builder: (_) => const PlaceSearchPage(),
                             ),
                           );
-                          selectedPlace = result;
                         },
                         child: const Text('Open Search'),
                       ),

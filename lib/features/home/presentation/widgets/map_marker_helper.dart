@@ -225,6 +225,7 @@ abstract class MapMarkerHelper {
   /// Black circle dot on road + floating pill badge "• Prise en charge · 4 min"
   static Future<BitmapDescriptor> getPickupBadgeMarker({
     String label = 'Prise en charge · 4 min',
+    Color dotColor = AppColors.primary,
   }) async {
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
@@ -247,11 +248,11 @@ abstract class MapMarkerHelper {
       pillPaint,
     );
 
-    // Orange dot inside pill
-    final orangeDotPaint = Paint()
-      ..color = AppColors.primary
+    // Colored dot inside pill
+    final dotPaint = Paint()
+      ..color = dotColor
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(14, pillHeight / 2), 3.5, orangeDotPaint);
+    canvas.drawCircle(const Offset(14, pillHeight / 2), 3.5, dotPaint);
 
     // Label text
     final textPainter = TextPainter(

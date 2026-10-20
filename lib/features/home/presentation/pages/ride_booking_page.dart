@@ -4,11 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
+import 'package:seddo/features/home/presentation/pages/driver_search_page.dart';
+import 'package:seddo/features/home/presentation/widgets/insufficient_balance_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
 
@@ -243,84 +247,41 @@ class _RideBookingPageState extends State<RideBookingPage> {
     };
   }
 
-  void _onOrderRide() {
+  Future<void> _onOrderRide() async {
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(AppConstants.radiusSheet),
-          ),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: const BoxDecoration(
-                color: AppColors.peachContainer,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_circle_rounded,
-                color: AppColors.primary,
-                size: 32,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Course ${selectedOption.title} confirmée !',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Votre chauffeur arrive dans ${selectedOption.pickupDuration}.\nMontant : ${selectedOption.formattedPrice}',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: AppConstants.buttonHeight,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.buttonBlack,
-                  foregroundColor: AppColors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  ),
-                ),
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  Navigator.of(context).pop();
-                },
-                child: Text(
-                  'Compris',
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    final result = await OrangeMoneyPaymentSheet.show(
+      context,
+      rideOption: selectedOption,
     );
+
+    if (!mounted || result == null) return;
+
+    if (result == OrangeMoneyPaymentResult.insufficientBalance) {
+      if (mounted) {
+        await InsufficientBalanceSheet.show(
+          context,
+          rideOption: selectedOption,
+        );
+      }
+      return;
+    }
+
+    if (result == OrangeMoneyPaymentResult.success) {
+      if (mounted) {
+        Navigator.of(context).push(
+          SlideRightToLeftRoute(
+            page: DriverSearchPage(
+              departure: widget.departure,
+              destination: widget.destination,
+              rideOption: selectedOption,
+              polylinePoints: _polylinePoints,
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override
