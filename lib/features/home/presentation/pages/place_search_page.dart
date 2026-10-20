@@ -334,8 +334,11 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
-      body: SafeArea(
-        child: Column(
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1. Top Bar: Back Arrow + "Votre trajet"
@@ -685,13 +688,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               onTap: () => _openMapPicker(isArrival: _isEditingArrival),
             ),
 
-            const Divider(
-              color: AppColors.cardBorder,
-              height: 24,
-              thickness: 1,
-              indent: AppConstants.spacingMd,
-              endIndent: AppConstants.spacingMd,
-            ),
+            const SizedBox(height: AppConstants.spacingUnitLg),
 
             // 4. Section Title: "Résultats"
             Padding(
@@ -740,10 +737,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                   : ListView.separated(
                       physics: const BouncingScrollPhysics(),
                       itemCount: _suggestions.length,
-                      separatorBuilder: (context, index) => const Divider(
-                        color: AppColors.cardBorder,
-                        height: 1,
-                        indent: 72,
+                      separatorBuilder: (context, index) => const SizedBox(
+                        height: AppConstants.spacingXs,
                       ),
                       itemBuilder: (context, index) {
                         final item = _suggestions[index];
@@ -823,7 +818,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           ],
         ),
       ),
-      bottomNavigationBar: _arrivalController.text.isNotEmpty
+    ),
+    bottomNavigationBar: _arrivalController.text.isNotEmpty
           ? SafeArea(
               child: Container(
                 padding: const EdgeInsets.symmetric(

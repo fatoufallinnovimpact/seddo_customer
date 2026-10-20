@@ -271,19 +271,34 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final systemBottomPadding = MediaQuery.of(context).padding.bottom;
+    final effectiveBottom = bottomInset > 0
+        ? bottomInset + AppConstants.spacingMd
+        : (systemBottomPadding > 0
+            ? systemBottomPadding + AppConstants.spacingXl
+            : AppConstants.spacingXxl);
     final isEditing = widget.initialPlace != null;
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.88,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(AppConstants.radiusSheet)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          AppConstants.spacingMd + 4,
+          AppConstants.spacingUnitLg,
+          AppConstants.spacingMd + 4,
+          effectiveBottom,
+        ),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.88,
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -678,7 +693,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: _autocompleteSuggestions.length,
-                  separatorBuilder: (_, index) => const Divider(height: 1),
+                  separatorBuilder: (_, index) => const SizedBox(height: AppConstants.spacingXs),
                   itemBuilder: (context, idx) {
                     final s = _autocompleteSuggestions[idx];
                     return ListTile(
@@ -711,14 +726,14 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
             // Save / Update Button
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: AppConstants.buttonHeight,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusLg),
                   ),
                 ),
                 onPressed: _save,
@@ -731,9 +746,11 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                 ),
               ),
             ),
+            const SizedBox(height: AppConstants.spacingSm),
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }

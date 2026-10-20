@@ -106,6 +106,27 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
     }
   }
 
+  Future<void> _goToCurrentLocation() async {
+    setState(() => _isLoadingAddress = true);
+    try {
+      final coords = await _placesService.getCurrentCoordinates() ??
+          widget.initialLocation ??
+          _defaultLocation;
+
+      _currentCenter = coords;
+      await _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: coords, zoom: 16.5),
+        ),
+      );
+      await _fetchAddressForLocation(coords);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingAddress = false);
+      }
+    }
+  }
+
   void _confirmSelection() {
     final title = _addressTitle.isNotEmpty
         ? _addressTitle
@@ -279,11 +300,8 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                   color: AppColors.primary,
                   size: 20,
                 ),
-                onPressed: () {
-                  _mapController?.animateCamera(
-                    CameraUpdate.newLatLng(_defaultLocation),
-                  );
-                },
+                tooltip: 'Ma position actuelle',
+                onPressed: _goToCurrentLocation,
               ),
             ),
           ),

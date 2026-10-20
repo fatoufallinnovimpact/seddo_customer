@@ -231,8 +231,11 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
-      body: SafeArea(
-        child: Column(
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          child: Column(
           children: [
             // 1. Top Bar
             Padding(
@@ -552,6 +555,8 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }
+}
+
