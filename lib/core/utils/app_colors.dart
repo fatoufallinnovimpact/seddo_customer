@@ -78,6 +78,9 @@ abstract class AppColors {
   /// Soft subtle card border
   static const Color cardBorder = Color(0xFFEEEEEE);
 
+  /// Subtle divider line
+  static const Color divider = Color(0xFFEEEEEE);
+
   /// Subtle card shadow
   static const Color cardShadow = Color(0x0D000000);
 
@@ -151,6 +154,16 @@ abstract class AppColors {
   static const Color licensePlateBg = Color(0xFF1E293B);
   static const Color chatBubbleCustomer = Color(0xFFFB5B00);
   static const Color chatBubbleDriver = Color(0xFFF2F4F7);
+
+  // Active Ride & Safety & Rating tokens
+  static const Color sirenRed = Color(0xFFDC2626);
+  static const Color avatarBeige = Color(0xFFEBE5DF);
+  static const Color paidBadgeBg = Color(0xFFFFEDE0);
+  static const Color paidBadgeText = Color(0xFFB45309);
+  static const Color starGold = Color(0xFFFFB800);
+  static const Color tagChipBg = Color(0xFFF3F1ED);
+  static const Color tagChipSelectedBg = Color(0xFF1E1E1E);
+  static const Color tagChipSelectedText = Color(0xFFFFFFFF);
 
   // Shadows
   static const Color shadowSubtleBlack = Color(0x0C000000);

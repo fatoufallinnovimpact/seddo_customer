@@ -10,8 +10,10 @@ import 'package:seddo/features/home/domain/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 import 'package:seddo/features/home/presentation/pages/active_ride_page.dart';
+import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/no_driver_found_sheet.dart';
 
 /// Screen displayed while searching for nearby drivers matching Screenshot 3:
 /// - Map with pickup marker, radar circle, candidate car with "Offre envoyée · 1,2 km" badge
@@ -123,9 +125,38 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       SlideRightToLeftRoute(
         page: RideCancelledPage(
           rideOption: widget.rideOption,
+          departure: widget.departure,
+          destination: widget.destination,
         ),
       ),
     );
+  }
+
+  Future<void> _onNoDriverAvailable() async {
+    _autoMatchTimer?.cancel();
+    final action = await NoDriverFoundSheet.show(
+      context,
+      departure: widget.departure,
+      destination: widget.destination,
+      rideOption: widget.rideOption,
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == NoDriverFoundAction.retry) {
+      Navigator.of(context).pushAndRemoveUntil(
+        SlideRightToLeftRoute(
+          page: RideBookingPage(
+            departure: widget.departure,
+            destination: widget.destination,
+          ),
+          settings: const RouteSettings(name: 'RideBookingPage'),
+        ),
+        (route) => route.isFirst,
+      );
+    } else {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   Set<Circle> _buildRadarCircles() {
@@ -526,7 +557,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                         ),
                       ),
                       GestureDetector(
-                        onTap: _onCancelRide,
+                        onTap: _onNoDriverAvailable,
                         child: Text(
                           'Simuler : aucun chauffeur',
                           style: GoogleFonts.inter(

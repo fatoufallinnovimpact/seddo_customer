@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -11,14 +12,21 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_cancelled_page.dart';
+import 'package:seddo/features/home/presentation/pages/ride_rating_page.dart';
+import 'package:seddo/features/home/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/safety_modal_widget.dart';
 
-/// Screen displayed once a driver has accepted the ride:
-/// - Displays full driver and vehicle information
-/// - Interactive map showing driver's car approaching pickup
-/// - Dedicated button to chat with driver (opens DriverChatPage)
-/// - Dedicated button to call driver (direct phone launch)
-/// - Ride cancellation action with automatic Orange Money refund
+/// Screen displayed once a driver has accepted the ride matching Screenshot 1:
+/// - Floating top bar with back button, center status, and red safety siren button
+/// - Interactive map showing driver's car approaching or on route
+/// - Header: "En route vers [Destination]" + ETA and distance
+/// - Driver card with initials avatar, Moussa, ★ 4.9, car model, plate and "✓ Payé" badge
+/// - Message & Appeler direct communication actions
+/// - "Partager le trajet" with native share_plus sheet and web preview option
+/// - "Sécurité" with 24/7 emergency dialer and location sharing
+/// - "Annuler la course" with automatic Orange Money refund
+/// - "Simuler : arrivée" shortcut opening RideRatingPage
 class ActiveRidePage extends StatefulWidget {
   final PlaceSearchResult departure;
   final PlaceSearchResult destination;
@@ -43,7 +51,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupBadgeIcon;
-  BitmapDescriptor? _destSquareIcon;
+  BitmapDescriptor? _destBadgeIcon;
 
   @override
   void initState() {
@@ -62,13 +70,16 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
     final pickup = await MapMarkerHelper.getPickupBadgeMarker(
       label: 'Prise en charge · 3 min',
     );
-    final dest = await MapMarkerHelper.getDestinationSquareMarker();
+    final dest = await MapMarkerHelper.getPickupBadgeMarker(
+      label: 'Arrivée ${widget.rideOption.estimatedArrival}',
+      dotColor: AppColors.buttonBlack,
+    );
 
     if (mounted) {
       setState(() {
         _carMarkerIcon = car;
         _pickupBadgeIcon = pickup;
-        _destSquareIcon = dest;
+        _destBadgeIcon = dest;
       });
     }
   }
@@ -116,13 +127,14 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                 color: AppColors.textSecondary,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               widget.driver.phone,
               style: GoogleFonts.inter(
                 fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+                letterSpacing: 0.5,
               ),
             ),
           ],
@@ -131,7 +143,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
-              'Fermer',
+              'Annuler',
               style: GoogleFonts.inter(
                 color: AppColors.textSecondary,
                 fontWeight: FontWeight.w600,
@@ -140,7 +152,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
+              backgroundColor: AppColors.success,
               foregroundColor: AppColors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
@@ -166,6 +178,164 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: DriverChatPage(driver: widget.driver),
+      ),
+    );
+  }
+
+  Future<void> _shareRide() async {
+    const shareUrl = 'https://suivi.seddo.sn/t/8K02F';
+    final shareText =
+        'Suis mon trajet Seddo en direct vers ${widget.destination.mainText} avec ${widget.driver.name} (${widget.driver.carModel} ${widget.driver.licensePlate}) : $shareUrl';
+
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: shareText,
+          subject: 'Mon trajet Seddo en direct',
+        ),
+      );
+    } catch (_) {}
+
+    if (mounted) {
+      _showShareOptionsSheet(shareUrl);
+    }
+  }
+
+  void _showShareOptionsSheet(String shareUrl) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppConstants.radiusSheet),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.dragHandle,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Lien de suivi en direct',
+              style: GoogleFonts.inter(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Vos proches peuvent suivre votre voiture en temps réel jusqu\'à destination.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceGrey,
+                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.link_rounded,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      shareUrl,
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusLg,
+                        ),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      Navigator.of(context).push(
+                        SlideRightToLeftRoute(
+                          page: SharedRideTrackingPage(
+                            departure: widget.departure,
+                            destination: widget.destination,
+                            driver: widget.driver,
+                            polylinePoints: widget.polylinePoints,
+                            etaText: widget.rideOption.estimatedArrival,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Aperçu du suivi web',
+                      style: GoogleFonts.inter(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSafetyModal() {
+    SafetyModalWidget.show(
+      context,
+      destination: widget.destination,
+      driver: widget.driver,
+    );
+  }
+
+  void _simulateArrival() {
+    Navigator.of(context).pushReplacement(
+      SlideRightToLeftRoute(
+        page: RideRatingPage(
+          destination: widget.destination,
+          driver: widget.driver,
+          rideOption: widget.rideOption,
+          arrivalTime: widget.rideOption.estimatedArrival,
+        ),
       ),
     );
   }
@@ -217,6 +387,8 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                 SlideRightToLeftRoute(
                   page: RideCancelledPage(
                     rideOption: widget.rideOption,
+                    departure: widget.departure,
+                    destination: widget.destination,
                   ),
                 ),
               );
@@ -246,30 +418,30 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
       );
     }
 
-    // 2. Destination marker
-    if (_destSquareIcon != null) {
+    // 2. Destination ETA marker (Screenshot 1: "Arrivée 18:42")
+    if (_destBadgeIcon != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId('dest_marker'),
+          markerId: const MarkerId('dest_badge_marker'),
           position: LatLng(
             widget.destination.latitude,
             widget.destination.longitude,
           ),
-          icon: _destSquareIcon!,
-          anchor: const Offset(0.5, 0.5),
+          icon: _destBadgeIcon!,
+          anchor: const Offset(0.5, 0.95),
         ),
       );
     }
 
-    // 3. Driver car approaching
+    // 3. Driver car marker moving along route
     if (_carMarkerIcon != null) {
       markers.add(
         Marker(
-          markerId: const MarkerId('active_driver_car'),
-          position: widget.driver.currentLocation,
+          markerId: const MarkerId('driver_car_marker'),
+          position: widget.driver.location,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
-          rotation: 40.0,
+          rotation: 30,
         ),
       );
     }
@@ -281,7 +453,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
     if (widget.polylinePoints.isEmpty) return {};
     return {
       Polyline(
-        polylineId: const PolylineId('route_polyline'),
+        polylineId: const PolylineId('active_route'),
         points: widget.polylinePoints,
         color: AppColors.buttonBlack,
         width: 5,
@@ -295,19 +467,27 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
   @override
   Widget build(BuildContext context) {
     final systemBottom = MediaQuery.of(context).padding.bottom;
+    final initials = widget.driver.name.isNotEmpty
+        ? widget.driver.name
+            .split(' ')
+            .map((e) => e.isNotEmpty ? e[0] : '')
+            .take(2)
+            .join()
+            .toUpperCase()
+        : 'MS';
 
     return Scaffold(
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Interactive Google Map
+          // 1. Fullscreen Google Map
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: LatLng(
-                widget.departure.latitude,
-                widget.departure.longitude,
+                (widget.departure.latitude + widget.destination.latitude) / 2,
+                (widget.departure.longitude + widget.destination.longitude) / 2,
               ),
-              zoom: 14.6,
+              zoom: 13.8,
             ),
             onMapCreated: (ctrl) => _mapController = ctrl,
             markers: _buildMarkers(),
@@ -319,7 +499,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
             mapToolbarEnabled: false,
           ),
 
-          // 2. Floating Top Bar
+          // 2. Floating Top Bar with back button, center status, and red safety siren button
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -400,7 +580,30 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                     ),
                   ),
 
-                  const SizedBox(width: AppConstants.circularButtonSize),
+                  // Floating Red Siren Button (Screenshot 1 top-right)
+                  Container(
+                    width: AppConstants.circularButtonSize,
+                    height: AppConstants.circularButtonSize,
+                    decoration: const BoxDecoration(
+                      color: AppColors.sirenRed,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.shadowMarker,
+                          blurRadius: 10,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.notifications_active_rounded,
+                        color: AppColors.white,
+                        size: 20,
+                      ),
+                      onPressed: _openSafetyModal,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -426,328 +629,399 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                 ],
               ),
               padding: EdgeInsets.fromLTRB(
-                AppConstants.spacingMd + 4,
+                AppConstants.spacingLg,
                 10,
-                AppConstants.spacingMd + 4,
-                systemBottom + AppConstants.spacingSm,
+                AppConstants.spacingLg,
+                systemBottom + 10,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Drag handle
-                  Container(
-                    width: AppConstants.circularIconContainerSize,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.dragHandle,
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusXs,
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Drag handle
+                    Container(
+                      width: AppConstants.circularIconContainerSize,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.dragHandle,
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusXs,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
+                    const SizedBox(height: 14),
 
-                  // Header status row: "Chauffeur en route" + ETA badge
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Chauffeur en route',
-                              style: GoogleFonts.inter(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.textPrimary,
-                                letterSpacing: -0.3,
-                              ),
+                    // Header: "En route vers [Destination]" (Screenshot 1)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'En route vers ${widget.destination.mainText}',
+                            style: GoogleFonts.inter(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.textPrimary,
+                              letterSpacing: -0.4,
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${widget.driver.distanceKm} km · Arrivée estimée à 18:45',
-                              style: GoogleFonts.inter(
-                                fontSize: 12.5,
-                                color: AppColors.textSecondary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Arrivée prévue ${widget.rideOption.estimatedArrival} · ${widget.driver.distanceKm} km restants',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.peachContainer,
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusPill,
                           ),
-                        ),
-                        child: Text(
-                          '${widget.driver.etaMinutes} min',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  // Driver Details Card
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceGrey,
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusLg,
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        // Driver Avatar with verified check
-                        Stack(
-                          children: [
-                            Container(
-                              width: 52,
-                              height: 52,
-                              decoration: const BoxDecoration(
-                                color: AppColors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              alignment: Alignment.center,
-                              child: const Icon(
-                                Icons.person_rounded,
-                                size: 32,
+
+                    const SizedBox(height: 14),
+
+                    // Driver Summary Card with initials avatar and "✓ Payé" badge (Screenshot 1)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusCard,
+                        ),
+                        border: Border.all(
+                          color: AppColors.cardBorder,
+                          width: 1.1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          // Initials circle avatar "MS"
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: const BoxDecoration(
+                              color: AppColors.avatarBeige,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              initials,
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
                                 color: AppColors.textPrimary,
                               ),
                             ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: Container(
-                                width: 16,
-                                height: 16,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
+                          ),
+
+                          const SizedBox(width: 12),
+
+                          // Driver name and car
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${widget.driver.name.split(' ').first} · ★ ${widget.driver.rating}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.textPrimary,
+                                  ),
                                 ),
-                                alignment: Alignment.center,
-                                child: const Icon(
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${widget.driver.carModel} · ${widget.driver.licensePlate}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // "✓ Payé" badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.paidBadgeBg,
+                              borderRadius: BorderRadius.circular(
+                                AppConstants.radiusPill,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
                                   Icons.check_rounded,
-                                  size: 11,
-                                  color: AppColors.white,
+                                  size: 14,
+                                  color: AppColors.paidBadgeText,
                                 ),
-                              ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Payé',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.paidBadgeText,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
+                      ),
+                    ),
 
-                        const SizedBox(width: 14),
+                    const SizedBox(height: 10),
 
-                        // Driver name, rating, vehicle model
+                    // Quick Communication Row (Message & Appeler)
+                    Row(
+                      children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.driver.name,
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.surfaceGrey,
+                              foregroundColor: AppColors.textPrimary,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppConstants.radiusDefault,
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.star_rounded,
-                                    size: 15,
-                                    color: Color(0xFFFFB800),
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    '${widget.driver.rating}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Flexible(
-                                    child: Text(
-                                      '(${widget.driver.totalRides} courses)',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
+                            ),
+                            onPressed: _openChat,
+                            icon: const Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            label: Text(
+                              'Message',
+                              style: GoogleFonts.inter(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${widget.driver.carModel} · ${widget.driver.carColor}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // License Plate Badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.licensePlateBg,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: AppColors.white25,
-                              width: 1,
                             ),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                widget.driver.licensePlate,
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.white,
-                                  letterSpacing: 0.5,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.surfaceGrey,
+                              foregroundColor: AppColors.textPrimary,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppConstants.radiusDefault,
                                 ),
                               ),
-                              Text(
-                                'SN',
-                                style: GoogleFonts.inter(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.primary,
-                                ),
+                            ),
+                            onPressed: _callDriver,
+                            icon: const Icon(
+                              Icons.phone_outlined,
+                              size: 18,
+                              color: AppColors.success,
+                            ),
+                            label: Text(
+                              'Appeler',
+                              style: GoogleFonts.inter(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
 
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1, color: AppColors.divider),
+                    const SizedBox(height: 8),
 
-                  // Communication Actions Row (Message, Call, Share)
-                  Row(
-                    children: [
-                      // Message Button
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.surfaceGrey,
-                            foregroundColor: AppColors.textPrimary,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.radiusLg,
+                    // Row 1: "Partager le trajet" (Screenshot 1)
+                    InkWell(
+                      onTap: _shareRide,
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusCard,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: const BoxDecoration(
+                                color: AppColors.surfaceGrey,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.share_outlined,
+                                size: 20,
+                                color: AppColors.textPrimary,
                               ),
                             ),
-                          ),
-                          onPressed: _openChat,
-                          icon: const Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 19,
-                            color: AppColors.primary,
-                          ),
-                          label: Text(
-                            'Message',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(width: 10),
-
-                      // Call Button
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.surfaceGrey,
-                            foregroundColor: AppColors.textPrimary,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.radiusLg,
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Partager le trajet',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Envoyer le suivi en direct à un proche',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          onPressed: _callDriver,
-                          icon: const Icon(
-                            Icons.phone_outlined,
-                            size: 19,
-                            color: AppColors.success,
-                          ),
-                          label: Text(
-                            'Appeler',
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.textSecondary,
+                              size: 22,
                             ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Cancel Ride Link
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.deleteRed,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusDefault,
-                          ),
-                        ),
-                      ),
-                      onPressed: _confirmCancelRide,
-                      child: Text(
-                        'Annuler la course',
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.deleteRed,
+                          ],
                         ),
                       ),
                     ),
-                  ),
-                ],
+
+                    const Divider(height: 1, color: AppColors.divider),
+                    const SizedBox(height: 8),
+
+                    // Row 2: "Sécurité" (Screenshot 1)
+                    InkWell(
+                      onTap: _openSafetyModal,
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusCard,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: const BoxDecoration(
+                                color: AppColors.walletContainerBg,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.shield_outlined,
+                                size: 20,
+                                color: AppColors.sirenRed,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Sécurité',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Urgence, contacts d\'urgence, signaler',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.textSecondary,
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Annuler la course Link
+                    SizedBox(
+                      width: double.infinity,
+                      height: 40,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.deleteRed,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusDefault,
+                            ),
+                          ),
+                        ),
+                        onPressed: _confirmCancelRide,
+                        child: Text(
+                          'Annuler la course',
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.deleteRed,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    // Simulator shortcut: "Simuler : arrivée" (Screenshot 1)
+                    GestureDetector(
+                      onTap: _simulateArrival,
+                      child: Text(
+                        'Simuler : arrivée',
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          color: AppColors.textSecondary,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

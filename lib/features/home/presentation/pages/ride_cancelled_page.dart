@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
+import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 
 /// Screen displayed when a ride is cancelled and automatically refunded matching Screenshot 4:
 /// - Green circular refund icon
@@ -11,12 +14,16 @@ import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 /// - "Recommander" button and "Retour à l'accueil" button
 class RideCancelledPage extends StatelessWidget {
   final RideOptionModel rideOption;
+  final PlaceSearchResult? departure;
+  final PlaceSearchResult? destination;
   final String phoneDisplay;
   final String transactionRef;
 
   const RideCancelledPage({
     super.key,
     required this.rideOption,
+    this.departure,
+    this.destination,
     this.phoneDisplay = '77 ••• 45 12',
     this.transactionRef = 'CI270415.1842.A3F2',
   });
@@ -252,7 +259,20 @@ class RideCancelledPage extends StatelessWidget {
                     ),
                   ),
                   onPressed: () {
-                    Navigator.of(context).pop('reorder');
+                    if (departure != null && destination != null) {
+                      Navigator.of(context).pushAndRemoveUntil(
+                        SlideRightToLeftRoute(
+                          page: RideBookingPage(
+                            departure: departure!,
+                            destination: destination!,
+                          ),
+                          settings: const RouteSettings(name: 'RideBookingPage'),
+                        ),
+                        (route) => route.isFirst,
+                      );
+                    } else {
+                      Navigator.of(context).pop('reorder');
+                    }
                   },
                   child: Text(
                     'Recommander',

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 class SlideRightToLeftRoute<T> extends PageRouteBuilder<T> {
   final Widget page;
 
-  SlideRightToLeftRoute({required this.page})
-      : super(
+  SlideRightToLeftRoute({
+    required this.page,
+    super.settings,
+  }) : super(
           pageBuilder: (context, animation, secondaryAnimation) => page,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             const begin = Offset(1.0, 0.0);

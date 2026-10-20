@@ -17,6 +17,9 @@ class DriverModel {
   final int etaMinutes;
   final double distanceKm;
 
+  /// Convenience getter for current location
+  LatLng get location => currentLocation;
+
   const DriverModel({
     required this.id,
     required this.name,

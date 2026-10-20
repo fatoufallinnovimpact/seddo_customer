@@ -6,9 +6,14 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 import 'package:seddo/features/home/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
+import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_cancelled_page.dart';
+import 'package:seddo/features/home/presentation/pages/ride_rating_page.dart';
+import 'package:seddo/features/home/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/home/presentation/widgets/insufficient_balance_sheet.dart';
+import 'package:seddo/features/home/presentation/widgets/no_driver_found_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/orange_money_payment_sheet.dart';
+import 'package:seddo/features/home/presentation/widgets/safety_modal_widget.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -75,12 +80,10 @@ void main() {
       await tester.tap(find.text('Pay'));
       await tester.pumpAndSettle();
 
-      // Verify payment sheet elements
       expect(find.text('Confirmer le paiement'), findsOneWidget);
       expect(find.text('3500 FCFA'), findsOneWidget);
       expect(find.text('Saisissez votre code secret'), findsOneWidget);
 
-      // Tap numeric keypad digits
       await tester.tap(find.text('1'));
       await tester.pump();
       await tester.tap(find.text('2'));
@@ -88,17 +91,14 @@ void main() {
       await tester.tap(find.text('3'));
       await tester.pump();
 
-      // Tap backspace
       await tester.tap(find.byIcon(Icons.backspace_outlined));
       await tester.pump();
 
-      // Tap digits to complete 4
       await tester.tap(find.text('4'));
       await tester.pump();
       await tester.tap(find.text('5'));
       await tester.pump();
 
-      // Tap Valider
       await tester.tap(find.text('Valider'));
       await tester.pumpAndSettle();
 
@@ -132,7 +132,49 @@ void main() {
       expect(find.text('Revenir au choix de la course'), findsOneWidget);
     });
 
-    testWidgets('RideCancelledPage renders refund info and return actions',
+    testWidgets('NoDriverFoundSheet renders refund details and retry actions',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      NoDriverFoundAction? chosenAction;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () async {
+                  chosenAction = await NoDriverFoundSheet.show(
+                    ctx,
+                    departure: departure,
+                    destination: destination,
+                    rideOption: ecoOption,
+                  );
+                },
+                child: const Text('Open No Driver Sheet'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open No Driver Sheet'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aucun chauffeur disponible'), findsOneWidget);
+      expect(find.textContaining('Forte demande en ce moment'), findsOneWidget);
+      expect(find.text('3 500 F remboursés'), findsOneWidget);
+      expect(find.text('Plus tard'), findsOneWidget);
+      expect(find.text('Réessayer'), findsOneWidget);
+
+      await tester.tap(find.text('Réessayer'));
+      await tester.pumpAndSettle();
+
+      expect(chosenAction, NoDriverFoundAction.retry);
+    });
+
+    testWidgets('RideCancelledPage renders refund info and reorder redirects',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -141,6 +183,8 @@ void main() {
         MaterialApp(
           home: RideCancelledPage(
             rideOption: ecoOption,
+            departure: departure,
+            destination: destination,
           ),
         ),
       );
@@ -153,9 +197,15 @@ void main() {
       expect(find.text('CI270415.1842.A3F2'), findsOneWidget);
       expect(find.text('Recommander'), findsOneWidget);
       expect(find.text('Retour à l\'accueil'), findsOneWidget);
+
+      await tester.tap(find.text('Recommander'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(RideBookingPage), findsOneWidget);
     });
 
-    testWidgets('ActiveRidePage renders driver info, car details, and contact buttons',
+    testWidgets('ActiveRidePage renders driver card, contact, share, and safety tiles',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -174,16 +224,114 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      // Verify driver info
-      expect(find.text('Moussa Diop'), findsOneWidget);
-      expect(find.text('4.9'), findsOneWidget);
-      expect(find.textContaining('Toyota Corolla'), findsOneWidget);
-      expect(find.text('DK-4821-AB'), findsOneWidget);
-
-      // Verify contact actions
+      expect(find.text('En route vers Almadies'), findsOneWidget);
+      expect(find.text('Moussa · ★ 4.9'), findsOneWidget);
+      expect(find.text('Payé'), findsOneWidget);
       expect(find.text('Message'), findsOneWidget);
       expect(find.text('Appeler'), findsOneWidget);
+      expect(find.text('Partager le trajet'), findsOneWidget);
+      expect(find.text('Sécurité'), findsOneWidget);
       expect(find.text('Annuler la course'), findsOneWidget);
+      expect(find.text('Simuler : arrivée'), findsOneWidget);
+      expect(find.byIcon(Icons.notifications_active_rounded), findsOneWidget);
+
+      // Tap Sécurité tile
+      await tester.tap(find.text('Sécurité'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sécurité du trajet'), findsOneWidget);
+      expect(find.text('Appeler la Police (17)'), findsOneWidget);
+      expect(find.text('Appeler les Secours / SAMU (1515)'), findsOneWidget);
+    });
+
+    testWidgets('SafetyModalWidget renders emergency numbers directly',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SafetyModalWidget(
+              destination: destination,
+              driver: driver,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sécurité du trajet'), findsOneWidget);
+      expect(find.text('Appeler la Police (17)'), findsOneWidget);
+      expect(find.text('Appeler les Secours / SAMU (1515)'), findsOneWidget);
+      expect(find.text('Partager ma position d\'urgence'), findsOneWidget);
+      expect(find.text('Signaler un problème à Seddo'), findsOneWidget);
+    });
+
+    testWidgets('RideRatingPage allows star rating, tag toggling, and view receipt',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RideRatingPage(
+            destination: destination,
+            driver: driver,
+            rideOption: ecoOption,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Comment s\'est passée votre'), findsOneWidget);
+      expect(find.text('👍 Conduite prudente'), findsOneWidget);
+      expect(find.text('Ponctuel'), findsOneWidget);
+      expect(find.text('Voiture propre'), findsOneWidget);
+      expect(find.text('Sympathique'), findsOneWidget);
+      expect(find.text('Total payé'), findsOneWidget);
+      expect(find.text('3 500 F'), findsOneWidget);
+      expect(find.text('Envoyer'), findsOneWidget);
+      expect(find.text('Voir le reçu'), findsOneWidget);
+
+      // Toggle Ponctuel tag
+      await tester.tap(find.text('Ponctuel'));
+      await tester.pump();
+
+      // Open receipt
+      await tester.tap(find.text('Voir le reçu'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Reçu de la course'), findsOneWidget);
+      expect(find.text('Fermer'), findsOneWidget);
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('SharedRideTrackingPage renders browser header and tracking details',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SharedRideTrackingPage(
+            departure: departure,
+            destination: destination,
+            driver: driver,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('suivi.seddo.sn/t/8K02F'), findsOneWidget);
+      expect(find.text('Awa partage son trajet avec vous'), findsOneWidget);
+      expect(find.text('Arrivée prévue 18:42'), findsOneWidget);
+      expect(find.text('Le lien expire à la fin de la course.'), findsOneWidget);
     });
 
     testWidgets('DriverChatPage sends messages, handles quick replies, and displays bubbles',
@@ -201,29 +349,22 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Verify driver info in header
       expect(find.text('Moussa Diop'), findsOneWidget);
       expect(find.textContaining('DK-4821-AB'), findsWidgets);
-
-      // Verify initial driver message
       expect(find.textContaining('Bonjour ! Je suis en route'), findsOneWidget);
 
-      // Tap quick reply chip: "Je suis devant la porte"
       expect(find.text('Je suis devant la porte'), findsOneWidget);
       await tester.tap(find.text('Je suis devant la porte'));
       await tester.pump();
 
-      // Verify customer message bubble is displayed
       expect(find.text('Je suis devant la porte'), findsWidgets);
 
-      // Enter custom message
       await tester.enterText(find.byType(TextField), 'Merci beaucoup !');
       await tester.tap(find.byIcon(Icons.send_rounded));
       await tester.pump();
 
       expect(find.text('Merci beaucoup !'), findsOneWidget);
 
-      // Wait for simulated driver reply
       await tester.pump(const Duration(milliseconds: 1600));
       expect(find.textContaining('Bien reçu !'), findsOneWidget);
     });
