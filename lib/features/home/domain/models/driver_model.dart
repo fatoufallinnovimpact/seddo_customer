@@ -36,6 +36,38 @@ class DriverModel {
     required this.distanceKm,
   });
 
+  DriverModel copyWith({
+    String? id,
+    String? name,
+    String? phone,
+    String? photoUrl,
+    double? rating,
+    int? totalRides,
+    String? carModel,
+    String? carColor,
+    String? licensePlate,
+    RideType? rideType,
+    LatLng? currentLocation,
+    int? etaMinutes,
+    double? distanceKm,
+  }) {
+    return DriverModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      phone: phone ?? this.phone,
+      photoUrl: photoUrl ?? this.photoUrl,
+      rating: rating ?? this.rating,
+      totalRides: totalRides ?? this.totalRides,
+      carModel: carModel ?? this.carModel,
+      carColor: carColor ?? this.carColor,
+      licensePlate: licensePlate ?? this.licensePlate,
+      rideType: rideType ?? this.rideType,
+      currentLocation: currentLocation ?? this.currentLocation,
+      etaMinutes: etaMinutes ?? this.etaMinutes,
+      distanceKm: distanceKm ?? this.distanceKm,
+    );
+  }
+
   /// Default mock driver in Dakar matching user requirements
   factory DriverModel.mockDakarDriver({
     RideType rideType = RideType.eco,

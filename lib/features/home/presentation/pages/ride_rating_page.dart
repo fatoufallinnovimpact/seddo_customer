@@ -5,6 +5,8 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
+import 'package:seddo/features/home/presentation/widgets/feedback_tags_selector_widget.dart';
+import 'package:seddo/features/home/presentation/widgets/star_rating_selector_widget.dart';
 
 /// Screen displayed at the end of the trip to rate the driver matching Screenshot 3:
 /// - Driver initials avatar ("MS")
@@ -271,68 +273,22 @@ class _RideRatingPageState extends State<RideRatingPage> {
               const SizedBox(height: 24),
 
               // 5 Stars Selector
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(5, (index) {
-                  final starIndex = index + 1;
-                  final isSelected = starIndex <= _selectedStars;
-
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedStars = starIndex;
-                      });
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      child: Icon(
-                        isSelected ? Icons.star_rounded : Icons.star_border_rounded,
-                        size: 38,
-                        color: isSelected ? AppColors.starGold : AppColors.cardBorder,
-                      ),
-                    ),
-                  );
-                }),
+              StarRatingSelectorWidget(
+                selectedStars: _selectedStars,
+                onStarSelected: (stars) {
+                  setState(() {
+                    _selectedStars = stars;
+                  });
+                },
               ),
 
               const SizedBox(height: 24),
 
               // Feedback Chips
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 10,
-                children: _availableTags.map((tag) {
-                  final isSelected = _selectedTags.contains(tag);
-                  return GestureDetector(
-                    onTap: () => _toggleTag(tag),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.tagChipSelectedBg
-                            : AppColors.tagChipBg,
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusPill,
-                        ),
-                      ),
-                      child: Text(
-                        tag,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: isSelected
-                              ? AppColors.tagChipSelectedText
-                              : AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
+              FeedbackTagsSelectorWidget(
+                availableTags: _availableTags,
+                selectedTags: _selectedTags,
+                onTagToggled: _toggleTag,
               ),
 
               const SizedBox(height: 24),
