@@ -536,15 +536,6 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                             ),
                             child: Row(
                               children: [
-                                Container(
-                                  width: 9,
-                                  height: 9,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
                                 Expanded(
                                   child: TextField(
                                     controller: _arrivalController,

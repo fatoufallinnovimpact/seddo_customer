@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/saved_place_model.dart';
 import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
-import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/saved_places_service.dart';
 
 void main() {
