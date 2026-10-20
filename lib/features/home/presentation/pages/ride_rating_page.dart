@@ -40,6 +40,7 @@ class RideRatingPage extends StatefulWidget {
 
 class _RideRatingPageState extends State<RideRatingPage> {
   int _selectedStars = 5;
+  int _selectedTip = 0;
   final Set<String> _selectedTags = {'👍 Conduite prudente'};
 
   static const List<String> _availableTags = [
@@ -48,6 +49,23 @@ class _RideRatingPageState extends State<RideRatingPage> {
     'Voiture propre',
     'Sympathique',
   ];
+
+  static const List<int> _tipOptions = [0, 200, 500, 1000];
+
+  String get _ratingLabel {
+    switch (_selectedStars) {
+      case 5:
+        return '🌟 Excellent service !';
+      case 4:
+        return '👍 Très bonne course';
+      case 3:
+        return '👌 Trajet correct';
+      case 2:
+        return '😐 Quelques soucis';
+      default:
+        return '😞 Décevant';
+    }
+  }
 
   void _toggleTag(String tag) {
     setState(() {
@@ -213,39 +231,132 @@ class _RideRatingPageState extends State<RideRatingPage> {
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
             AppConstants.spacingLg,
-            24,
+            16,
             AppConstants.spacingLg,
-            systemBottom > 0 ? systemBottom : 20,
+            systemBottom > 0 ? systemBottom + 12 : 24,
           ),
           child: Column(
             children: [
-              const SizedBox(height: 20),
-
-              // Circle avatar with initials "MS"
+              // 1. Success Pill (Yango-style)
               Container(
-                width: 76,
-                height: 76,
-                decoration: const BoxDecoration(
-                  color: AppColors.avatarBeige,
-                  shape: BoxShape.circle,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
                 ),
-                alignment: Alignment.center,
-                child: Text(
-                  initials,
-                  style: GoogleFonts.inter(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                  ),
+                decoration: BoxDecoration(
+                  color: AppColors.liveStatusBg,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      size: 14,
+                      color: AppColors.liveStatusText,
+                    ),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        'Course terminée',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.liveStatusText,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-              // Title: "Comment s'est passée votre course avec Moussa ?"
+              // 2. Circle avatar with initials "MS" & gold ring
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 78,
+                    height: 78,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          AppColors.avatarBeige,
+                          Color(0xFFE2DBD3),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.primary,
+                        width: 2.5,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: AppColors.cardShadow,
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      initials,
+                      style: GoogleFonts.inter(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.buttonBlack,
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusPill,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            size: 11,
+                            color: AppColors.starGold,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '${widget.driver.rating}',
+                            style: GoogleFonts.inter(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // 3. Title: "Comment s'est passée votre course avec Moussa ?"
               Text(
                 'Comment s\'est passée votre\ncourse avec ${widget.driver.name.split(' ').first} ?',
                 textAlign: TextAlign.center,
@@ -258,11 +369,11 @@ class _RideRatingPageState extends State<RideRatingPage> {
                 ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
 
-              // Subtitle
+              // 4. Subtitle with destination, time and duration
               Text(
-                '${widget.destination.mainText} · $widget.arrivalTime · $widget.durationText',
+                '${widget.destination.mainText} · ${widget.arrivalTime} · ${widget.durationText}',
                 style: GoogleFonts.inter(
                   fontSize: 13.5,
                   color: AppColors.textSecondary,
@@ -270,11 +381,12 @@ class _RideRatingPageState extends State<RideRatingPage> {
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
 
-              // 5 Stars Selector
+              // 5. 5 Stars Selector & Dynamic Feedback Label
               StarRatingSelectorWidget(
                 selectedStars: _selectedStars,
+                starSize: 42,
                 onStarSelected: (stars) {
                   setState(() {
                     _selectedStars = stars;
@@ -282,23 +394,106 @@ class _RideRatingPageState extends State<RideRatingPage> {
                 },
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 8),
 
-              // Feedback Chips
+              Text(
+                _ratingLabel,
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              // 6. Feedback Chips
               FeedbackTagsSelectorWidget(
                 availableTags: _availableTags,
                 selectedTags: _selectedTags,
                 onTagToggled: _toggleTag,
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 18),
 
-              // Total Payé Card
+              // 7. Driver Tip Option (Yango-style)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceGrey,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Ajouter un pourboire pour ${widget.driver.name.split(' ').first} ?',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _tipOptions.map((tip) {
+                        final isSelected = _selectedTip == tip;
+                        return InkWell(
+                          onTap: () => setState(() => _selectedTip = tip),
+                          borderRadius: BorderRadius.circular(
+                            AppConstants.radiusPill,
+                          ),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.white,
+                              borderRadius: BorderRadius.circular(
+                                AppConstants.radiusPill,
+                              ),
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : AppColors.cardBorder,
+                              ),
+                            ),
+                            child: Text(
+                              tip == 0 ? 'Aucun' : '$tip F',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: isSelected
+                                    ? AppColors.white
+                                    : AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // 8. Total Payé Card
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppColors.tagChipBg,
                   borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+                  border: Border.all(
+                    color: AppColors.cardBorder,
+                    width: 1.0,
+                  ),
                 ),
                 child: Column(
                   children: [
@@ -316,7 +511,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
                         Text(
                           widget.rideOption.formattedPrice,
                           style: GoogleFonts.inter(
-                            fontSize: 17,
+                            fontSize: 18,
                             fontWeight: FontWeight.w900,
                             color: AppColors.textPrimary,
                           ),
@@ -378,7 +573,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
                 ),
               ),
 
-              const Spacer(),
+              const SizedBox(height: 20),
 
               // Button 1: Envoyer
               SizedBox(
@@ -406,7 +601,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
                 ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
               // Button 2: Voir le reçu
               SizedBox(

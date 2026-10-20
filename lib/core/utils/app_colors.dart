@@ -167,6 +167,8 @@ abstract class AppColors {
   static const Color tagChipBg = Color(0xFFF3F1ED);
   static const Color tagChipSelectedBg = Color(0xFF1E1E1E);
   static const Color tagChipSelectedText = Color(0xFFFFFFFF);
+  static const Color liveStatusBg = Color(0xFFE8F8F0);
+  static const Color liveStatusText = Color(0xFF00C853);
 
   // Shadows
   static const Color shadowSubtleBlack = Color(0x0C000000);

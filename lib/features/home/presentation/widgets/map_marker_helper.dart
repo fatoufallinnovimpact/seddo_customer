@@ -201,7 +201,7 @@ abstract class MapMarkerHelper {
   /// Alias for get3DCarMarker for seamless backward compatibility
   static Future<BitmapDescriptor> getCarMarker() => get3DCarMarker();
 
-  /// Generate modern Departure Location Pin marker:
+  /// Generate modern Departure Location Pin marker (compact Yango-style):
   /// Vibrant Seddo Orange teardrop location pin with soft shadow, white ring and central dot.
   /// Anchor at (0.5, 1.0) so the pin tip points directly at the departure point.
   static Future<BitmapDescriptor> getDeparturePinMarker() async {
@@ -209,21 +209,21 @@ abstract class MapMarkerHelper {
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 44.0;
-    const double height = 54.0;
+    const double width = 24.0;
+    const double height = 30.0;
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
-      ..color = const Color(0x55000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      ..color = const Color(0x44000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawOval(
-      const Rect.fromLTWH(14, height - 7, 16, 6),
+      const Rect.fromLTWH(8, height - 3.5, 8, 3.0),
       shadowPaint,
     );
 
     // 2. Teardrop Location Pin Path
     final pinPath = Path();
-    pinPath.moveTo(width / 2, height - 4); // Pin bottom tip
+    pinPath.moveTo(width / 2, height - 2.5); // Pin bottom tip
     pinPath.cubicTo(
       width * 0.16,
       height * 0.65,
@@ -243,7 +243,7 @@ abstract class MapMarkerHelper {
       width * 0.84,
       height * 0.65,
       width / 2,
-      height - 4,
+      height - 2.5,
     );
     pinPath.close();
 
@@ -267,7 +267,7 @@ abstract class MapMarkerHelper {
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.4;
     canvas.drawPath(pinPath, borderPaint);
 
     // 4. White Center Circle
@@ -275,13 +275,13 @@ abstract class MapMarkerHelper {
     final whiteCenterPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 7.5, whiteCenterPaint);
+    canvas.drawCircle(centerOffset, 4.2, whiteCenterPaint);
 
     // 5. Inner Orange Location Dot
     final innerDotPaint = Paint()
       ..color = AppColors.primary
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 4.0, innerDotPaint);
+    canvas.drawCircle(centerOffset, 2.2, innerDotPaint);
 
     final picture = pictureRecorder.endRecording();
     final image = await picture.toImage(width.toInt(), height.toInt());
@@ -291,7 +291,7 @@ abstract class MapMarkerHelper {
     return _departurePinIcon!;
   }
 
-  /// Generate modern Destination / Arrival Location Pin marker:
+  /// Generate modern Destination / Arrival Location Pin marker (compact Yango-style):
   /// Sleek Deep Black teardrop location pin with white circle and target / arrival dot.
   /// Anchor at (0.5, 1.0) so the pin tip points directly at destination point.
   static Future<BitmapDescriptor> getDestinationPinMarker() async {
@@ -299,21 +299,21 @@ abstract class MapMarkerHelper {
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 44.0;
-    const double height = 54.0;
+    const double width = 24.0;
+    const double height = 30.0;
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
-      ..color = const Color(0x55000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      ..color = const Color(0x44000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawOval(
-      const Rect.fromLTWH(14, height - 7, 16, 6),
+      const Rect.fromLTWH(8, height - 3.5, 8, 3.0),
       shadowPaint,
     );
 
     // 2. Teardrop Location Pin Path
     final pinPath = Path();
-    pinPath.moveTo(width / 2, height - 4); // Pin bottom tip
+    pinPath.moveTo(width / 2, height - 2.5); // Pin bottom tip
     pinPath.cubicTo(
       width * 0.16,
       height * 0.65,
@@ -333,7 +333,7 @@ abstract class MapMarkerHelper {
       width * 0.84,
       height * 0.65,
       width / 2,
-      height - 4,
+      height - 2.5,
     );
     pinPath.close();
 
@@ -357,7 +357,7 @@ abstract class MapMarkerHelper {
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 1.4;
     canvas.drawPath(pinPath, borderPaint);
 
     // 4. White Center Circle
@@ -365,13 +365,13 @@ abstract class MapMarkerHelper {
     final whiteCenterPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 7.5, whiteCenterPaint);
+    canvas.drawCircle(centerOffset, 4.2, whiteCenterPaint);
 
     // 5. Inner Black Arrival Dot
     final innerDotPaint = Paint()
       ..color = AppColors.buttonBlack
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 4.0, innerDotPaint);
+    canvas.drawCircle(centerOffset, 2.2, innerDotPaint);
 
     final picture = pictureRecorder.endRecording();
     final image = await picture.toImage(width.toInt(), height.toInt());
@@ -390,12 +390,12 @@ abstract class MapMarkerHelper {
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double radius = 20.0;
+    const double radius = 16.0;
     const center = Offset(radius, radius);
 
     // Outer aura
     final auraPaint = Paint()
-      ..color = AppColors.primary.withAlpha(50)
+      ..color = AppColors.primary.withAlpha(45)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, radius, auraPaint);
 
@@ -403,21 +403,21 @@ abstract class MapMarkerHelper {
     final orangePaint = Paint()
       ..color = AppColors.primary
       ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, 13.0, orangePaint);
+    canvas.drawCircle(center, 10.5, orangePaint);
 
     // White border
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-    canvas.drawCircle(center, 13.0, borderPaint);
+      ..strokeWidth = 2.0;
+    canvas.drawCircle(center, 10.5, borderPaint);
 
     // White directional arrow / navigation triangle inside
     final arrowPath = Path();
-    arrowPath.moveTo(center.dx, center.dy - 7);
-    arrowPath.lineTo(center.dx + 5, center.dy + 6);
-    arrowPath.lineTo(center.dx, center.dy + 3);
-    arrowPath.lineTo(center.dx - 5, center.dy + 6);
+    arrowPath.moveTo(center.dx, center.dy - 5.5);
+    arrowPath.lineTo(center.dx + 4, center.dy + 4.5);
+    arrowPath.lineTo(center.dx, center.dy + 2.2);
+    arrowPath.lineTo(center.dx - 4, center.dy + 4.5);
     arrowPath.close();
 
     final arrowPaint = Paint()

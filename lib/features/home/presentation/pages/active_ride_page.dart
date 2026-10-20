@@ -641,39 +641,114 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Header: "En route vers [Destination]" (Screenshot 1)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'En route vers ${widget.destination.mainText}',
-                            style: GoogleFonts.inter(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.textPrimary,
-                              letterSpacing: -0.4,
+                    // Header: "En route vers [Destination]" with Yango-style live badge & progress
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.liveStatusBg,
+                                borderRadius: BorderRadius.circular(
+                                  AppConstants.radiusPill,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.yangoRouteGreen,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'En direct',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.liveStatusText,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'Arrivée prévue ${widget.rideOption.estimatedArrival} · ${widget.driver.distanceKm} km restants',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: AppColors.textSecondary,
+                            Text(
+                              widget.rideOption.formattedPrice,
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.primary,
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'En route vers ${widget.destination.mainText}',
+                          style: GoogleFonts.inter(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.4,
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Arrivée prévue ${widget.rideOption.estimatedArrival} · ${widget.driver.distanceKm} km restants',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Yango-style animated route progress bar
+                        Stack(
+                          children: [
+                            Container(
+                              height: 4,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceGrey,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: 0.68,
+                              child: Container(
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: AppColors.yangoRouteGreen,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
 
                     const SizedBox(height: 14),
 
-                    // Driver Summary Card with initials avatar and "✓ Payé" badge (Screenshot 1)
+                    // Driver Summary Card with initials avatar, 3D vehicle and "✓ Payé" badge
                     ActiveDriverCardWidget(
                       driver: widget.driver,
                       isPaid: true,
+                      vehicleImagePath: widget.rideOption.type ==
+                              RideType.confort
+                          ? 'assets/images/seddo_confort_3d.png'
+                          : 'assets/images/seddo_eco_3d.png',
                     ),
 
                     const SizedBox(height: 10),
@@ -684,11 +759,92 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                       onCallPressed: _callDriver,
                     ),
 
+                    const SizedBox(height: 14),
+
+                    // Trip Route Summary Card (Yango-style)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceGrey,
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusCard,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.yangoRouteGreen,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  widget.departure.mainText,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 3.5),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                width: 1.5,
+                                height: 14,
+                                color: AppColors.border,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.buttonBlack,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  widget.destination.mainText,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
                     const SizedBox(height: 12),
                     const Divider(height: 1, color: AppColors.divider),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
 
-                    // Row 1: "Partager le trajet" (Screenshot 1)
+                    // Row 1: "Partager le trajet"
                     RideActionTileWidget(
                       icon: Icons.share_outlined,
                       iconColor: AppColors.textPrimary,
@@ -699,9 +855,9 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                     ),
 
                     const Divider(height: 1, color: AppColors.divider),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
 
-                    // Row 2: "Sécurité" (Screenshot 1)
+                    // Row 2: "Sécurité"
                     RideActionTileWidget(
                       icon: Icons.shield_outlined,
                       iconColor: AppColors.sirenRed,
@@ -711,7 +867,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
                       onTap: _openSafetyModal,
                     ),
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
 
                     // Annuler la course Link
                     SizedBox(
@@ -740,7 +896,7 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
 
                     const SizedBox(height: 4),
 
-                    // Simulator shortcut: "Simuler : arrivée" (Screenshot 1)
+                    // Simulator shortcut: "Simuler : arrivée"
                     GestureDetector(
                       onTap: _simulateArrival,
                       child: Text(
