@@ -123,8 +123,8 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
       Polyline(
         polylineId: const PolylineId('shared_route'),
         points: widget.polylinePoints,
-        color: AppColors.buttonBlack,
-        width: 5,
+        color: AppColors.yangoRouteGreen,
+        width: 4,
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,

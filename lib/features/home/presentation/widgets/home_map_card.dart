@@ -125,10 +125,8 @@ class _HomeMapCardState extends State<HomeMapCard> {
               Marker(
                 markerId: MarkerId(driver.id),
                 position: LatLng(driver.latitude, driver.longitude),
-                rotation: driver.heading,
                 icon: _carIcon!,
                 anchor: const Offset(0.5, 0.5),
-                flat: true,
                 zIndexInt: 1,
               ),
             );

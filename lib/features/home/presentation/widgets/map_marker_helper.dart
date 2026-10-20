@@ -1,21 +1,30 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 
 /// Helper to generate high-definition custom BitmapDescriptors for Google Maps.
-/// Generates 3D isometric car markers, modern teardrop location pins for departure and arrival.
+/// Generates user-specified sports car markers, modern teardrop location pins for departure and arrival.
 abstract class MapMarkerHelper {
   static BitmapDescriptor? _carMarkerIcon;
   static BitmapDescriptor? _userMarkerIcon;
   static BitmapDescriptor? _departurePinIcon;
   static BitmapDescriptor? _destinationPinIcon;
 
-  /// Generate high-fidelity 3D isometric car marker for GPS map navigation:
-  /// Realistic 3D perspective, sleek dark metallic finish with Seddo orange accents,
-  /// 3D angled roof & tinted windshield, LED headlights, chrome alloy wheels, and soft ground shadow.
+  /// Generate high-fidelity car marker matching user's exact vehicle design:
+  /// Sleek yellow sports car with soft ground shadow and crisp transparency.
   static Future<BitmapDescriptor> get3DCarMarker() async {
     if (_carMarkerIcon != null) return _carMarkerIcon!;
+
+    try {
+      final byteData =
+          await rootBundle.load('assets/images/map_car_marker_hd.png');
+      _carMarkerIcon = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
+      return _carMarkerIcon!;
+    } catch (_) {
+      // Graceful fallback for headless tests without asset bundle
+    }
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);

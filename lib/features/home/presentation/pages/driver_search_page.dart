@@ -270,7 +270,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             ),
             icon: _carMarkerIcon!,
             anchor: const Offset(0.5, 0.5),
-            rotation: offsets[i][2],
           ),
         );
       }
@@ -285,8 +284,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       Polyline(
         polylineId: const PolylineId('route_polyline'),
         points: widget.polylinePoints,
-        color: AppColors.buttonBlack,
-        width: 5,
+        color: AppColors.yangoRouteGreen,
+        width: 4,
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
@@ -433,16 +432,13 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                           ],
                         ),
                       ),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.asset(
-                          widget.rideOption.type == RideType.confort
-                              ? 'assets/images/seddo_confort_3d.jpg'
-                              : 'assets/images/seddo_eco_3d.jpg',
-                          width: 44,
-                          height: 32,
-                          fit: BoxFit.contain,
-                        ),
+                      Image.asset(
+                        widget.rideOption.type == RideType.confort
+                            ? 'assets/images/seddo_confort_3d.png'
+                            : 'assets/images/seddo_eco_3d.png',
+                        width: 56,
+                        height: 38,
+                        fit: BoxFit.contain,
                       ),
                     ],
                   ),

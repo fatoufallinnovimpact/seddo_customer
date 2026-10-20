@@ -98,6 +98,9 @@ abstract class AppColors {
   /// Usage: Paiement confirmé, chauffeur en ligne, succès
   static const Color success = Color(0xFF1E9E5A);
 
+  /// Tracé d'itinéraire style Yango - Vert dynamique #00C853
+  static const Color yangoRouteGreen = Color(0xFF00C853);
+
   /// Rouge alerte - #D93025
   /// Usage: Erreurs, SOS, alertes critiques
   static const Color alert = Color(0xFFD93025);

@@ -439,7 +439,6 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
           position: widget.driver.location,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
-          rotation: 30,
         ),
       );
     }
@@ -453,8 +452,8 @@ class _ActiveRidePageState extends State<ActiveRidePage> {
       Polyline(
         polylineId: const PolylineId('active_route'),
         points: widget.polylinePoints,
-        color: AppColors.buttonBlack,
-        width: 5,
+        color: AppColors.yangoRouteGreen,
+        width: 4,
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,

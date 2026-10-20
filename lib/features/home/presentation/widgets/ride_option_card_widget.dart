@@ -56,15 +56,12 @@ class RideOptionCardWidget extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // 3D Realistic Vehicle Image
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.asset(
-                  imagePath,
-                  width: 60,
-                  height: 48,
-                  fit: BoxFit.contain,
-                ),
+              // 3D Realistic Vehicle Image (transparent, enlarged)
+              Image.asset(
+                imagePath,
+                width: 78,
+                height: 56,
+                fit: BoxFit.contain,
               ),
               const SizedBox(width: 14),
 

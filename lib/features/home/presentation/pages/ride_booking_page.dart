@@ -221,7 +221,6 @@ class _RideBookingPageState extends State<RideBookingPage> {
           position: carPos,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
-          rotation: 35.0,
         ),
       );
     }
@@ -236,8 +235,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
       Polyline(
         polylineId: const PolylineId('route_polyline'),
         points: _polylinePoints,
-        color: AppColors.buttonBlack,
-        width: 5,
+        color: AppColors.yangoRouteGreen,
+        width: 4,
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
@@ -486,7 +485,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                   RideOptionCardWidget(
                     option: _ecoOption,
                     isSelected: _selectedRideType == RideType.eco,
-                    imagePath: 'assets/images/seddo_eco_3d.jpg',
+                    imagePath: 'assets/images/seddo_eco_3d.png',
                     onTap: () => setState(() => _selectedRideType = RideType.eco),
                   ),
 
@@ -496,7 +495,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                   RideOptionCardWidget(
                     option: _confortOption,
                     isSelected: _selectedRideType == RideType.confort,
-                    imagePath: 'assets/images/seddo_confort_3d.jpg',
+                    imagePath: 'assets/images/seddo_confort_3d.png',
                     onTap: () =>
                         setState(() => _selectedRideType = RideType.confort),
                   ),
