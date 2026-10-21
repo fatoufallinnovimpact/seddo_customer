@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 
 /// Reusable action tile for bottom sheet options (e.g. "Partager le trajet", "Sécurité")
 class RideActionTileWidget extends StatelessWidget {
-  final IconData icon;
+  final IconData? icon;
+  final String? svgPath;
   final Color iconColor;
   final Color iconBgColor;
   final String title;
@@ -14,13 +16,14 @@ class RideActionTileWidget extends StatelessWidget {
 
   const RideActionTileWidget({
     super.key,
-    required this.icon,
+    this.icon,
+    this.svgPath,
     required this.iconColor,
     required this.iconBgColor,
     required this.title,
     required this.subtitle,
     required this.onTap,
-  });
+  }) : assert(icon != null || svgPath != null, 'Either icon or svgPath must be provided');
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +45,21 @@ class RideActionTileWidget extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: Icon(
-                icon,
-                size: 20,
-                color: iconColor,
-              ),
+              child: svgPath != null
+                  ? SvgPicture.asset(
+                      svgPath!,
+                      width: 20,
+                      height: 20,
+                      colorFilter: ColorFilter.mode(
+                        iconColor,
+                        BlendMode.srcIn,
+                      ),
+                    )
+                  : Icon(
+                      icon,
+                      size: 20,
+                      color: iconColor,
+                    ),
             ),
             const SizedBox(width: 14),
             Expanded(

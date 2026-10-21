@@ -7,9 +7,14 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/saved_place_model.dart';
 import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
 import 'package:seddo/services/saved_places_service.dart';
+import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
 
   group('SavedPlaceModel Tests', () {
     test('JSON serialization & deserialization maintains accurate coordinates', () {
@@ -142,8 +147,8 @@ void main() {
       PlaceSearchResult? returnedResult;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
+        wrapWithTestLocalization(
+          child: Builder(
             builder: (context) => Scaffold(
               body: ElevatedButton(
                 onPressed: () async {
@@ -162,6 +167,8 @@ void main() {
           ),
         ),
       );
+
+      await tester.pumpAndSettle();
 
       // Open SavedPlacesPage
       await tester.tap(find.text('Open Saved Places'));
@@ -185,8 +192,8 @@ void main() {
 
     testWidgets('Delete confirmation dialog removes item from list', (tester) async {
       await tester.pumpWidget(
-        MaterialApp(
-          home: SavedPlacesPage(
+        wrapWithTestLocalization(
+          child: SavedPlacesPage(
             savedPlacesService: mockSavedService,
           ),
         ),

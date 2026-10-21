@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
+import '../../test_helpers/test_localization_helper.dart';
 
 class MockGeocodeAdapter implements HttpClientAdapter {
   final Map<String, dynamic> responseData;
@@ -34,6 +35,10 @@ class MockGeocodeAdapter implements HttpClientAdapter {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
 
   group('PlacesService.reverseGeocode', () {
     late PlacesService service;
@@ -136,8 +141,8 @@ void main() {
       PlaceSearchResult? returnedResult;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
+        wrapWithTestLocalization(
+          child: Builder(
             builder: (context) {
               return Scaffold(
                 body: ElevatedButton(
@@ -198,8 +203,8 @@ void main() {
       PlaceSearchResult? returnedResult;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
+        wrapWithTestLocalization(
+          child: Builder(
             builder: (context) {
               return Scaffold(
                 body: ElevatedButton(

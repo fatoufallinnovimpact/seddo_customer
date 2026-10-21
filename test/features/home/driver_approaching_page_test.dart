@@ -8,9 +8,14 @@ import 'package:seddo/features/home/presentation/pages/driver_approaching_page.d
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/home/presentation/pages/shared_ride_tracking_page.dart';
+import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
 
   final departure = PlaceSearchResult(
     id: 'dep_1',
@@ -52,8 +57,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DriverApproachingPage(
+        wrapWithTestLocalization(
+          child: DriverApproachingPage(
             departure: departure,
             destination: destination,
             rideOption: rideOption,
@@ -86,7 +91,7 @@ void main() {
 
       // Card 3: Quick message & call bar
       expect(find.text('Envoyer un message...'), findsOneWidget);
-      expect(find.byIcon(Icons.phone_outlined), findsOneWidget);
+      expect(find.byTooltip('Appeler le chauffeur'), findsOneWidget);
 
       // Card 4: Action buttons
       expect(find.text('Partager'), findsOneWidget);
@@ -100,8 +105,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DriverApproachingPage(
+        wrapWithTestLocalization(
+          child: DriverApproachingPage(
             departure: departure,
             destination: destination,
             rideOption: rideOption,
@@ -123,8 +128,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DriverApproachingPage(
+        wrapWithTestLocalization(
+          child: DriverApproachingPage(
             departure: departure,
             destination: destination,
             rideOption: rideOption,
@@ -146,8 +151,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DriverApproachingPage(
+        wrapWithTestLocalization(
+          child: DriverApproachingPage(
             departure: departure,
             destination: destination,
             rideOption: rideOption,

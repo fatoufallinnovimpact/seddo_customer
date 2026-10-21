@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
@@ -30,6 +31,7 @@ class RideCancelledPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
@@ -66,7 +68,7 @@ class RideCancelledPage extends StatelessWidget {
 
               // Title: "Course annulée"
               Text(
-                'Course annulée',
+                'cancelled.title'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
@@ -79,7 +81,7 @@ class RideCancelledPage extends StatelessWidget {
 
               // Subtitle: "Annulation gratuite : moins de 2 min après l'acceptation"
               Text(
-                'Annulation gratuite : moins de 2 min après l\'acceptation',
+                'cancelled.free_cancellation'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 13.5,
                   color: AppColors.textSecondary,
@@ -112,7 +114,7 @@ class RideCancelledPage extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            'Montant remboursé',
+                            'cancelled.amount_refunded'.tr(),
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               color: AppColors.textSecondary,
@@ -140,7 +142,7 @@ class RideCancelledPage extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Vers',
+                          'cancelled.to'.tr(),
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             color: AppColors.textSecondary,
@@ -148,7 +150,7 @@ class RideCancelledPage extends StatelessWidget {
                         ),
                         Flexible(
                           child: Text(
-                            'Orange Money $phoneDisplay',
+                            'cancelled.to_orange_money'.tr(args: [phoneDisplay]),
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -169,7 +171,7 @@ class RideCancelledPage extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Statut',
+                          'cancelled.status'.tr(),
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             color: AppColors.textSecondary,
@@ -196,7 +198,7 @@ class RideCancelledPage extends StatelessWidget {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                'Remboursé',
+                                'cancelled.refunded_pill'.tr(),
                                 style: GoogleFonts.inter(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w700,
@@ -216,7 +218,7 @@ class RideCancelledPage extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Réf. Orange',
+                          'cancelled.ref_orange'.tr(),
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             color: AppColors.textSecondary,
@@ -275,7 +277,7 @@ class RideCancelledPage extends StatelessWidget {
                     }
                   },
                   child: Text(
-                    'Recommander',
+                    'cancelled.reorder'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -306,7 +308,7 @@ class RideCancelledPage extends StatelessWidget {
                     Navigator.of(context).popUntil((route) => route.isFirst);
                   },
                   child: Text(
-                    'Retour à l\'accueil',
+                    'cancelled.back_home'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,

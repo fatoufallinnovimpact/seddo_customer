@@ -6,9 +6,14 @@ import 'package:seddo/features/home/presentation/pages/driver_approaching_page.d
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/home/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
+import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
 
   final departure = PlaceSearchResult(
     id: 'dep_1',
@@ -35,8 +40,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: RideBookingPage(
+        wrapWithTestLocalization(
+          child: RideBookingPage(
             departure: departure,
             destination: destination,
           ),
@@ -88,7 +93,7 @@ void main() {
 
       // Verify DriverSearchPage is displayed matching Screenshot 3
       expect(find.byType(DriverSearchPage), findsOneWidget);
-      expect(find.text('Recherche d\'un chauffeur'), findsOneWidget);
+      expect(find.textContaining('Recherche d\'un chauffeur'), findsOneWidget);
 
       // 10. Wait for auto-match timer (5 seconds)
       await tester.pump(const Duration(seconds: 5));

@@ -14,9 +14,14 @@ import 'package:seddo/features/home/presentation/widgets/insufficient_balance_sh
 import 'package:seddo/features/home/presentation/widgets/no_driver_found_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/safety_modal_widget.dart';
+import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
 
   final departure = PlaceSearchResult(
     id: 'dep_1',
@@ -60,8 +65,8 @@ void main() {
       OrangeMoneyPaymentResult? paymentResult;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithTestLocalization(
+          child: Scaffold(
             body: Builder(
               builder: (ctx) => ElevatedButton(
                 onPressed: () async {
@@ -77,6 +82,7 @@ void main() {
         ),
       );
 
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Pay'));
       await tester.pumpAndSettle();
 
@@ -111,8 +117,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithTestLocalization(
+          child: Scaffold(
             body: InsufficientBalanceSheet(
               rideOption: ecoOption,
               missingAmount: 1200,
@@ -140,8 +146,8 @@ void main() {
       NoDriverFoundAction? chosenAction;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithTestLocalization(
+          child: Scaffold(
             body: Builder(
               builder: (ctx) => ElevatedButton(
                 onPressed: () async {
@@ -159,6 +165,7 @@ void main() {
         ),
       );
 
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Open No Driver Sheet'));
       await tester.pumpAndSettle();
 
@@ -180,8 +187,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: RideCancelledPage(
+        wrapWithTestLocalization(
+          child: RideCancelledPage(
             rideOption: ecoOption,
             departure: departure,
             destination: destination,
@@ -211,8 +218,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: ActiveRidePage(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
             departure: departure,
             destination: destination,
             rideOption: ecoOption,
@@ -234,7 +241,7 @@ void main() {
       await tester.drag(find.text('En route vers Almadies'), const Offset(0, -400));
       await tester.pumpAndSettle();
 
-      expect(find.text('Partager le trajet'), findsOneWidget);
+      expect(find.text('Partager mon trajet'), findsOneWidget);
       expect(find.text('Sécurité'), findsOneWidget);
       expect(find.byIcon(Icons.notifications_active_rounded), findsOneWidget);
 
@@ -242,9 +249,53 @@ void main() {
       await tester.tap(find.text('Sécurité'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Sécurité du trajet'), findsOneWidget);
-      expect(find.text('Appeler la Police (17)'), findsOneWidget);
-      expect(find.text('Appeler les Secours / SAMU (1515)'), findsOneWidget);
+      expect(find.textContaining('SÉCURITÉ DU'), findsOneWidget);
+      expect(find.text('Police'), findsOneWidget);
+      expect(find.text('17'), findsOneWidget);
+      expect(find.text('SAMU'), findsOneWidget);
+      expect(find.text('1515'), findsOneWidget);
+    });
+
+    testWidgets('ActiveRidePage in offline mode renders floating black banner and Urgence par SMS with caution icon',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            departure: departure,
+            destination: destination,
+            rideOption: ecoOption,
+            driver: driver,
+            isOffline: true,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Offline black banner at the top
+      expect(
+        find.text('Pas de réseau. Votre course continue et la position se mettra à jour au retour du réseau.'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.wifi_off_rounded), findsOneWidget);
+
+      // Bottom sheet offline contents
+      expect(find.text('Dernière position il y a 40 s'), findsOneWidget);
+      expect(find.text('Almadies · arrivée 18:42'), findsOneWidget);
+      expect(find.text('Urgence par SMS'), findsOneWidget);
+      expect(find.text('Fonctionne sans connexion internet'), findsOneWidget);
+
+      // Tap "Urgence par SMS" opens OfflineEmergencySheet
+      await tester.tap(find.text('Urgence par SMS'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Police Secours (17)'), findsOneWidget);
+      expect(find.text('Sapeurs-Pompiers (18)'), findsOneWidget);
+      expect(find.text('SAMU (1515)'), findsOneWidget);
     });
 
     testWidgets('SafetyModalWidget renders emergency numbers directly',
@@ -253,8 +304,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
+        wrapWithTestLocalization(
+          child: Scaffold(
             body: SafetyModalWidget(
               destination: destination,
               driver: driver,
@@ -265,9 +316,11 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Sécurité du trajet'), findsOneWidget);
-      expect(find.text('Appeler la Police (17)'), findsOneWidget);
-      expect(find.text('Appeler les Secours / SAMU (1515)'), findsOneWidget);
+      expect(find.textContaining('SÉCURITÉ DU'), findsOneWidget);
+      expect(find.text('Police'), findsOneWidget);
+      expect(find.text('17'), findsOneWidget);
+      expect(find.text('SAMU'), findsOneWidget);
+      expect(find.text('1515'), findsOneWidget);
       expect(find.text('Partager ma position d\'urgence'), findsOneWidget);
       expect(find.text('Signaler un problème à Seddo'), findsOneWidget);
     });
@@ -278,8 +331,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: RideRatingPage(
+        wrapWithTestLocalization(
+          child: RideRatingPage(
             destination: destination,
             driver: driver,
             rideOption: ecoOption,
@@ -308,10 +361,40 @@ void main() {
       await tester.tap(find.text('Voir le reçu'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Reçu de la course'), findsOneWidget);
-      expect(find.text('Fermer'), findsOneWidget);
-      await tester.tap(find.text('Fermer'));
+      expect(find.text('Payé'), findsOneWidget);
+      expect(find.text('Reçu PDF'), findsOneWidget);
+      expect(find.text('Aide'), findsOneWidget);
+      expect(find.text('Recommander ce trajet'), findsOneWidget);
+      expect(find.text('Réf. Orange'), findsOneWidget);
+      expect(find.text('CI270415.1819.A3F2'), findsOneWidget);
+
+      // Tap Aide button to navigate to RideHelpPage
+      await tester.tap(find.text('Aide'));
       await tester.pumpAndSettle();
+
+      expect(find.text('Aide sur cette course'), findsOneWidget);
+      expect(find.text('Quel est le problème ?'), findsOneWidget);
+      expect(find.text("J'ai oublié un objet"), findsOneWidget);
+      expect(find.text("Le trajet ne s'est pas bien passé"), findsOneWidget);
+      expect(find.text('Montant ou paiement'), findsOneWidget);
+      expect(find.text('Remboursement non reçu'), findsOneWidget);
+      expect(find.text("Dites-nous ce qui s'est passé"), findsOneWidget);
+      expect(find.text('Détour inutile'), findsOneWidget);
+      expect(find.text('Envoyer au support'), findsOneWidget);
+
+      // Tap back from RideHelpPage
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+      await tester.pumpAndSettle();
+
+      // We are back on RideReceiptPage
+      expect(find.text('Recommander ce trajet'), findsOneWidget);
+
+      // Tap back from RideReceiptPage
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+      await tester.pumpAndSettle();
+
+      // Back on RideRatingPage
+      expect(find.text('Voir le reçu'), findsOneWidget);
     });
 
     testWidgets('SharedRideTrackingPage renders browser header and tracking details',
@@ -320,8 +403,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: SharedRideTrackingPage(
+        wrapWithTestLocalization(
+          child: SharedRideTrackingPage(
             departure: departure,
             destination: destination,
             driver: driver,
@@ -344,8 +427,8 @@ void main() {
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
-        MaterialApp(
-          home: DriverChatPage(
+        wrapWithTestLocalization(
+          child: DriverChatPage(
             driver: driver,
           ),
         ),

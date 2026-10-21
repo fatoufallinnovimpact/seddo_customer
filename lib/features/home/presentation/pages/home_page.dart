@@ -17,11 +17,12 @@ import 'package:seddo/features/home/presentation/widgets/home_map_card.dart';
 import 'package:seddo/features/home/presentation/widgets/home_recent_item.dart';
 import 'package:seddo/features/home/presentation/widgets/home_search_bar.dart';
 import 'package:seddo/features/home/presentation/widgets/home_suggestion_card.dart';
+import 'package:seddo/features/home/presentation/widgets/seddo_drawer_widget.dart';
 
 /// Main Home Screen of Seddo faithfully reproducing the updated reference design:
 /// - Top Bar: Circular Menu button, Orange SEDDO Logo, and Circular Notification Bell with unread dot
 /// - Search Card: Orange search icon, destination title & subtitle, orange circular arrow button
-/// - Recent Locations ("Endroits récents"): Header with "Tout voir >", distinct white rounded cards
+/// - Recent Rides ("Mes récentes courses"): Distinct white rounded cards
 ///   with colored circular icon backgrounds (peach for Almadies home, grey for Travail briefcase)
 /// - Suggestions: Header with car front icon, 4 cards using the provided vector SVGs:
 ///   - Seddo Eco (ecocar.svg, orange border & indicator line)
@@ -41,8 +42,15 @@ class HomePage extends StatelessWidget {
   }
 }
 
-class _HomePageContent extends StatelessWidget {
+class _HomePageContent extends StatefulWidget {
   const _HomePageContent();
+
+  @override
+  State<_HomePageContent> createState() => _HomePageContentState();
+}
+
+class _HomePageContentState extends State<_HomePageContent> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   Future<void> _openDestinationSearch(BuildContext context) async {
     final homeBloc = context.read<HomeBloc>();
@@ -70,7 +78,13 @@ class _HomePageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Establishing reactive dependency on EasyLocalization
+    final _ = context.locale;
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const SeddoDrawerWidget(),
+      drawerEnableOpenDragGesture: true,
+      drawerEdgeDragWidth: 60,
       backgroundColor: AppColors.white,
       body: SafeArea(
         child: SingleChildScrollView(
@@ -85,7 +99,7 @@ class _HomePageContent extends StatelessWidget {
                 children: [
                   CircularMenuButton(
                     onPressed: () {
-                      // Open drawer / menu
+                      _scaffoldKey.currentState?.openDrawer();
                     },
                   ),
                   SvgPicture.asset(
@@ -96,7 +110,7 @@ class _HomePageContent extends StatelessWidget {
                   CircularNotificationButton(
                     hasUnread: true,
                     onPressed: () {
-                      // Open notifications
+                      SeddoDrawerWidget.openNotificationsSheet(context);
                     },
                   ),
                 ],
@@ -105,8 +119,6 @@ class _HomePageContent extends StatelessWidget {
 
               // 2. Search Card: "Où allez-vous ?" with orange arrow button
               BlocBuilder<HomeBloc, HomeState>(
-                buildWhen: (prev, curr) =>
-                    prev.destinationAddress != curr.destinationAddress,
                 builder: (context, state) {
                   return HomeSearchBar(
                     destinationAddress: state.destinationAddress,
@@ -121,61 +133,26 @@ class _HomePageContent extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
-              // 3. Recent Locations Header: "Endroits récents" + "Tout voir >"
+              // 3. Recent Rides Header: "Mes récentes courses"
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      SvgPicture.asset(
-                        'assets/icons/clock-three-svgrepo-com.svg',
-                        width: 20,
-                        height: 20,
-                        colorFilter: const ColorFilter.mode(
-                          AppColors.textPrimary,
-                          BlendMode.srcIn,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'home.recent_places'.tr(),
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ],
+                  SvgPicture.asset(
+                    'assets/icons/clock-three-svgrepo-com.svg',
+                    width: 20,
+                    height: 20,
+                    colorFilter: const ColorFilter.mode(
+                      AppColors.textPrimary,
+                      BlendMode.srcIn,
+                    ),
                   ),
-                  InkWell(
-                    onTap: () {
-                      // See all recent destinations
-                    },
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 2,
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'home.see_all'.tr(),
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            size: 16,
-                            color: AppColors.primary,
-                          ),
-                        ],
-                      ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'home.recent_places'.tr(),
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.2,
                     ),
                   ),
                 ],
@@ -260,8 +237,6 @@ class _HomePageContent extends StatelessWidget {
 
               // 7. Suggestions Row: Seddo Eco, Confort, Aéroport, TCU
               BlocBuilder<HomeBloc, HomeState>(
-                buildWhen: (prev, curr) =>
-                    prev.selectedCategory != curr.selectedCategory,
                 builder: (context, state) {
                   return Row(
                     children: [
@@ -341,7 +316,7 @@ class _HomePageContent extends StatelessWidget {
               ),
               const SizedBox(height: 18),
 
-              // 8. Interactive Google Map Card (untouched)
+              // 8. Interactive Google Map Card
               const HomeMapCard(height: 290),
               const SizedBox(height: 20),
             ],

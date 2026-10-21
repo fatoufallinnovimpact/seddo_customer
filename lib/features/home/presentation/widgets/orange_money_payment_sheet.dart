@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -79,6 +80,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final rideTypeLabel =
         widget.rideOption.type == RideType.eco ? 'Eco' : 'Confort';
@@ -116,7 +118,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
             children: [
               Expanded(
                 child: Text(
-                  'Confirmer le paiement',
+                  'payment_sheet.title'.tr(),
                   style: GoogleFonts.inter(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
@@ -153,7 +155,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
 
           // Subtitle: Seddo Mobilité · course Eco
           Text(
-            'Seddo Mobilité · course $rideTypeLabel',
+            'payment_sheet.seddo_mobility'.tr(args: [rideTypeLabel]),
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w500,
@@ -176,7 +178,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
 
           // Source: depuis Orange Money 77 ••• 45 12
           Text(
-            'depuis Orange Money ${widget.phoneDisplay}',
+            'payment_sheet.from_om'.tr(args: [widget.phoneDisplay]),
             style: GoogleFonts.inter(
               fontSize: 13,
               color: AppColors.textSecondary,
@@ -210,7 +212,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
           const SizedBox(height: 8),
 
           Text(
-            'Saisissez votre code secret',
+            'payment_sheet.enter_code'.tr(),
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w500,
@@ -240,7 +242,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
               ),
               onPressed: _onValidate,
               child: Text(
-                'Valider',
+                'payment_sheet.validate'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,

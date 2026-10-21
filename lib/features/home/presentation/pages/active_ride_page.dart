@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -16,9 +17,11 @@ import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 import 'package:seddo/features/home/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/home/presentation/pages/shared_ride_tracking_page.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/features/home/presentation/widgets/active_driver_card_widget.dart';
 import 'package:seddo/features/home/presentation/widgets/driver_action_buttons_widget.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/offline_emergency_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/ride_action_tile_widget.dart';
 import 'package:seddo/features/home/presentation/widgets/safety_modal_widget.dart';
 
@@ -39,6 +42,7 @@ class ActiveRidePage extends StatefulWidget {
   final DriverModel driver;
   final List<LatLng> polylinePoints;
   final bool autoStartSimulation;
+  final bool isOffline;
 
   const ActiveRidePage({
     super.key,
@@ -48,6 +52,7 @@ class ActiveRidePage extends StatefulWidget {
     required this.driver,
     this.polylinePoints = const [],
     this.autoStartSimulation = true,
+    this.isOffline = false,
   });
 
   @override
@@ -79,10 +84,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   String _stopReason = 'Arrêt feu rouge';
   bool _followCar = true;
   DateTime _lastCameraUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
+  late bool _isOffline;
 
   @override
   void initState() {
     super.initState();
+    _isOffline = widget.isOffline;
     _initRoute();
     _loadCustomMarkers();
 
@@ -569,7 +576,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   void _showShareOptionsSheet(String shareUrl) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.transparent,
       builder: (ctx) => Container(
         decoration: const BoxDecoration(
           color: AppColors.white,
@@ -594,7 +601,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             ),
             const SizedBox(height: 18),
             Text(
-              'Lien de suivi en direct',
+              'ride.live_tracking_link'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
@@ -603,7 +610,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             ),
             const SizedBox(height: 6),
             Text(
-              'Vos proches peuvent suivre votre voiture en temps réel jusqu\'à destination.',
+              'ride.live_tracking_desc'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 13,
                 color: AppColors.textSecondary,
@@ -668,7 +675,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       );
                     },
                     child: Text(
-                      'Aperçu du suivi web',
+                      'ride.web_tracking_preview'.tr(),
                       style: GoogleFonts.inter(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
@@ -680,6 +687,34 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openOfflineEmergency() {
+    OfflineEmergencySheet.show(
+      context,
+      destination: widget.destination,
+      driver: widget.driver,
+      currentPosition: _currentCarPosition,
+      etaText: widget.rideOption.estimatedArrival,
+    );
+  }
+
+  void _toggleOfflineMode() {
+    setState(() {
+      _isOffline = !_isOffline;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isOffline
+              ? 'ride.offline_mode_active'.tr()
+              : 'ride.offline_mode_restored'.tr(),
+        ),
+        duration: const Duration(seconds: 2),
+        backgroundColor:
+            _isOffline ? AppColors.offlineDark : AppColors.success,
       ),
     );
   }
@@ -696,6 +731,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: RideRatingPage(
+          departure: widget.departure,
           destination: widget.destination,
           driver: widget.driver,
           rideOption: widget.rideOption,
@@ -797,6 +833,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
@@ -843,126 +880,215 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             ),
           ),
 
-          // 2. Floating Top Bar with back button, center status, and red safety siren button
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: AppConstants.circularButtonSize,
-                    height: AppConstants.circularButtonSize,
-                    decoration: const BoxDecoration(
-                      color: AppColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.shadowMarker,
-                          blurRadius: 10,
-                          offset: Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: AppColors.textPrimary,
-                        size: 22,
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
+          // 2. Floating Offline Banner (when offline) or Top Bar (when online)
+          if (_isOffline) ...[
+            // Floating Black Offline Banner matching user screenshot
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 16,
+              right: 16,
+              child: GestureDetector(
+                onTap: _toggleOfflineMode,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
                   ),
-
-                  const SizedBox(width: AppConstants.spacingSm),
-
-                  Expanded(
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
+                  decoration: BoxDecoration(
+                    color: AppColors.offlineDark,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.black38,
+                        blurRadius: 14,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.wifi_off_rounded,
                           color: AppColors.white,
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusPill,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Pas de réseau. Votre course continue et la position se mettra à jour au retour du réseau.',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.white,
+                            height: 1.35,
                           ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: AppColors.shadowMarker,
-                              blurRadius: 10,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: _isStopped
-                                    ? AppColors.orangeMoneyOrange
-                                    : AppColors.success,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              _progressRatio >= 0.99
-                                  ? 'Arrivé à destination !'
-                                  : (_isStopped
-                                      ? _stopReason
-                                      : 'Arrive dans $_remainingEtaMinutes min'),
-                              style: GoogleFonts.inter(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          ],
                         ),
                       ),
-                    ),
+                    ],
                   ),
-
-                  // Floating Red Siren Button (Screenshot 1 top-right)
-                  Container(
-                    width: AppConstants.circularButtonSize,
-                    height: AppConstants.circularButtonSize,
-                    decoration: const BoxDecoration(
-                      color: AppColors.sirenRed,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.shadowMarker,
-                          blurRadius: 10,
-                          offset: Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.notifications_active_rounded,
-                        color: AppColors.white,
-                        size: 20,
-                      ),
-                      onPressed: _openSafetyModal,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
+
+            // Discreet floating back button so navigation is always accessible
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 76,
+              left: 16,
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.shadowMarker,
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: AppColors.textPrimary,
+                    size: 20,
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+          ] else
+            // Normal online Floating Top Bar
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingMd,
+                  vertical: AppConstants.spacingSm,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: AppConstants.circularButtonSize,
+                      height: AppConstants.circularButtonSize,
+                      decoration: const BoxDecoration(
+                        color: AppColors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.shadowMarker,
+                            blurRadius: 10,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: AppColors.textPrimary,
+                          size: 22,
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+
+                    const SizedBox(width: AppConstants.spacingSm),
+
+                    Expanded(
+                      child: Center(
+                        child: GestureDetector(
+                          onLongPress: _toggleOfflineMode,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.white,
+                              borderRadius: BorderRadius.circular(
+                                AppConstants.radiusPill,
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: AppColors.shadowMarker,
+                                  blurRadius: 10,
+                                  offset: Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    color: _isStopped
+                                        ? AppColors.orangeMoneyOrange
+                                        : AppColors.success,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _progressRatio >= 0.99
+                                      ? 'Arrivé à destination !'
+                                      : (_isStopped
+                                          ? _stopReason
+                                          : 'Arrive dans $_remainingEtaMinutes min'),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Floating Red Siren Button (Screenshot 1 top-right)
+                    Container(
+                      width: AppConstants.circularButtonSize,
+                      height: AppConstants.circularButtonSize,
+                      decoration: const BoxDecoration(
+                        color: AppColors.sirenRed,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.shadowMarker,
+                            blurRadius: 10,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.notifications_active_rounded,
+                          color: AppColors.white,
+                          size: 20,
+                        ),
+                        onPressed: _openSafetyModal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // 3. Floating Recenter & Auto-Follow Button
           Positioned(
             right: 16,
-            bottom: MediaQuery.of(context).size.height * 0.38 + 12,
+            bottom: MediaQuery.of(context).size.height *
+                    (_isOffline ? 0.25 : 0.38) +
+                12,
             child: Container(
               width: 44,
               height: 44,
@@ -999,11 +1125,13 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
           // 4. Draggable Bottom Sheet with Driver Information & Communication
           DraggableScrollableSheet(
-            initialChildSize: 0.38,
+            initialChildSize: _isOffline ? 0.25 : 0.38,
             minChildSize: 0.14,
             maxChildSize: 0.78,
             snap: true,
-            snapSizes: const [0.14, 0.38, 0.78],
+            snapSizes: _isOffline
+                ? const [0.14, 0.25, 0.78]
+                : const [0.14, 0.38, 0.78],
             builder: (context, scrollController) {
               return Container(
                 decoration: const BoxDecoration(
@@ -1043,6 +1171,137 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                     ),
                     const SizedBox(height: 14),
 
+                    if (_isOffline) ...[
+                      // Offline View matching user screenshot:
+                      Text(
+                        'Dernière position il y a 40 s',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${widget.destination.mainText} · arrivée ${widget.rideOption.estimatedArrival}',
+                        style: GoogleFonts.inter(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // "Urgence par SMS" tile matching screenshot
+                      InkWell(
+                        onTap: _openOfflineEmergency,
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusDefault,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.errorLightBg,
+                                  shape: BoxShape.circle,
+                                ),
+                                alignment: Alignment.center,
+                                child: SvgPicture.asset(
+                                  'assets/icons/caution-mark-8-svgrepo-com.svg',
+                                  width: 22,
+                                  height: 22,
+                                  colorFilter: const ColorFilter.mode(
+                                    AppColors.errorRed,
+                                    BlendMode.srcIn,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'ride.sms_emergency'.tr(),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'ride.sms_emergency_desc'.tr(),
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12.5,
+                                        color: AppColors.textSecondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(
+                                Icons.chevron_right_rounded,
+                                color: AppColors.textSecondary,
+                                size: 22,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+                      const Divider(height: 1, color: AppColors.divider),
+                      const SizedBox(height: 14),
+
+                      // Driver Summary Card even when offline
+                      ActiveDriverCardWidget(
+                        driver: widget.driver,
+                        isPaid: true,
+                        vehicleImagePath: widget.rideOption.type ==
+                                RideType.confort
+                            ? 'assets/images/seddo_confort_3d.png'
+                            : 'assets/images/seddo_eco_3d.png',
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Quick Communication Row (GSM phone call and SMS work offline)
+                      DriverActionButtonsWidget(
+                        onMessagePressed: _openChat,
+                        onCallPressed: _callDriver,
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Toggle network button for simulation & testing
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _toggleOfflineMode,
+                          icon: const Icon(
+                            Icons.wifi_rounded,
+                            size: 16,
+                            color: AppColors.primary,
+                          ),
+                          label: Text(
+                            'Simuler le retour de connexion',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+
                     // Header: "En route vers [Destination]" with Yango-style live badge & progress
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1081,7 +1340,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                                   const SizedBox(width: 5),
                                   Text(
                                     _progressRatio >= 0.99
-                                        ? 'Arrivé'
+                                        ? 'ride.arrived'.tr()
                                         : (_isStopped
                                             ? _stopReason
                                             : 'En direct'),
@@ -1263,8 +1522,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       icon: Icons.share_outlined,
                       iconColor: AppColors.textPrimary,
                       iconBgColor: AppColors.surfaceGrey,
-                      title: 'Partager le trajet',
-                      subtitle: 'Envoyer le suivi en direct à un proche',
+                      title: 'ride.share_ride'.tr(),
+                      subtitle: 'ride.live_tracking_desc'.tr(),
                       onTap: _shareRide,
                     ),
 
@@ -1273,20 +1532,21 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
                     // Row 2: "Sécurité"
                     RideActionTileWidget(
-                      icon: Icons.shield_outlined,
+                      svgPath: 'assets/icons/security-svgrepo-com.svg',
                       iconColor: AppColors.sirenRed,
                       iconBgColor: AppColors.walletContainerBg,
-                      title: 'Sécurité',
-                      subtitle: 'Urgence, contacts d\'urgence, signaler',
+                      title: 'drawer.safety'.tr(),
+                      subtitle: 'drawer.safety_sub'.tr(),
                       onTap: _openSafetyModal,
                     ),
                   ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
+                ],
+              ),
+            );
+          },
+        ),
+      ],
+    ),
+  );
+}
 }

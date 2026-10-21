@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -33,7 +34,7 @@ class AddSavedPlaceSheet extends StatefulWidget {
     return showModalBottomSheet<SavedPlaceModel>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.transparent,
       builder: (_) => AddSavedPlaceSheet(
         initialPlace: initialPlace,
         placesService: placesService,
@@ -270,6 +271,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final systemBottomPadding = MediaQuery.of(context).padding.bottom;
     final effectiveBottom = bottomInset > 0
@@ -342,7 +344,9 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isEditing ? 'Modifier le lieu' : 'Enregistrer un lieu',
+                        isEditing
+                            ? 'saved_places.add_place_title'.tr()
+                            : 'saved_places.add_place_title'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -351,7 +355,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                         ),
                       ),
                       Text(
-                        'Retrouvez facilement cette destination',
+                        'saved_places.favorite_subtitle'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 12.5,
                           color: AppColors.textSecondary,
@@ -371,7 +375,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
 
             // 1. Name Input
             Text(
-              'Nom personnalisé',
+              'saved_places.custom_name'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -444,7 +448,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
 
             // 2. Icon Picker
             Text(
-              'Icône associée',
+              'saved_places.associated_icon'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -470,7 +474,7 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                       border: Border.all(
                         color: isSelected
                             ? AppColors.primary
-                            : Colors.transparent,
+                            : AppColors.transparent,
                         width: 2.2,
                       ),
                       boxShadow: isSelected
@@ -738,7 +742,9 @@ class _AddSavedPlaceSheetState extends State<AddSavedPlaceSheet> {
                 ),
                 onPressed: _save,
                 child: Text(
-                  isEditing ? 'Mettre à jour le lieu' : 'Enregistrer ce lieu',
+                  isEditing
+                      ? 'saved_places.save_button'.tr()
+                      : 'saved_places.save_button'.tr(),
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,

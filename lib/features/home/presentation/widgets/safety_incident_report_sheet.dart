@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -20,7 +21,7 @@ class SafetyIncidentReportSheet extends StatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.transparent,
       builder: (ctx) => SafetyIncidentReportSheet(driver: driver),
     );
   }
@@ -33,13 +34,13 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
   final TextEditingController _commentController = TextEditingController();
   final Set<String> _selectedReasons = {};
 
-  static const List<String> _incidentCategories = [
-    '🚨 Conduite dangereuse / Vitesse',
-    '🚗 Véhicule non conforme',
-    '⚠️ Comportement inapproprié',
-    '💳 Désaccord sur le tarif',
-    '📱 Téléphone au volant',
-    '📍 Détour non sollicité',
+  static const List<String> _incidentCategoryKeys = [
+    'safety.incident_cat_driving',
+    'safety.incident_cat_vehicle',
+    'safety.incident_cat_behavior',
+    'safety.incident_cat_price',
+    'safety.incident_cat_phone',
+    'safety.incident_cat_detour',
   ];
 
   @override
@@ -48,12 +49,12 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
     super.dispose();
   }
 
-  void _toggleReason(String reason) {
+  void _toggleReason(String key) {
     setState(() {
-      if (_selectedReasons.contains(reason)) {
-        _selectedReasons.remove(reason);
+      if (_selectedReasons.contains(key)) {
+        _selectedReasons.remove(key);
       } else {
-        _selectedReasons.add(reason);
+        _selectedReasons.add(key);
       }
     });
   }
@@ -73,7 +74,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Signalement pris en compte. Notre équipe sécurité examine le trajet immédiatement.',
+                'safety.incident_success'.tr(),
                 style: GoogleFonts.inter(
                   color: AppColors.white,
                   fontSize: 13,
@@ -89,6 +90,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final keyboardBottom = MediaQuery.of(context).viewInsets.bottom;
 
@@ -145,7 +147,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Signaler un incident',
+                      'safety.incident_title'.tr(),
                       style: GoogleFonts.inter(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -154,7 +156,9 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
                       ),
                     ),
                     Text(
-                      'Course avec ${widget.driver.name} · ${widget.driver.carModel}',
+                      'safety.incident_ride_with'.tr(
+                        args: [widget.driver.name, widget.driver.carModel],
+                      ),
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -174,7 +178,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
           const SizedBox(height: 18),
 
           Text(
-            'Quel est le problème rencontré ?',
+            'safety.incident_question'.tr(),
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -187,10 +191,10 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _incidentCategories.map((cat) {
-              final isSelected = _selectedReasons.contains(cat);
+            children: _incidentCategoryKeys.map((catKey) {
+              final isSelected = _selectedReasons.contains(catKey);
               return GestureDetector(
-                onTap: () => _toggleReason(cat),
+                onTap: () => _toggleReason(catKey),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -205,7 +209,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
                     ),
                   ),
                   child: Text(
-                    cat,
+                    catKey.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 12.5,
                       fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
@@ -224,7 +228,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
             controller: _commentController,
             maxLines: 3,
             decoration: InputDecoration(
-              hintText: 'Précisez ce qui s\'est passé (facultatif)...',
+              hintText: 'safety.incident_comment_hint'.tr(),
               hintStyle: GoogleFonts.inter(
                 fontSize: 13,
                 color: AppColors.textSecondary,
@@ -264,7 +268,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
               ),
               onPressed: _submitReport,
               child: Text(
-                'Transmettre le signalement',
+                'safety.incident_submit'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w800,

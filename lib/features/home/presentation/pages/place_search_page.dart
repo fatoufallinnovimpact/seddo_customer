@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +12,8 @@ import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
+import 'package:seddo/core/utils/service_area_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/service_unavailable_sheet.dart';
 
 /// Interactive place search screen matching the reference design:
 /// - Header: Back arrow + "Votre trajet"
@@ -380,6 +383,26 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
     if (!mounted) return;
 
+    final outsideDeparture = ServiceAreaHelper.getOutsideCityName(
+      latitude: departure.latitude,
+      longitude: departure.longitude,
+      address: '${departure.mainText}, ${departure.secondaryText}',
+    );
+    final outsideArrival = ServiceAreaHelper.getOutsideCityName(
+      latitude: arrival.latitude,
+      longitude: arrival.longitude,
+      address: '${arrival.mainText}, ${arrival.secondaryText}',
+    );
+
+    final outsideCity = outsideArrival ?? outsideDeparture;
+    if (outsideCity != null) {
+      await ServiceUnavailableSheet.show(
+        context,
+        cityName: outsideCity,
+      );
+      return;
+    }
+
     final bookingResult = await Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: RideBookingPage(
@@ -409,6 +432,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Establishing reactive dependency on EasyLocalization
+    final _ = context.locale;
     return Scaffold(
       backgroundColor: AppColors.white,
       body: GestureDetector(
@@ -421,8 +446,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             // 1. Top Bar: Back Arrow + "Votre trajet"
             Padding(
               padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
+                 horizontal: AppConstants.spacingMd,
+                 vertical: AppConstants.spacingSm,
               ),
               child: Row(
                 children: [
@@ -451,7 +476,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                   ),
                   const SizedBox(width: AppConstants.spacingMd),
                   Text(
-                    'Votre trajet',
+                    'search.your_trip'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -536,7 +561,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                             decoration: BoxDecoration(
                               color: !_isEditingArrival
                                   ? AppColors.white
-                                  : Colors.transparent,
+                                  : AppColors.transparent,
                               borderRadius: BorderRadius.circular(12),
                               border: !_isEditingArrival
                                   ? Border.all(
@@ -557,8 +582,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                       color: AppColors.textPrimary,
                                     ),
                                     cursorColor: AppColors.primary,
-                                    decoration: const InputDecoration(
-                                      hintText: 'Point de départ',
+                                    decoration: InputDecoration(
+                                      hintText: 'search.pickup'.tr(),
                                       border: InputBorder.none,
                                       isDense: true,
                                       contentPadding: EdgeInsets.zero,
@@ -630,8 +655,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                       color: AppColors.textPrimary,
                                     ),
                                     cursorColor: AppColors.primary,
-                                    decoration: const InputDecoration(
-                                      hintText: 'Où allez-vous ?',
+                                    decoration: InputDecoration(
+                                      hintText: 'search.where_to'.tr(),
                                       border: InputBorder.none,
                                       isDense: true,
                                       contentPadding: EdgeInsets.zero,
@@ -734,8 +759,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     Expanded(
                       child: Text(
                         _isEditingArrival
-                            ? 'Utiliser ma position actuelle pour l\'arrivée'
-                            : 'Utiliser ma position actuelle pour le départ',
+                            ? 'search.use_current_position_arrival'.tr()
+                            : 'search.use_current_position_departure'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
@@ -755,17 +780,17 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             // 3. Quick Actions: Lieux enregistrés & Choisir sur la carte
             _QuickActionTile(
               iconSvgPath: 'assets/icons/star-svgrepo-com.svg',
-              title: 'Lieux enregistrés',
-              subtitle: 'Maison, Travail, Aéroport',
+              title: 'drawer.saved_places'.tr(),
+              subtitle: 'drawer.saved_places_sub'.tr(),
               onTap: _openSavedPlaces,
             ),
 
             _QuickActionTile(
               iconSvgPath: 'assets/icons/map-svgrepo-com.svg',
-              title: 'Choisir sur la carte',
+              title: 'search.choose_on_map'.tr(),
               subtitle: _isEditingArrival
-                  ? 'Placer le point d\'arrivée à la main'
-                  : 'Placer le point de départ à la main',
+                  ? 'search.choose_arrival_on_map'.tr()
+                  : 'search.choose_departure_on_map'.tr(),
               onTap: () => _openMapPicker(isArrival: _isEditingArrival),
             ),
 
@@ -780,7 +805,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               child: Row(
                 children: [
                   Text(
-                    'Résultats',
+                    'search.results'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -808,7 +833,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               child: _suggestions.isEmpty && !_isLoading
                   ? Center(
                       child: Text(
-                        'Aucun résultat pour cette recherche',
+                        'search.no_results'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           color: AppColors.textSecondary,
@@ -930,7 +955,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     children: [
                       Flexible(
                         child: Text(
-                          'Confirmer le trajet',
+                          'search.confirm_trip'.tr(),
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,

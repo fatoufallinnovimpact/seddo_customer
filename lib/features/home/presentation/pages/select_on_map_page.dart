@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -6,6 +7,8 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/services/places_service.dart';
+import 'package:seddo/core/utils/service_area_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/service_unavailable_sheet.dart';
 
 /// Fullscreen interactive map picker matching the reference design:
 /// - Floating top-left circular back button
@@ -130,11 +133,30 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
   void _confirmSelection() {
     final title = _addressTitle.isNotEmpty
         ? _addressTitle
-        : (widget.isArrival ? "Point d'arrivée" : "Point de départ");
+        : (widget.isArrival
+            ? 'select_on_map.arrival_point'.tr()
+            : 'select_on_map.departure_point'.tr());
     final subtitle = _addressSubtitle.isNotEmpty
         ? _addressSubtitle
         : '${_currentCenter.latitude.toStringAsFixed(4)}, ${_currentCenter.longitude.toStringAsFixed(4)}';
     final full = _fullAddress.isNotEmpty ? _fullAddress : '$title, $subtitle';
+
+    final outsideCity = ServiceAreaHelper.getOutsideCityName(
+      latitude: _currentCenter.latitude,
+      longitude: _currentCenter.longitude,
+      address: full,
+    );
+
+    if (outsideCity != null) {
+      ServiceUnavailableSheet.show(
+        context,
+        cityName: outsideCity,
+        onChangeDestination: () {
+          Navigator.of(context).pop();
+        },
+      );
+      return;
+    }
 
     final result = PlaceSearchResult(
       id: 'map_${_currentCenter.latitude.toStringAsFixed(5)}_${_currentCenter.longitude.toStringAsFixed(5)}',
@@ -151,6 +173,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Scaffold(
       backgroundColor: AppColors.white,
       body: Stack(
@@ -203,7 +226,9 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                         ],
                       ),
                       child: Text(
-                        widget.isArrival ? 'Arrivée ici' : 'Départ ici',
+                        widget.isArrival
+                            ? 'select_on_map.arrival_here'.tr()
+                            : 'select_on_map.departure_here'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w700,
@@ -283,7 +308,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                   color: AppColors.primary,
                   size: 20,
                 ),
-                tooltip: 'Ma position actuelle',
+                tooltip: 'select_on_map.my_current_position'.tr(),
                 onPressed: _goToCurrentLocation,
               ),
             ),
@@ -333,7 +358,9 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
 
                   // Label: "Point d'arrivée" or "Point de départ"
                   Text(
-                    widget.isArrival ? "Point d'arrivée" : "Point de départ",
+                    widget.isArrival
+                        ? 'select_on_map.arrival_point'.tr()
+                        : 'select_on_map.departure_point'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -350,8 +377,8 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                           _addressTitle.isNotEmpty
                               ? _addressTitle
                               : (_isLoadingAddress
-                                  ? "Recherche de l'adresse..."
-                                  : "Position sur la carte"),
+                                  ? 'select_on_map.searching_address'.tr()
+                                  : 'select_on_map.position_on_map'.tr()),
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -383,7 +410,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                     _addressSubtitle.isNotEmpty
                         ? _addressSubtitle
                         : (_isLoadingAddress
-                            ? "Recherche..."
+                            ? 'select_on_map.searching'.tr()
                             : "${_currentCenter.latitude.toStringAsFixed(4)}, ${_currentCenter.longitude.toStringAsFixed(4)}"),
                     style: GoogleFonts.inter(
                       fontSize: 13.5,
@@ -410,7 +437,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
                       ),
                       onPressed: _confirmSelection,
                       child: Text(
-                        'Confirmer ce point',
+                        'select_on_map.confirm_point'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,

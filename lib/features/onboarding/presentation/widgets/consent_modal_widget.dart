@@ -8,9 +8,15 @@ import 'package:seddo/features/onboarding/domain/bloc/onboarding_bloc.dart';
 import 'package:seddo/features/onboarding/domain/bloc/onboarding_event.dart';
 import 'package:seddo/features/onboarding/domain/bloc/onboarding_state.dart';
 
-/// Ultra-modern modal bottom sheet listing terms and consents:
-/// CGU, Data protection, and Location with a single "Accepter & Commencer" action button.
-class ConsentModalWidget extends StatelessWidget {
+/// Modal bottom sheet listing terms and mandatory consents matching the design spec:
+/// - Rounded top bottom sheet with drag handle
+/// - Peach container with verified shield icon
+/// - Uppercase header "CONSENTEMENTS OBLIGATOIRES" + explanatory subtitle
+/// - 3-segment progress indicator with reactive counter ("0/3" -> "3/3")
+/// - 3 selectable cards (CGU, Data Privacy, Geolocation) with white icon square and circular radio check
+/// - Legal notice disclaimer
+/// - "Accepter & Commencer →" button with soft peach disabled look transitioning to vivid orange
+class ConsentModalWidget extends StatefulWidget {
   const ConsentModalWidget({super.key});
 
   static Future<bool?> show(BuildContext context) {
@@ -21,7 +27,7 @@ class ConsentModalWidget extends StatelessWidget {
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(28),
+          top: Radius.circular(AppConstants.radiusSheet),
         ),
       ),
       builder: (sheetContext) {
@@ -34,7 +40,29 @@ class ConsentModalWidget extends StatelessWidget {
   }
 
   @override
+  State<ConsentModalWidget> createState() => _ConsentModalWidgetState();
+}
+
+class _ConsentModalWidgetState extends State<ConsentModalWidget> {
+  bool _acceptedCgu = false;
+  bool _acceptedPrivacy = false;
+  bool _acceptedLocation = false;
+
+  int get _selectedCount =>
+      (_acceptedCgu ? 1 : 0) +
+      (_acceptedPrivacy ? 1 : 0) +
+      (_acceptedLocation ? 1 : 0);
+
+  bool get _allSelected => _selectedCount == 3;
+
+  void _handleAcceptAndStart(BuildContext context) {
+    context.read<OnboardingBloc>().add(const OnboardingCompletedEvent());
+    Navigator.of(context).pop(true);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return BlocBuilder<OnboardingBloc, OnboardingState>(
       builder: (context, state) {
         final title = 'consent.title'.tr();
@@ -43,6 +71,8 @@ class ConsentModalWidget extends StatelessWidget {
         final privacyLabel = 'consent.privacy'.tr();
         final locationLabel = 'consent.location'.tr();
         final startButtonLabel = 'consent.accept_start'.tr();
+        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+        final systemBottom = MediaQuery.of(context).padding.bottom;
 
         return SafeArea(
           top: false,
@@ -51,8 +81,11 @@ class ConsentModalWidget extends StatelessWidget {
               left: AppConstants.spacingLg,
               right: AppConstants.spacingLg,
               top: AppConstants.spacingMd,
-              bottom: MediaQuery.of(context).viewInsets.bottom +
-                  AppConstants.spacingLg,
+              bottom: bottomInset > 0
+                  ? bottomInset + AppConstants.spacingMd
+                  : (systemBottom > 0
+                      ? systemBottom + AppConstants.spacingUnit
+                      : AppConstants.spacingLg),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -61,39 +94,48 @@ class ConsentModalWidget extends StatelessWidget {
                 // 1. Drag handle bar
                 Center(
                   child: Container(
-                    width: 44,
-                    height: 5,
+                    width: AppConstants.handleWidth,
+                    height: AppConstants.handleHeight,
                     decoration: BoxDecoration(
-                      color: AppColors.inactiveIndicator,
+                      color: AppColors.dragHandle,
                       borderRadius:
-                          BorderRadius.circular(AppConstants.radiusPill),
+                          BorderRadius.circular(AppConstants.radiusXs),
                     ),
                   ),
                 ),
-                const SizedBox(height: AppConstants.spacingLg),
+                const SizedBox(height: AppConstants.spacingMd),
 
                 // 2. Brand Shield Badge & Header
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 50,
-                      height: 50,
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(
                         color: AppColors.peachContainer,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.primary.withAlpha(40),
-                          width: 1.2,
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.radiusLg),
+                      ),
+                      child: const Center(
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Icon(
+                              Icons.shield_outlined,
+                              color: AppColors.primary,
+                              size: 28,
+                            ),
+                            Icon(
+                              Icons.check,
+                              color: AppColors.primary,
+                              size: 14,
+                            ),
+                          ],
                         ),
                       ),
-                      child: const Icon(
-                        Icons.verified_user_rounded,
-                        color: AppColors.primary,
-                        size: 26,
-                      ),
                     ),
-                    const SizedBox(width: AppConstants.spacingMd),
+                    const SizedBox(width: AppConstants.spacingUnitXl),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,19 +144,20 @@ class ConsentModalWidget extends StatelessWidget {
                             title,
                             style: GoogleFonts.inter(
                               fontSize: 20,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
                               color: AppColors.textPrimary,
-                              letterSpacing: -0.4,
+                              height: 1.12,
+                              letterSpacing: -0.2,
                             ),
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: AppConstants.spacingXs),
                           Text(
                             subtitle,
                             style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
                               color: AppColors.textSecondary,
-                              height: 1.3,
+                              height: 1.35,
                             ),
                           ),
                         ],
@@ -122,50 +165,92 @@ class ConsentModalWidget extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppConstants.spacingLg),
+                const SizedBox(height: AppConstants.spacingMd),
 
-                // 3. Listed Consent Cards (no manual checkboxes, sleek modern design)
-                _ConsentItemTile(
-                  icon: Icons.description_outlined,
-                  title: termsLabel,
+                // 3. Segmented Progress Bar & Counter ("0/3" -> "3/3")
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          _buildProgressBarSegment(isFilled: _selectedCount >= 1),
+                          const SizedBox(width: AppConstants.spacingS),
+                          _buildProgressBarSegment(isFilled: _selectedCount >= 2),
+                          const SizedBox(width: AppConstants.spacingS),
+                          _buildProgressBarSegment(isFilled: _selectedCount >= 3),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppConstants.spacingUnitXl),
+                    Text(
+                      '$_selectedCount/3',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.orangeDarkAccent,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: AppConstants.spacingSm),
-                _ConsentItemTile(
+                const SizedBox(height: AppConstants.spacingUnitXl),
+
+                // 4. Three Selectable Consent Cards
+                _ConsentSelectionCard(
+                  icon: Icons.article_outlined,
+                  title: termsLabel,
+                  isSelected: _acceptedCgu,
+                  onTap: () {
+                    setState(() {
+                      _acceptedCgu = !_acceptedCgu;
+                    });
+                  },
+                ),
+                const SizedBox(height: AppConstants.spacingUnit),
+                _ConsentSelectionCard(
                   icon: Icons.shield_outlined,
                   title: privacyLabel,
+                  isSelected: _acceptedPrivacy,
+                  onTap: () {
+                    setState(() {
+                      _acceptedPrivacy = !_acceptedPrivacy;
+                    });
+                  },
                 ),
-                const SizedBox(height: AppConstants.spacingSm),
-                _ConsentItemTile(
+                const SizedBox(height: AppConstants.spacingUnit),
+                _ConsentSelectionCard(
                   icon: Icons.location_on_outlined,
                   title: locationLabel,
+                  isSelected: _acceptedLocation,
+                  onTap: () {
+                    setState(() {
+                      _acceptedLocation = !_acceptedLocation;
+                    });
+                  },
                 ),
-                const SizedBox(height: AppConstants.spacingLg),
+                const SizedBox(height: AppConstants.spacingMd),
 
-                // 4. Subtle Legal Confirmation Disclaimer
+                // 5. Subtle Legal Notice Disclaimer
                 Text(
                   'onboarding.legal_notice'.tr(),
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
                     color: AppColors.textSecondary,
-                    height: 1.4,
+                    height: 1.35,
                   ),
                 ),
                 const SizedBox(height: AppConstants.spacingMd),
 
-                // 5. Single Action Button: "Accepter & Commencer"
+                // 6. Action Button: "Accepter & Commencer →"
                 SizedBox(
-                  height: 56,
+                  height: AppConstants.buttonHeight,
                   child: ElevatedButton(
-                    onPressed: () {
-                      context
-                          .read<OnboardingBloc>()
-                          .add(const OnboardingCompletedEvent());
-                      Navigator.of(context).pop(true);
-                    },
+                    onPressed: () => _handleAcceptAndStart(context),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
+                      backgroundColor: _allSelected
+                          ? AppColors.primary
+                          : AppColors.consentButtonDisabled,
                       foregroundColor: AppColors.white,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(
@@ -173,7 +258,7 @@ class ConsentModalWidget extends StatelessWidget {
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius:
-                            BorderRadius.circular(AppConstants.radiusFull),
+                            BorderRadius.circular(AppConstants.radiusLg),
                       ),
                     ),
                     child: Row(
@@ -184,8 +269,9 @@ class ConsentModalWidget extends StatelessWidget {
                           child: Text(
                             startButtonLabel,
                             style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.white,
                               letterSpacing: 0.2,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -195,7 +281,7 @@ class ConsentModalWidget extends StatelessWidget {
                         const Icon(
                           Icons.arrow_forward_rounded,
                           color: AppColors.white,
-                          size: 18,
+                          size: AppConstants.iconSizeMd,
                         ),
                       ],
                     ),
@@ -208,75 +294,113 @@ class ConsentModalWidget extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildProgressBarSegment({required bool isFilled}) {
+    return Expanded(
+      child: Container(
+        height: 4.5,
+        decoration: BoxDecoration(
+          color: isFilled ? AppColors.primary : AppColors.grayBgLight,
+          borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+        ),
+      ),
+    );
+  }
 }
 
-/// A sleek, modern card displaying a consent item with a brand icon and soft checkmark badge
-class _ConsentItemTile extends StatelessWidget {
+/// A sleek interactive consent selection card with white icon box and circular radio toggle
+class _ConsentSelectionCard extends StatelessWidget {
   final IconData icon;
   final String title;
+  final bool isSelected;
+  final VoidCallback onTap;
 
-  const _ConsentItemTile({
+  const _ConsentSelectionCard({
     required this.icon,
     required this.title,
+    required this.isSelected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppConstants.spacingMd,
-        vertical: 14,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceGrey,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.cardBorder,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: AppColors.peachContainer,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: AppColors.primary,
-            ),
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        splashColor: AppColors.primary.withValues(alpha: 0.08),
+        highlightColor: AppColors.primary.withValues(alpha: 0.04),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingUnitLg,
           ),
-          const SizedBox(width: AppConstants.spacingMd),
-          Expanded(
-            child: Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-                height: 1.35,
+          decoration: BoxDecoration(
+            color: AppColors.surfaceGrey,
+            borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+          ),
+          child: Row(
+            children: [
+              // White rounded container with orange brand icon
+              Container(
+                width: AppConstants.circularButtonSize,
+                height: AppConstants.circularButtonSize,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.radiusDefault),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  icon,
+                  size: AppConstants.iconSizeLg,
+                  color: AppColors.orangeDarkAccent,
+                ),
               ),
-            ),
+              const SizedBox(width: AppConstants.spacingUnitXl),
+
+              // Title Text
+              Expanded(
+                child: Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingUnit),
+
+              // Circular Radio Selection Checkbox
+              Container(
+                width: AppConstants.spacingLg,
+                height: AppConstants.spacingLg,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color:
+                      isSelected ? AppColors.primary : AppColors.transparent,
+                  border: isSelected
+                      ? null
+                      : Border.all(
+                          color: AppColors.grayBorderMedium,
+                          width: 2.0,
+                        ),
+                ),
+                alignment: Alignment.center,
+                child: isSelected
+                    ? const Icon(
+                        Icons.check,
+                        color: AppColors.white,
+                        size: 14,
+                      )
+                    : null,
+              ),
+            ],
           ),
-          const SizedBox(width: AppConstants.spacingSm),
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(20),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check_rounded,
-              size: 15,
-              color: AppColors.primary,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

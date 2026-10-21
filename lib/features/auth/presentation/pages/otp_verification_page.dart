@@ -56,15 +56,12 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     if (state.isOtpValid) {
       _focusNode.unfocus();
       context.read<AuthBloc>().add(const AuthOtpSubmittedEvent());
-      Navigator.of(context).pushAndRemoveUntil(
-        SlideRightToLeftRoute(page: const HomePage()),
-        (route) => false,
-      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state.status == AuthStatus.otpSuccess) {

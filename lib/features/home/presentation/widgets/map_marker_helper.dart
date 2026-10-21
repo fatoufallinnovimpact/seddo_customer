@@ -48,7 +48,7 @@ abstract class MapMarkerHelper {
 
     // 1. Realistic ground shadow (offset diagonal blurred ellipse)
     final shadowPaint = Paint()
-      ..color = const Color(0x55000000)
+      ..color = AppColors.shadowCarCanvas
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
     canvas.drawOval(
       const Rect.fromLTWH(8, 38, 48, 18),
@@ -57,10 +57,10 @@ abstract class MapMarkerHelper {
 
     // 2. 4 3D Wheels with chrome rims
     final tirePaint = Paint()
-      ..color = const Color(0xFF1E1E1E)
+      ..color = AppColors.darkMarker
       ..style = PaintingStyle.fill;
     final rimPaint = Paint()
-      ..color = const Color(0xFFC0C0C0)
+      ..color = AppColors.silverMarker
       ..style = PaintingStyle.fill;
 
     // Front-left wheel
@@ -107,9 +107,9 @@ abstract class MapMarkerHelper {
       const Offset(32, 12),
       const Offset(32, 53),
       [
-        const Color(0xFF3A3A3C),
-        const Color(0xFF1C1C1E),
-        const Color(0xFF0D0D0E),
+        AppColors.carRoofGradientStart,
+        AppColors.carRoofGradientMid,
+        AppColors.carRoofGradientEnd,
       ],
       [0.0, 0.5, 1.0],
     );
@@ -128,14 +128,14 @@ abstract class MapMarkerHelper {
     );
 
     // 5. 3D Hood contour & Front Grille
-    final grillePaint = Paint()..color = const Color(0xFF111111);
+    final grillePaint = Paint()..color = AppColors.carGrilleDark;
     canvas.drawRRect(
       RRect.fromRectAndRadius(const Rect.fromLTWH(24, 13, 16, 4), const Radius.circular(2)),
       grillePaint,
     );
 
     // LED Headlights
-    final headlightPaint = Paint()..color = const Color(0xFFFFF9D2);
+    final headlightPaint = Paint()..color = AppColors.headlightMarker;
     canvas.drawRRect(
       RRect.fromRectAndRadius(const Rect.fromLTWH(18, 14, 5, 3), const Radius.circular(1.5)),
       headlightPaint,
@@ -157,9 +157,9 @@ abstract class MapMarkerHelper {
       const Offset(21, 23),
       const Offset(43, 42),
       [
-        const Color(0xFF64D2FF).withAlpha(200),
-        const Color(0xFF0A2E4C).withAlpha(220),
-        const Color(0xFF1E293B),
+        AppColors.windshieldBlueStart.withAlpha(200),
+        AppColors.windshieldBlueMid.withAlpha(220),
+        AppColors.licensePlateBg,
       ],
       [0.0, 0.5, 1.0],
     );
@@ -170,7 +170,7 @@ abstract class MapMarkerHelper {
 
     // 7. 3D Roof (Elevated platform above glass)
     final roofPaint = Paint()
-      ..color = const Color(0xFF2C2C2E)
+      ..color = AppColors.darkMirror
       ..style = PaintingStyle.fill;
     canvas.drawRRect(
       RRect.fromRectAndRadius(const Rect.fromLTWH(25, 27, 14, 11), const Radius.circular(2.5)),
@@ -185,7 +185,7 @@ abstract class MapMarkerHelper {
     );
 
     // 8. 3D Side Mirrors
-    final mirrorPaint = Paint()..color = const Color(0xFF2C2C2E);
+    final mirrorPaint = Paint()..color = AppColors.darkMirror;
     canvas.drawRRect(
       RRect.fromRectAndRadius(const Rect.fromLTWH(12, 24, 5, 3), const Radius.circular(1.5)),
       mirrorPaint,
@@ -196,7 +196,7 @@ abstract class MapMarkerHelper {
     );
 
     // 9. Rear Taillights (Glossy red LEDs)
-    final tailPaint = Paint()..color = const Color(0xFFFF3B30);
+    final tailPaint = Paint()..color = AppColors.taillightMarker;
     canvas.drawRRect(
       RRect.fromRectAndRadius(const Rect.fromLTWH(19, 51, 6, 2.5), const Radius.circular(1)),
       tailPaint,
@@ -230,7 +230,7 @@ abstract class MapMarkerHelper {
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
-      ..color = const Color(0x44000000)
+      ..color = AppColors.shadowCanvasMedium
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawOval(
       const Rect.fromLTWH(8, height - 3.5, 8, 3.0),
@@ -268,9 +268,9 @@ abstract class MapMarkerHelper {
       const Offset(width / 2, 0),
       Offset(width / 2, height),
       [
-        const Color(0xFFFF9500),
+        AppColors.amberRating,
         AppColors.primary,
-        const Color(0xFFD64400),
+        AppColors.orangeDarkPin,
       ],
       [0.0, 0.5, 1.0],
     );
@@ -320,7 +320,7 @@ abstract class MapMarkerHelper {
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
-      ..color = const Color(0x44000000)
+      ..color = AppColors.shadowCanvasMedium
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawOval(
       const Rect.fromLTWH(8, height - 3.5, 8, 3.0),
@@ -358,9 +358,9 @@ abstract class MapMarkerHelper {
       const Offset(width / 2, 0),
       Offset(width / 2, height),
       [
-        const Color(0xFF333333),
+        AppColors.pinDarkGradientStart,
         AppColors.buttonBlack,
-        const Color(0xFF000000),
+        AppColors.pureBlack,
       ],
       [0.0, 0.5, 1.0],
     );
@@ -535,7 +535,7 @@ abstract class MapMarkerHelper {
     // 1. Floating white pill badge "Rendez-vous ici" with soft shadow
     final badgeRect = const Rect.fromLTWH(0, 0, pillWidth, pillHeight);
     final shadowPaint = Paint()
-      ..color = const Color(0x30000000)
+      ..color = AppColors.shadowCanvasSoft
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawRRect(
       RRect.fromRectAndRadius(badgeRect.shift(const Offset(0, 2)), const Radius.circular(15)),
@@ -551,7 +551,7 @@ abstract class MapMarkerHelper {
     );
 
     final borderPaint = Paint()
-      ..color = const Color(0xFFE5E7EB)
+      ..color = AppColors.grayBorderDivider
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
     canvas.drawRRect(
@@ -609,9 +609,9 @@ abstract class MapMarkerHelper {
       Offset(pinLeft + pinWidth / 2, pinTop),
       Offset(pinLeft + pinWidth / 2, pinTop + pinHeight),
       [
-        const Color(0xFFFF9500),
+        AppColors.amberRating,
         AppColors.primary,
-        const Color(0xFFD64400),
+        AppColors.orangeDarkPin,
       ],
       [0.0, 0.5, 1.0],
     );
@@ -652,7 +652,7 @@ abstract class MapMarkerHelper {
     canvas.drawRRect(
       RRect.fromRectAndRadius(badgeRect.shift(const Offset(0, 2)), const Radius.circular(14)),
       Paint()
-        ..color = const Color(0x30000000)
+        ..color = AppColors.shadowCanvasSoft
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
 
@@ -663,7 +663,7 @@ abstract class MapMarkerHelper {
     canvas.drawRRect(
       RRect.fromRectAndRadius(badgeRect, const Radius.circular(14)),
       Paint()
-        ..color = const Color(0xFFE5E7EB)
+        ..color = AppColors.grayBorderDivider
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0,
     );

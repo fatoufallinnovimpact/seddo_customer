@@ -16,6 +16,7 @@ class OnboardingSlideWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spacingLg,

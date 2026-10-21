@@ -20,6 +20,7 @@ class HomeSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final hasDestination =
         destinationAddress != null && destinationAddress!.isNotEmpty;
 

@@ -1,0 +1,1258 @@
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:seddo/core/navigation/slide_page_route.dart';
+import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
+import 'package:seddo/features/home/presentation/widgets/language_modal.dart';
+import 'package:seddo/features/home/presentation/widgets/logout_modal.dart';
+import 'package:seddo/features/home/presentation/widgets/safety_modal_widget.dart';
+
+/// Lateral navigation drawer matching the design mockup:
+/// - User profile: Orange circular avatar (AD), "AWA DIOP", rating (★ 4,8 · 77 123 45 12)
+/// - Modern payment card: Dark background with stylish orange circular curve, wallet icon, Orange Money
+/// - Menu list items:
+///   - Activité (refresh-ccw-clock-svgrepo-com.svg / Courses et remboursements)
+///   - TCU (bus-svgrepo-com.svg / Bus, BRT et TER)
+///   - Lieux enregistrés (star-svgrepo-com.svg / Maison, Travail, Aéroport)
+///   - Sécurité (security-svgrepo-com.svg / Contacts d’urgence, partage de trajet)
+///   - Notifications (notification-svgrepo-com.svg / Push et SMS)
+///   - Langue (language-svgrepo-com.svg / Français ou Wolof)
+/// - Bottom section:
+///   - Row with Aide (question-svgrepo-com.svg) & Confidentialité et données (lock icon)
+///   - Red Se déconnecter button (logout-line-svgrepo-com.svg)
+class SeddoDrawerWidget extends StatelessWidget {
+  const SeddoDrawerWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final _ = context.locale;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final drawerWidth = (screenWidth * 0.84).clamp(300.0, 360.0);
+
+    return Drawer(
+      width: drawerWidth,
+      backgroundColor: AppColors.white,
+      elevation: 16,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topRight: Radius.circular(30),
+          bottomRight: Radius.circular(30),
+        ),
+      ),
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 1. User Profile Header
+                        _buildProfileHeader(context),
+                        const SizedBox(height: 22),
+
+                        // 2. Modern Dark Payment Card with Orange Curve
+                        _buildPaymentCard(context),
+                        const SizedBox(height: 20),
+
+                        // 3. Navigation List Items
+                        _buildMenuItem(
+                          context: context,
+                          iconPath:
+                              'assets/icons/refresh-ccw-clock-svgrepo-com.svg',
+                          title: 'drawer.activity'.tr(),
+                          subtitle: 'drawer.activity_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _openActivitySheet(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        _buildMenuItem(
+                          context: context,
+                          iconPath: 'assets/icons/bus-svgrepo-com.svg',
+                          title: 'drawer.tcu'.tr(),
+                          subtitle: 'drawer.tcu_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _openTcuSheet(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        _buildMenuItem(
+                          context: context,
+                          iconPath: 'assets/icons/star-svgrepo-com.svg',
+                          title: 'drawer.saved_places'.tr(),
+                          subtitle: 'drawer.saved_places_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            Navigator.of(context).push(
+                              SlideRightToLeftRoute(
+                                page: const SavedPlacesPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        _buildMenuItem(
+                          context: context,
+                          iconPath: 'assets/icons/security-svgrepo-com.svg',
+                          title: 'drawer.safety'.tr(),
+                          subtitle: 'drawer.safety_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            SafetyModalWidget.showGeneral(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        _buildMenuItem(
+                          context: context,
+                          iconPath: 'assets/icons/notification-svgrepo-com.svg',
+                          title: 'drawer.notifications'.tr(),
+                          subtitle: 'drawer.notifications_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            openNotificationsSheet(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        _buildMenuItem(
+                          context: context,
+                          iconPath: 'assets/icons/language-svgrepo-com.svg',
+                          title: 'drawer.language'.tr(),
+                          subtitle: context.locale.languageCode == 'wo'
+                              ? 'common.wolof'.tr()
+                              : 'common.french'.tr(),
+                          onTap: () {
+                            _openLanguageSheet(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        // 7. Aide (in the list right below Langue)
+                        _buildMenuItem(
+                          context: context,
+                          iconPath: 'assets/icons/question-svgrepo-com.svg',
+                          title: 'drawer.help'.tr(),
+                          subtitle: 'drawer.help_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _openHelpSheet(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        // 8. Confidentialité et données (in the list right below Aide)
+                        _buildMenuItem(
+                          context: context,
+                          iconWidget: const Icon(
+                            Icons.lock_outline_rounded,
+                            size: 22,
+                            color: AppColors.textPrimary,
+                          ),
+                          title: 'drawer.privacy'.tr(),
+                          subtitle: 'drawer.privacy_sub'.tr(),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _openPrivacySheet(context);
+                          },
+                        ),
+
+                        // Spacer pushes logout button to the very bottom
+                        const Spacer(),
+                        const SizedBox(height: 18),
+
+                        // Logout Button (Red with SVG tout en bas)
+                        _buildLogoutButton(context),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Profile Header: Orange circle avatar "AD", AWA DIOP, Star 4,8 · 77 123 45 12
+  Widget _buildProfileHeader(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 58,
+          height: 58,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            'AD',
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: AppColors.white,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'AWA DIOP',
+                style: GoogleFonts.inter(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.6,
+                ),
+              ),
+              const SizedBox(height: 3),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      size: 18,
+                      color: AppColors.amberWarning,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '4,8',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      ' · ',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      '77 123 45 12',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Modern Payment Card
+  Widget _buildPaymentCard(BuildContext context) {
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          _openPaymentSheet(context);
+        },
+        borderRadius: BorderRadius.circular(18),
+        splashColor: AppColors.primary.withValues(alpha: 0.12),
+        child: Container(
+          height: 74,
+          decoration: BoxDecoration(
+            color: AppColors.drawerDark,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: AppColors.shadowDarkBlack,
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              // Stylish orange crescent on the right edge
+              Positioned(
+                right: -24,
+                top: -12,
+                bottom: -12,
+                child: Container(
+                  width: 90,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              // Card content
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.drawerCardBorder,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.credit_card_rounded,
+                        color: AppColors.white,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'drawer.payment'.tr(),
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.white,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Orange Money 77 ••• 45 12',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.white.withValues(alpha: 0.8),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Menu item with vector SVG icon or iconWidget, bold title and subtitle
+  Widget _buildMenuItem({
+    required BuildContext context,
+    String? iconPath,
+    Widget? iconWidget,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: AppColors.primary.withValues(alpha: 0.08),
+        highlightColor: AppColors.primary.withValues(alpha: 0.04),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 26,
+                height: 26,
+                child: Center(
+                  child: iconWidget ??
+                      (iconPath != null
+                          ? SvgPicture.asset(
+                              iconPath,
+                              width: 22,
+                              height: 22,
+                              colorFilter: const ColorFilter.mode(
+                                AppColors.textPrimary,
+                                BlendMode.srcIn,
+                              ),
+                            )
+                          : const SizedBox.shrink()),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Logout button at the very bottom
+  Widget _buildLogoutButton(BuildContext context) {
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        onTap: () => _confirmLogout(context),
+        borderRadius: BorderRadius.circular(10),
+        splashColor: AppColors.sirenRed.withValues(alpha: 0.1),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Row(
+            children: [
+              SvgPicture.asset(
+                'assets/icons/logout-line-svgrepo-com.svg',
+                width: 22,
+                height: 22,
+                colorFilter: const ColorFilter.mode(
+                  AppColors.sirenRed,
+                  BlendMode.srcIn,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'drawer.logout'.tr(),
+                style: GoogleFonts.inter(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.sirenRed,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Modals & Bottom Sheets
+
+  static void openNotificationsSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'drawer.notifications_title'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildNotificationItem(
+              title: 'drawer.notif_rides'.tr(),
+              subtitle: 'drawer.notif_rides_desc'.tr(),
+              initialValue: true,
+            ),
+            const Divider(height: 24),
+            _buildNotificationItem(
+              title: 'drawer.notif_promo'.tr(),
+              subtitle: 'drawer.notif_promo_desc'.tr(),
+              initialValue: true,
+            ),
+            const Divider(height: 24),
+            _buildNotificationItem(
+              title: 'drawer.notif_safety'.tr(),
+              subtitle: 'drawer.notif_safety_desc'.tr(),
+              initialValue: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildNotificationItem({
+    required String title,
+    required String subtitle,
+    required bool initialValue,
+  }) {
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch.adaptive(
+              value: initialValue,
+              activeTrackColor: AppColors.primary,
+              onChanged: (val) {
+                setState(() => initialValue = val);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _openPaymentSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'drawer.payment_methods'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'drawer.payment_secure_desc'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.orangeLightBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.primary, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.phone_android_rounded,
+                      color: AppColors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Orange Money',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          '+221 77 123 45 12 · ${'drawer.default_mode'.tr()}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.primary,
+                    size: 24,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceGrey,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.waveBlue,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.waves_rounded,
+                      color: AppColors.white,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Wave',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'drawer.soon'.tr(),
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openActivitySheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'drawer.history_title'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildRideHistoryTile(
+              destination: 'Ngor-Almadies, Dakar',
+              date: 'Aujourd\'hui · 14:20',
+              price: '2 500 FCFA',
+              status: 'Terminée',
+              carCategory: 'Seddo Eco',
+            ),
+            const Divider(height: 20),
+            _buildRideHistoryTile(
+              destination: 'Plateau, rue Carnot',
+              date: 'Hier · 09:15',
+              price: '3 800 FCFA',
+              status: 'Terminée',
+              carCategory: 'Confort',
+            ),
+            const Divider(height: 20),
+            _buildRideHistoryTile(
+              destination: 'Remboursement course annulée',
+              date: '18 Oct · 18:45',
+              price: '+1 200 FCFA',
+              status: 'Crédité Orange Money',
+              carCategory: 'Remboursement',
+              isRefund: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRideHistoryTile({
+    required String destination,
+    required String date,
+    required String price,
+    required String status,
+    required String carCategory,
+    bool isRefund = false,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: isRefund
+                ? AppColors.refundContainerBg
+                : AppColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            isRefund ? Icons.refresh_rounded : Icons.directions_car_rounded,
+            color: isRefund ? AppColors.greenSuccess : AppColors.primary,
+            size: 22,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                destination,
+                style: GoogleFonts.inter(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '$carCategory · $date',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              price,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: isRefund
+                    ? AppColors.greenSuccess
+                    : AppColors.textPrimary,
+              ),
+            ),
+            Text(
+              status,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: isRefund
+                    ? AppColors.greenSuccess
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _openTcuSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'drawer.tcu_title'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'drawer.tcu_desc'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildTcuCard(
+              title: 'BRT Dakar',
+              subtitle: 'drawer.tcu_brt_sub'.tr(),
+              color: AppColors.skyBlue,
+              icon: Icons.electric_bolt_rounded,
+            ),
+            const SizedBox(height: 10),
+            _buildTcuCard(
+              title: 'TER Dakar',
+              subtitle: 'drawer.tcu_ter_sub'.tr(),
+              color: AppColors.greenSuccess,
+              icon: Icons.train_rounded,
+            ),
+            const SizedBox(height: 10),
+            _buildTcuCard(
+              title: 'Dakar Dem Dikk (DDD)',
+              subtitle: 'drawer.tcu_ddd_sub'.tr(),
+              color: AppColors.primary,
+              icon: Icons.directions_bus_filled_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTcuCard({
+    required String title,
+    required String subtitle,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(icon, color: AppColors.white, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openLanguageSheet(BuildContext context) {
+    LanguageModal.show(context);
+  }
+
+  void _openHelpSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'drawer.help_title'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'drawer.help_desc'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 18),
+            _buildSupportTile(
+              icon: Icons.chat_bubble_outline_rounded,
+              title: 'drawer.support_whatsapp'.tr(),
+              subtitle: 'drawer.support_whatsapp_sub'.tr(),
+              color: AppColors.greenSuccess,
+              onTap: () => Navigator.of(ctx).pop(),
+            ),
+            const SizedBox(height: 10),
+            _buildSupportTile(
+              icon: Icons.phone_in_talk_rounded,
+              title: 'drawer.support_call'.tr(),
+              subtitle: 'drawer.support_call_sub'.tr(),
+              color: AppColors.primary,
+              onTap: () => Navigator.of(ctx).pop(),
+            ),
+            const SizedBox(height: 10),
+            _buildSupportTile(
+              icon: Icons.mail_outline_rounded,
+              title: 'drawer.support_email'.tr(),
+              subtitle: 'support@seddo.sn',
+              color: AppColors.skyBlue,
+              onTap: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSupportTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, color: AppColors.white, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openPrivacySheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'drawer.privacy_title'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'drawer.privacy_desc'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 13.5,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildPrivacyBullet(
+              title: 'drawer.privacy_e2e'.tr(),
+              subtitle: 'drawer.privacy_e2e_sub'.tr(),
+            ),
+            const SizedBox(height: 10),
+            _buildPrivacyBullet(
+              title: 'drawer.privacy_geo'.tr(),
+              subtitle: 'drawer.privacy_geo_sub'.tr(),
+            ),
+            const SizedBox(height: 10),
+            _buildPrivacyBullet(
+              title: 'drawer.privacy_rights'.tr(),
+              subtitle: 'drawer.privacy_rights_sub'.tr(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrivacyBullet({
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.shield_outlined,
+          color: AppColors.primary,
+          size: 20,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _confirmLogout(BuildContext context) {
+    LogoutModal.show(context);
+  }
+}

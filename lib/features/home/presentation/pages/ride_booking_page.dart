@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -91,8 +92,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
     _ecoOption = RideOptionModel(
       type: RideType.eco,
-      title: 'Seddo Eco',
-      subtitle: '$ecoTimeStr · à 4 min',
+      title: 'home.seddo_eco'.tr(),
+      subtitle: '$ecoTimeStr · ${'ride.arriving_in'.tr(args: ['4'])}',
       capacity: 4,
       price: ecoFare.clamp(2000, 25000),
       estimatedArrival: ecoTimeStr,
@@ -101,8 +102,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
     _confortOption = RideOptionModel(
       type: RideType.confort,
-      title: 'Seddo Confort',
-      subtitle: '$confortTimeStr · climatisée',
+      title: 'Seddo ${'home.confort'.tr()}',
+      subtitle: '$confortTimeStr · ${'home.confort_sub'.tr()}',
       capacity: 4,
       price: confortFare.clamp(2800, 35000),
       estimatedArrival: confortTimeStr,
@@ -283,6 +284,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
+    _computeRideOptions();
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
@@ -418,7 +421,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                       padding: EdgeInsets.only(top: 8),
                       child: LinearProgressIndicator(
                         color: AppColors.primary,
-                        backgroundColor: Colors.transparent,
+                        backgroundColor: AppColors.transparent,
                         minHeight: 2.5,
                       ),
                     ),
@@ -471,7 +474,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
                   // Header: "Choisissez une course"
                   Text(
-                    'Choisissez une course',
+                    'ride.choose_ride'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 17,
                       fontWeight: FontWeight.w800,
@@ -546,7 +549,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                               ),
                               const SizedBox(height: 1),
                               Text(
-                                'Prix fixe, payé à la commande',
+                                'ride.fixed_price_om'.tr(),
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,
@@ -558,7 +561,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
                         // Lock / fixed icon
                         const Icon(
-                          Icons.lock_outline_rounded,
+                           Icons.lock_outline_rounded,
                           size: 18,
                           color: AppColors.textSecondary,
                         ),
@@ -585,7 +588,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                       ),
                       onPressed: _onOrderRide,
                       child: Text(
-                        'Commander ${selectedOption.title}',
+                        '${'ride.order'.tr()} ${selectedOption.title}',
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,

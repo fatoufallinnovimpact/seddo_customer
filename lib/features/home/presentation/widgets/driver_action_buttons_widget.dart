@@ -1,4 +1,6 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
@@ -16,6 +18,7 @@ class DriverActionButtonsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Row(
       children: [
         Expanded(
@@ -32,13 +35,17 @@ class DriverActionButtonsWidget extends StatelessWidget {
               ),
             ),
             onPressed: onMessagePressed,
-            icon: const Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 18,
-              color: AppColors.primary,
+            icon: SvgPicture.asset(
+              'assets/icons/message-square-lines-svgrepo-com.svg',
+              width: 18,
+              height: 18,
+              colorFilter: const ColorFilter.mode(
+                AppColors.primary,
+                BlendMode.srcIn,
+              ),
             ),
             label: Text(
-              'Message',
+              'common.message'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,
@@ -61,13 +68,17 @@ class DriverActionButtonsWidget extends StatelessWidget {
               ),
             ),
             onPressed: onCallPressed,
-            icon: const Icon(
-              Icons.phone_outlined,
-              size: 18,
-              color: AppColors.success,
+            icon: SvgPicture.asset(
+              'assets/icons/call-svgrepo-com.svg',
+              width: 18,
+              height: 18,
+              colorFilter: const ColorFilter.mode(
+                AppColors.primary,
+                BlendMode.srcIn,
+              ),
             ),
             label: Text(
-              'Appeler',
+              'common.call'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w700,

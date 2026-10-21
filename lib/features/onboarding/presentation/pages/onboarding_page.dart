@@ -72,6 +72,7 @@ class _OnboardingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return BlocConsumer<OnboardingBloc, OnboardingState>(
       listener: (context, state) {},
       builder: (context, state) {

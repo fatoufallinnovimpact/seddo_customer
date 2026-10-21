@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -134,6 +135,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemTop = MediaQuery.of(context).padding.top;
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final initials = widget.driver.name.isNotEmpty
@@ -293,7 +295,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
 
                   // "Awa partage son trajet avec vous"
                   Text(
-                    '${widget.sharerName} partage son trajet avec vous',
+                    'shared_tracking.shares_ride'.tr(args: [widget.sharerName]),
                     style: GoogleFonts.inter(
                       fontSize: 13.5,
                       color: AppColors.textSecondary,
@@ -304,7 +306,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
 
                   // Headline: "Arrivée prévue 18:42"
                   Text(
-                    'Arrivée prévue ${widget.etaText}',
+                    'shared_tracking.arriving_at'.tr(args: [widget.etaText]),
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
@@ -368,7 +370,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
 
                   // Footer note: "Le lien expire à la fin de la course."
                   Text(
-                    'Le lien expire à la fin de la course.',
+                    'shared_tracking.link_expires'.tr(),
                     style: GoogleFonts.inter(
                       fontSize: 12.5,
                       color: AppColors.textSecondary,

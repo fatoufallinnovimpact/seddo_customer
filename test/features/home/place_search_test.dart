@@ -9,20 +9,19 @@ import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/services/places_service.dart';
 
+import 'dart:convert';
+import 'dart:io';
+
 class MockSearchAssetLoader extends AssetLoader {
   const MockSearchAssetLoader();
 
   @override
   Future<Map<String, dynamic>> load(String path, Locale locale) async {
-    return {
-      'home': {
-        'where_to': 'Où allez-vous ?',
-        'search_subtitle': 'Saisissez une destination, une adresse...',
-        'search_hint': 'Rechercher à Dakar (ex: Ouakam)...',
-        'popular_destinations': 'Destinations populaires à Dakar',
-        'current_position': 'Ma position actuelle',
-      }
-    };
+    final file = File('assets/translations/${locale.languageCode}.json');
+    if (file.existsSync()) {
+      return jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    }
+    return {};
   }
 }
 

@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -40,7 +41,7 @@ class NoDriverFoundSheet extends StatelessWidget {
     return showModalBottomSheet<NoDriverFoundAction>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: AppColors.transparent,
       builder: (ctx) => NoDriverFoundSheet(
         departure: departure,
         destination: destination,
@@ -50,8 +51,17 @@ class NoDriverFoundSheet extends StatelessWidget {
     );
   }
 
+  static String _safeTr(String key, String fallback) {
+    try {
+      final res = key.tr();
+      if (res != key && res.isNotEmpty) return res;
+    } catch (_) {}
+    return fallback;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
     return Container(
@@ -86,7 +96,7 @@ class NoDriverFoundSheet extends StatelessWidget {
 
           // Title
           Text(
-            'Aucun chauffeur disponible',
+            _safeTr('ride.no_driver_title', 'Aucun chauffeur disponible'),
             style: GoogleFonts.inter(
               fontSize: 22,
               fontWeight: FontWeight.w900,
@@ -98,7 +108,7 @@ class NoDriverFoundSheet extends StatelessWidget {
 
           // Subtitle
           Text(
-            'Forte demande en ce moment autour de ${departure.mainText}.',
+            'ride.high_demand_around'.tr(args: [departure.mainText]),
             style: GoogleFonts.inter(
               fontSize: 14,
               color: AppColors.textSecondary,
@@ -138,7 +148,7 @@ class NoDriverFoundSheet extends StatelessWidget {
                       Navigator.of(context).pop(NoDriverFoundAction.later);
                     },
                     child: Text(
-                      'Plus tard',
+                      _safeTr('common.later', 'Plus tard'),
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -169,7 +179,7 @@ class NoDriverFoundSheet extends StatelessWidget {
                       Navigator.of(context).pop(NoDriverFoundAction.retry);
                     },
                     child: Text(
-                      'Réessayer',
+                      _safeTr('common.retry', 'Réessayer'),
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,

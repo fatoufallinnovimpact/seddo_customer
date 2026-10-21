@@ -37,8 +37,51 @@ abstract class AppConstants {
   static const double circularIconContainerSize = 44.0;
   static const double circularAvatarSize = 46.0;
   static const double circularPickerSize = 48.0;
+  static const double iconSizeXs = 12.0;
   static const double iconSizeSm = 16.0;
   static const double iconSizeDefault = 18.0;
   static const double iconSizeMd = 20.0;
   static const double iconSizeLg = 22.0;
+  static const double iconSizeXl = 28.0;
+  static const double iconSizeXxl = 32.0;
+  static const double iconSizeHero = 40.0;
+  static const double iconSizeHuge = 48.0;
+  static const double handleWidth = 40.0;
+  static const double handleHeight = 4.0;
+
+  // Additional Spacing Tokens
+  static const double spacingTiny = 1.0;
+  static const double spacingHalf = 3.0;
+  static const double spacingFive = 5.0;
+  static const double spacingSeven = 7.0;
+  static const double spacingNine = 9.0;
+  static const double spacingTwenty = 20.0;
+  static const double spacingFifty = 50.0;
+  static const double spacingSixty = 60.0;
+
+  // Additional Radius Tokens
+  static const double radiusTiny = 4.0;
+  static const double radiusSix = 6.0;
+  static const double radiusTwentyFour = 24.0;
+  static const double radiusThirtyTwo = 32.0;
+
+  // Typography Scale Tokens
+  static const double fontXs = 11.0;
+  static const double fontSm = 12.0;
+  static const double fontMd = 14.0;
+  static const double fontBase = 15.0;
+  static const double fontLg = 16.0;
+  static const double fontXl = 18.0;
+  static const double fontTitle = 20.0;
+  static const double fontHero = 36.0;
+
+  // Receipt & Help Component Dimensions
+  static const double receiptActionBtnHeight = 46.0;
+  static const double helpInputHeight = 120.0;
+  static const double helpOptionIconSize = 22.0;
+  static const double strokeWidthBorder = 1.2;
+  static const double strokeWidthSelected = 1.8;
+  static const double elevationNone = 0.0;
+  static const double mapPolylineWidth = 4.0;
+  static const int helpMaxCharacters = 300;
 }

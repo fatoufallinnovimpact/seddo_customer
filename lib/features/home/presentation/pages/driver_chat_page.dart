@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -27,10 +29,10 @@ class _DriverChatPageState extends State<DriverChatPage> {
   Timer? _replyTimer;
 
   static const List<String> _quickReplies = [
-    'Je suis devant la porte',
-    'J\'arrive dans 1 min',
-    'Je porte une chemise blanche',
-    'Merci, je vous attends',
+    'chat.quick_at_gate',
+    'chat.quick_coming_1min',
+    'chat.quick_white_shirt',
+    'chat.quick_waiting',
   ];
 
   @override
@@ -128,7 +130,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
           borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
         ),
         title: Text(
-          'Appeler ${widget.driver.name}',
+          'chat.call_driver'.tr(args: [widget.driver.name]),
           style: GoogleFonts.inter(
             fontWeight: FontWeight.w800,
             color: AppColors.textPrimary,
@@ -139,7 +141,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Numéro du chauffeur :',
+              'chat.driver_number'.tr(),
               style: GoogleFonts.inter(
                 fontSize: 13,
                 color: AppColors.textSecondary,
@@ -160,7 +162,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
-              'Fermer',
+              'common.close'.tr(),
               style: GoogleFonts.inter(
                 color: AppColors.textSecondary,
                 fontWeight: FontWeight.w600,
@@ -179,12 +181,12 @@ class _DriverChatPageState extends State<DriverChatPage> {
               Navigator.of(ctx).pop();
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Appel en cours vers ${widget.driver.phone}...'),
+                  content: Text('chat.call_in_progress'.tr(args: [widget.driver.phone])),
                   backgroundColor: AppColors.primary,
                 ),
               );
             },
-            child: const Text('Appeler'),
+            child: Text('chat.call'.tr()),
           ),
         ],
       ),
@@ -193,6 +195,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
@@ -291,10 +294,14 @@ class _DriverChatPageState extends State<DriverChatPage> {
               shape: BoxShape.circle,
             ),
             child: IconButton(
-              icon: const Icon(
-                Icons.phone_rounded,
-                size: 20,
-                color: AppColors.textPrimary,
+              icon: SvgPicture.asset(
+                'assets/icons/call-svgrepo-com.svg',
+                width: 18,
+                height: 18,
+                colorFilter: const ColorFilter.mode(
+                  AppColors.primary,
+                  BlendMode.srcIn,
+                ),
               ),
               padding: EdgeInsets.zero,
               onPressed: _makePhoneCall,
@@ -404,10 +411,10 @@ class _DriverChatPageState extends State<DriverChatPage> {
                 separatorBuilder: (context, index) =>
                     const SizedBox(width: 8),
                 itemBuilder: (context, index) {
-                  final reply = _quickReplies[index];
+                  final replyKey = _quickReplies[index];
                   return ActionChip(
                     label: Text(
-                      reply,
+                      replyKey.tr(),
                       style: GoogleFonts.inter(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
@@ -419,7 +426,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
                       borderRadius: BorderRadius.circular(AppConstants.radiusPill),
                       side: const BorderSide(color: AppColors.cardBorder),
                     ),
-                    onPressed: () => _sendMessage(reply),
+                    onPressed: () => _sendMessage(replyKey.tr()),
                   );
                 },
               ),
@@ -449,7 +456,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
                           SnackBar(
                             backgroundColor: AppColors.buttonBlack,
                             content: Text(
-                              'Partage de photo disponible prochainement.',
+                              'chat.photo_soon'.tr(),
                               style: GoogleFonts.inter(color: AppColors.white),
                             ),
                           ),
@@ -471,7 +478,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
                             color: AppColors.textPrimary,
                           ),
                           decoration: InputDecoration(
-                            hintText: 'Écrire à ${widget.driver.name}...',
+                            hintText: 'chat.send_hint'.tr(args: [widget.driver.name]),
                             hintStyle: GoogleFonts.inter(
                               fontSize: 14,
                               color: AppColors.textSecondary,

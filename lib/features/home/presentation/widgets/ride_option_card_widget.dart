@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -21,6 +22,7 @@ class RideOptionCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Material(
       color: AppColors.white,
       borderRadius: BorderRadius.circular(AppConstants.radiusLg),

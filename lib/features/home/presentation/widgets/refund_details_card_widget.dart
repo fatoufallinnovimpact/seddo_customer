@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -16,6 +17,7 @@ class RefundDetailsCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
@@ -51,7 +53,7 @@ class RefundDetailsCardWidget extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$formattedAmount remboursés',
+                  '$formattedAmount ${'refund.refunded'.tr()}',
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
@@ -61,7 +63,7 @@ class RefundDetailsCardWidget extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Sur votre Orange Money · réf. $transactionRef',
+                  'refund.on_orange_money'.tr(args: [transactionRef]),
                   style: GoogleFonts.inter(
                     fontSize: 12.5,
                     color: AppColors.textSecondary,

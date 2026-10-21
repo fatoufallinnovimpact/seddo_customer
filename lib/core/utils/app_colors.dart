@@ -181,4 +181,94 @@ abstract class AppColors {
   static const Color shadowMarker = Color(0x1F000000);
   static const Color shadowHeavy = Color(0x33000000);
   static const Color shadowPinBox = Color(0x3D000000);
+
+  // Centralized Theme & UI Tokens (Innov & Impact Africa Guidelines)
+  static const Color slateDark = Color(0xFF0F172A);
+  static const Color slateBorder = Color(0xFFE2E8F0);
+  static const Color slateLightBg = Color(0xFFF1F5F9);
+  static const Color slateMuted = Color(0xFF6B7280);
+  static const Color offlineDark = Color(0xFF141414);
+  static const Color grayBorderLight = Color(0xFFEAECF0);
+  static const Color grayBorderMedium = Color(0xFFD1D5DB);
+  static const Color grayBorderDivider = Color(0xFFE5E7EB);
+  static const Color grayBgSubtle = Color(0xFFF9FAFB);
+  static const Color grayBgLight = Color(0xFFF3F4F6);
+  static const Color peachLight = Color(0xFFFFF2E8);
+  static const Color peachMedium = Color(0xFFFFEDD5);
+  static const Color peachDeep = Color(0xFFFFDFC8);
+  static const Color peachBorder = Color(0xFFFFD9C2);
+  static const Color orangeLightBg = Color(0xFFFFF7ED);
+  static const Color orangeSubtleBg = Color(0xFFFFF4EC);
+  static const Color orangeAccent = Color(0xFFFF7A00);
+  static const Color orangeDarkAccent = Color(0xFFEA580C);
+  static const Color orangeVibrant = Color(0xFFFF5722);
+  static const Color amberRating = Color(0xFFFF9500);
+  static const Color avatarLightBeige = Color(0xFFE2DBD3);
+  static const Color buttonSecondaryBeige = Color(0xFFF4F1EA);
+  static const Color pureBlack = Color(0xFF000000);
+  static const Color black38 = Color(0x61000000);
+  static const Color errorLightBg = Color(0xFFFFECEC);
+  static const Color errorRed = Color(0xFFE53935);
+  static const Color darkMarker = Color(0xFF1E1E1E);
+  static const Color silverMarker = Color(0xFFC0C0C0);
+  static const Color headlightMarker = Color(0xFFFFF9D2);
+  static const Color darkMirror = Color(0xFF2C2C2E);
+  static const Color taillightMarker = Color(0xFFFF3B30);
+
+  // Drawer & Navigation tokens
+  static const Color drawerDark = Color(0xFF161616);
+  static const Color drawerCardBorder = Color(0xFF282828);
+  static const Color amberWarning = Color(0xFFF59E0B);
+  static const Color greenSuccess = Color(0xFF16A34A);
+  static const Color skyBlue = Color(0xFF0284C7);
+  static const Color waveBlue = Color(0xFF00B2FE);
+
+  // Emergency & Safety modal tokens
+  static const Color emergencyAlertBg = Color(0xFFFFF7F0);
+  static const Color emergencyAlertBorder = Color(0xFFFFD8B2);
+  static const Color emergencyAlertText = Color(0xFF7A3500);
+  static const Color policeBadgeBg = Color(0xFFEBF5FF);
+  static const Color policeBadgeIcon = Color(0xFF1E40AF);
+  static const Color sirenLightBg = Color(0xFFFEF2F2);
+  static const Color hospitalBadgeBg = Color(0xFFECFDF5);
+  static const Color hospitalBadgeIcon = Color(0xFF059669);
+  static const Color contactBadgeBg = Color(0xFFF3E8FF);
+  static const Color contactBadgeIcon = Color(0xFF7E22CE);
+  static const Color safetyCardBg = Color(0xFFF7F8FA);
+
+  // Map Marker Canvas tokens
+  static const Color shadowCarCanvas = Color(0x55000000);
+  static const Color carRoofGradientStart = Color(0xFF3A3A3C);
+  static const Color carRoofGradientMid = Color(0xFF1C1C1E);
+  static const Color carRoofGradientEnd = Color(0xFF0D0D0E);
+  static const Color carGrilleDark = Color(0xFF111111);
+  static const Color windshieldBlueStart = Color(0xFF64D2FF);
+  static const Color windshieldBlueMid = Color(0xFF0A2E4C);
+  static const Color shadowCanvasMedium = Color(0x44000000);
+  static const Color orangeDarkPin = Color(0xFFD64400);
+  static const Color pinDarkGradientStart = Color(0xFF333333);
+  static const Color shadowCanvasSoft = Color(0x30000000);
+
+  // Rating Illustration & Avatar tokens
+  static const Color avatarCollar = Color(0xFFE64A19);
+  static const Color avatarSkin = Color(0xFFA66038);
+  static const Color avatarHair = Color(0xFF33180D);
+  static const Color avatarBgTop = Color(0xFFFFEAD8);
+  static const Color avatarWaveLight = Color(0xFFFF8A3D);
+  static const Color badgePeachBorder = Color(0xFFFFEEDD);
+  static const Color badgePeachFill = Color(0xFFFFE5D3);
+  static const Color avatarCircleBg = Color(0xFFFFE8D6);
+  static const Color orangeVibrantGlow = Color(0x66FF5722);
+  static const Color orangeVibrantShadow = Color(0x4DFF5722);
+
+  // Consent modal tokens
+  static const Color consentButtonDisabled = Color(0xFFFFB59A);
+
+  // Receipt & Help Flow tokens
+  static const Color receiptPaidBadgeBg = Color(0xFFD1FAE5);
+  static const Color receiptPaidBadgeText = Color(0xFF059669);
+  static const Color receiptDeparturePin = Color(0xFF1E293B);
+  static const Color receiptArrivalPin = Color(0xFFFB5B00);
+  static const Color receiptRouteLine = Color(0xFF1E293B);
+  static const Color supportTagBorder = Color(0xFFE5E7EB);
 }

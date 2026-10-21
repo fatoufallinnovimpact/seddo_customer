@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -51,6 +52,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
     return Container(
@@ -99,7 +101,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
 
           // Title: "Solde insuffisant"
           Text(
-            'Solde insuffisant',
+            'insufficient_balance.title'.tr(),
             style: GoogleFonts.inter(
               fontSize: 24,
               fontWeight: FontWeight.w900,
@@ -111,7 +113,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
 
           // Subtitle: "Rien n'a été débité de votre Orange Money."
           Text(
-            'Rien n\'a été débité de votre Orange Money.',
+            'insufficient_balance.subtitle'.tr(),
             style: GoogleFonts.inter(
               fontSize: 14,
               color: AppColors.textSecondary,
@@ -135,7 +137,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Prix de la course',
+                        'insufficient_balance.ride_price'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
@@ -161,7 +163,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'Il vous manque',
+                        'insufficient_balance.missing_amount'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           color: AppColors.textSecondary,
@@ -200,14 +202,14 @@ class InsufficientBalanceSheet extends StatelessWidget {
               onPressed: () {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Ouverture de Orange Money Max it...'),
+                  SnackBar(
+                    content: Text('insufficient_balance.opening_max_it'.tr()),
                     backgroundColor: AppColors.primary,
                   ),
                 );
               },
               child: Text(
-                'Recharger avec Max it',
+                'insufficient_balance.recharge_max_it'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -233,7 +235,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
               ),
               onPressed: () => Navigator.of(context).pop(),
               child: Text(
-                'Revenir au choix de la course',
+                'insufficient_balance.back_to_ride'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,

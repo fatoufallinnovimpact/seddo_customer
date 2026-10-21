@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +61,7 @@ class _HomeMapCardState extends State<HomeMapCard> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return BlocConsumer<HomeBloc, HomeState>(
       listenWhen: (prev, curr) =>
           prev.userLocation != curr.userLocation ||
@@ -228,7 +230,10 @@ class _HomeMapCardState extends State<HomeMapCard> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '${state.driversCount} chauffeurs autour · ${state.arrivalMinutes} min',
+                          'home.drivers_around'.tr(args: [
+                            '${state.driversCount}',
+                            '${state.arrivalMinutes}',
+                          ]),
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,

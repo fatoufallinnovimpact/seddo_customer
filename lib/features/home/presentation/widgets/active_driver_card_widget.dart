@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -19,6 +20,7 @@ class ActiveDriverCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final initials = driver.name.isNotEmpty
         ? driver.name
             .split(' ')
@@ -58,7 +60,7 @@ class ActiveDriverCardWidget extends StatelessWidget {
                   gradient: const LinearGradient(
                     colors: [
                       AppColors.avatarBeige,
-                      Color(0xFFE2DBD3),
+                      AppColors.avatarLightBeige,
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -177,7 +179,7 @@ class ActiveDriverCardWidget extends StatelessWidget {
                       ),
                       const SizedBox(width: 3),
                       Text(
-                        'Payé',
+                        'ride.paid'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w800,

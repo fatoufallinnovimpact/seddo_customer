@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -196,7 +198,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '${widget.driver.name.split(' ').first} est arrivé au point de départ !',
+                  'ride.driver_arrived_at_pickup'
+                      .tr(args: [widget.driver.name.split(' ').first]),
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w700,
                     fontSize: 13.5,
@@ -414,6 +417,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final licensePlateText =
         widget.driver.licensePlate.replaceAll('-', ' ');
@@ -431,7 +435,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         : 'MS';
 
     final etaDisplay = _driverArrived
-        ? 'Arrivé'
+        ? 'ride.arrived'.tr()
         : '$_remainingEtaMinutes min';
 
     final digits = widget.departureCode.padRight(4, '0').split('');
@@ -572,7 +576,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0x18000000),
+                    color: AppColors.shadowDarkBlack,
                     blurRadius: 28,
                     offset: Offset(0, -6),
                   ),
@@ -610,7 +614,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                             width: 50,
                             height: 50,
                             decoration: const BoxDecoration(
-                              color: Color(0xFFFFF2E8),
+                              color: AppColors.peachLight,
                               shape: BoxShape.circle,
                             ),
                             alignment: Alignment.center,
@@ -625,7 +629,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           // Title: Rendez-vous au point de départ
                           Expanded(
                             child: Text(
-                              'Rendez-vous au point\nde départ',
+                              'ride.pickup_point'.tr(),
                               style: GoogleFonts.inter(
                                 fontSize: 18.5,
                                 fontWeight: FontWeight.w900,
@@ -677,10 +681,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
+                          color: AppColors.grayBgSubtle,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: const Color(0xFFEAECF0),
+                            color: AppColors.grayBorderLight,
                             width: 1.0,
                           ),
                         ),
@@ -702,7 +706,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                               width: 38,
                               height: 38,
                               decoration: const BoxDecoration(
-                                color: Color(0xFFFFEDD5),
+                                color: AppColors.peachMedium,
                                 shape: BoxShape.circle,
                               ),
                               alignment: Alignment.center,
@@ -711,7 +715,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                 style: GoogleFonts.inter(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w900,
-                                  color: const Color(0xFFEA580C),
+                                  color: AppColors.orangeDarkAccent,
                                 ),
                               ),
                             ),
@@ -732,7 +736,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                       color: AppColors.white,
                                       borderRadius: BorderRadius.circular(5),
                                       border: Border.all(
-                                        color: Colors.black,
+                                        color: AppColors.pureBlack,
                                         width: 1.4,
                                       ),
                                     ),
@@ -741,7 +745,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                       style: GoogleFonts.inter(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w900,
-                                        color: Colors.black,
+                                        color: AppColors.pureBlack,
                                         letterSpacing: 0.8,
                                       ),
                                     ),
@@ -782,7 +786,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                       const SizedBox(width: 6),
                                       const Icon(
                                         Icons.star_rounded,
-                                        color: Color(0xFFFF9500),
+                                        color: AppColors.amberRating,
                                         size: 15,
                                       ),
                                       const SizedBox(width: 2),
@@ -818,10 +822,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF7ED),
+                          color: AppColors.orangeLightBg,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: const Color(0xFFFFEDD5),
+                            color: AppColors.peachMedium,
                             width: 1.0,
                           ),
                         ),
@@ -832,7 +836,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                               width: 40,
                               height: 40,
                               decoration: const BoxDecoration(
-                                color: Color(0xFFFFEDD5),
+                                color: AppColors.peachMedium,
                                 shape: BoxShape.circle,
                               ),
                               alignment: Alignment.center,
@@ -850,7 +854,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Code de départ',
+                                    'ride.departure_code'.tr(),
                                     style: GoogleFonts.inter(
                                       fontSize: 14.5,
                                       fontWeight: FontWeight.w800,
@@ -859,7 +863,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'À donner au chauffeur',
+                                    'ride.give_to_driver'.tr(),
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
                                       color: AppColors.textSecondary,
@@ -879,7 +883,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                   height: 38,
                                   margin: const EdgeInsets.only(left: 5),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF1E293B),
+                                    color: AppColors.licensePlateBg,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   alignment: Alignment.center,
@@ -911,20 +915,24 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                 padding:
                                     const EdgeInsets.symmetric(horizontal: 14),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF3F4F6),
+                                  color: AppColors.grayBgLight,
                                   borderRadius: BorderRadius.circular(23),
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(
-                                      Icons.chat_bubble_outline_rounded,
-                                      color: AppColors.primary,
-                                      size: 19,
+                                    SvgPicture.asset(
+                                      'assets/icons/message-square-lines-svgrepo-com.svg',
+                                      width: 20,
+                                      height: 20,
+                                      colorFilter: const ColorFilter.mode(
+                                        AppColors.primary,
+                                        BlendMode.srcIn,
+                                      ),
                                     ),
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Text(
-                                        'Envoyer un message...',
+                                        'ride.send_message_hint'.tr(),
                                         style: GoogleFonts.inter(
                                           fontSize: 13.5,
                                           color: AppColors.textSecondary,
@@ -945,16 +953,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                             width: 46,
                             height: 46,
                             decoration: const BoxDecoration(
-                              color: Color(0xFFFFF2E8),
+                              color: AppColors.peachLight,
                               shape: BoxShape.circle,
                             ),
                             child: IconButton(
-                              icon: const Icon(
-                                Icons.phone_outlined,
-                                color: AppColors.primary,
-                                size: 21,
+                              icon: SvgPicture.asset(
+                                'assets/icons/call-svgrepo-com.svg',
+                                width: 20,
+                                height: 20,
+                                colorFilter: const ColorFilter.mode(
+                                  AppColors.primary,
+                                  BlendMode.srcIn,
+                                ),
                               ),
-                              tooltip: 'Appeler le chauffeur',
+                              tooltip: 'ride.call_driver'.tr(),
                               onPressed: _callDriver,
                             ),
                           ),
@@ -969,7 +981,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           Expanded(
                             child: _buildActionButton(
                               icon: Icons.share_outlined,
-                              label: 'Partager',
+                              label: 'common.share'.tr(),
                               onTap: _openShare,
                             ),
                           ),
@@ -978,8 +990,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           // Sécurité Button
                           Expanded(
                             child: _buildActionButton(
-                              icon: Icons.shield_outlined,
-                              label: 'Sécurité',
+                              svgPath: 'assets/icons/security-svgrepo-com.svg',
+                              label: 'drawer.safety'.tr(),
                               onTap: _openSafety,
                             ),
                           ),
@@ -989,7 +1001,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           Expanded(
                             child: _buildActionButton(
                               icon: Icons.close_rounded,
-                              label: 'Annuler',
+                              label: 'common.cancel'.tr(),
                               onTap: _onCancelRide,
                             ),
                           ),
@@ -1007,7 +1019,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   Widget _buildActionButton({
-    required IconData icon,
+    IconData? icon,
+    String? svgPath,
     required String label,
     required VoidCallback onTap,
   }) {
@@ -1020,12 +1033,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           color: AppColors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: const Color(0xFFEAECF0),
+            color: AppColors.grayBorderLight,
             width: 1.0,
           ),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x08000000),
+              color: AppColors.shadowSubtleBlack,
               blurRadius: 8,
               offset: Offset(0, 2),
             ),
@@ -1034,11 +1047,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: AppColors.primary,
-              size: 22,
-            ),
+            if (svgPath != null)
+              SvgPicture.asset(
+                svgPath,
+                width: 22,
+                height: 22,
+                colorFilter: const ColorFilter.mode(
+                  AppColors.primary,
+                  BlendMode.srcIn,
+                ),
+              )
+            else if (icon != null)
+              Icon(
+                icon,
+                color: AppColors.primary,
+                size: 22,
+              ),
             const SizedBox(height: 5),
             Text(
               label,

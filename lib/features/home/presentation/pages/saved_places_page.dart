@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -68,7 +69,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('« ${result.name} » a été enregistré !'),
+            content: Text('saved_places.saved_notice'.tr(args: [result.name])),
             backgroundColor: AppColors.primary,
             behavior: SnackBarBehavior.floating,
           ),
@@ -92,7 +93,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('« ${result.name} » a été mis à jour !'),
+            content: Text('saved_places.updated_notice'.tr(args: [result.name])),
             backgroundColor: AppColors.primary,
             behavior: SnackBarBehavior.floating,
           ),
@@ -107,18 +108,18 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Supprimer ce lieu ?',
+          'saved_places.delete_title'.tr(),
           style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 18),
         ),
         content: Text(
-          'Voulez-vous vraiment supprimer « ${place.name} » de vos lieux enregistrés ?',
+          'saved_places.delete_confirm'.tr(args: [place.name]),
           style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
-              'Annuler',
+              'common.cancel'.tr(),
               style: GoogleFonts.inter(
                 color: AppColors.textSecondary,
                 fontWeight: FontWeight.w600,
@@ -136,7 +137,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(
-              'Supprimer',
+              'saved_places.delete_action'.tr(),
               style: GoogleFonts.inter(fontWeight: FontWeight.w700),
             ),
           ),
@@ -151,7 +152,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('« ${place.name} » a été supprimé.'),
+            content: Text('saved_places.deleted_notice'.tr(args: [place.name])),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -229,6 +230,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     return Scaffold(
       backgroundColor: AppColors.white,
       body: GestureDetector(
@@ -271,7 +273,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                   const SizedBox(width: AppConstants.spacingMd),
                   Expanded(
                     child: Text(
-                      'Lieux enregistrés',
+                      'saved_places.title'.tr(),
                       style: GoogleFonts.inter(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
@@ -309,7 +311,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Ajouter',
+                            'saved_places.add'.tr(),
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -368,7 +370,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Vos adresses favorites',
+                            'saved_places.favorite_addresses'.tr(),
                             style: GoogleFonts.inter(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w700,
@@ -377,7 +379,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Sélectionnez un lieu en 1 clic pour votre départ ou arrivée.',
+                            'saved_places.favorite_subtitle'.tr(),
                             style: GoogleFonts.inter(
                               fontSize: 12.5,
                               color: AppColors.textSecondary,
@@ -415,7 +417,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Aucun lieu enregistré',
+                                'saved_places.empty_title'.tr(),
                                 style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -424,7 +426,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Ajoutez votre maison, travail ou adresse préférée.',
+                                'saved_places.empty_subtitle'.tr(),
                                 style: GoogleFonts.inter(
                                   fontSize: 13,
                                   color: AppColors.textSecondary,
@@ -444,7 +446,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                                   ),
                                 ),
                                 icon: const Icon(Icons.add_rounded),
-                                label: const Text('Ajouter un lieu'),
+                                label: Text('saved_places.add_place_button'.tr()),
                                 onPressed: _addNewPlace,
                               ),
                             ],

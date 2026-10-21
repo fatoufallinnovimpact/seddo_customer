@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -297,6 +298,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   @override
   Widget build(BuildContext context) {
+    final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final rideTypeLabel =
         widget.rideOption.type == RideType.eco ? 'Eco' : 'Confort';
@@ -423,7 +425,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'RECHERCHE EN DIRECT',
+                              'ride.live_search'.tr(),
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
@@ -450,7 +452,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Recherche d\'un chauffeur',
+                      'ride.searching'.tr(),
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -495,7 +497,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Paiement reçu · ${widget.rideOption.formattedPrice}',
+                              'ride.payment_received'.tr(args: [widget.rideOption.formattedPrice]),
                               style: GoogleFonts.inter(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w800,
@@ -504,7 +506,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Remboursé si aucun chauffeur n\'accepte',
+                              'ride.refund_guarantee'.tr(),
                               style: GoogleFonts.inter(
                                 fontSize: 12.5,
                                 color: AppColors.textSecondary,
@@ -550,7 +552,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '6 chauffeurs $rideTypeLabel autour de vous',
+                              'ride.drivers_around_type'.tr(args: [rideTypeLabel]),
                               style: GoogleFonts.inter(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w800,
@@ -559,7 +561,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'L\'offre est proposée au plus proche d\'abord',
+                              'ride.offer_closest_first'.tr(),
                               style: GoogleFonts.inter(
                                 fontSize: 12.5,
                                 color: AppColors.textSecondary,
@@ -590,7 +592,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                       ),
                       onPressed: _onCancelRide,
                       child: Text(
-                        'Annuler la course',
+                        'ride.cancel_ride'.tr(),
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
