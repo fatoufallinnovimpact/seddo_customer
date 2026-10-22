@@ -34,6 +34,10 @@
 		</array>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Seddo a besoin de votre position pour vous localiser sur la carte et trouver des chauffeurs à proximité.</string>
+		<key>UIFileSharingEnabled</key>
+		<true/>
+		<key>LSSupportsOpeningDocumentsInPlace</key>
+		<true/>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>

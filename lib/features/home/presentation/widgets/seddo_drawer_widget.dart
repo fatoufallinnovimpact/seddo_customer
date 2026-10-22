@@ -4,6 +4,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/features/home/presentation/pages/activity_page.dart';
+import 'package:seddo/features/home/presentation/pages/public_transport_page.dart';
 import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/home/presentation/widgets/language_modal.dart';
 import 'package:seddo/features/home/presentation/widgets/logout_modal.dart';
@@ -71,7 +73,11 @@ class SeddoDrawerWidget extends StatelessWidget {
                           subtitle: 'drawer.activity_sub'.tr(),
                           onTap: () {
                             Navigator.of(context).pop();
-                            _openActivitySheet(context);
+                            Navigator.of(context).push(
+                              SlideRightToLeftRoute(
+                                page: const ActivityPage(),
+                              ),
+                            );
                           },
                         ),
                         const SizedBox(height: 6),
@@ -83,7 +89,11 @@ class SeddoDrawerWidget extends StatelessWidget {
                           subtitle: 'drawer.tcu_sub'.tr(),
                           onTap: () {
                             Navigator.of(context).pop();
-                            _openTcuSheet(context);
+                            Navigator.of(context).push(
+                              SlideRightToLeftRoute(
+                                page: const PublicTransportPage(),
+                              ),
+                            );
                           },
                         ),
                         const SizedBox(height: 6),
@@ -386,10 +396,12 @@ class SeddoDrawerWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         splashColor: AppColors.primary.withValues(alpha: 0.08),
         highlightColor: AppColors.primary.withValues(alpha: 0.04),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: Row(
-            children: [
+        child: SizedBox(
+          width: double.infinity,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Row(
+              children: [
               SizedBox(
                 width: 26,
                 height: 26,
@@ -439,8 +451,9 @@ class SeddoDrawerWidget extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // Logout button at the very bottom
   Widget _buildLogoutButton(BuildContext context) {
@@ -738,274 +751,9 @@ class SeddoDrawerWidget extends StatelessWidget {
     );
   }
 
-  void _openActivitySheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'drawer.history_title'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildRideHistoryTile(
-              destination: 'Ngor-Almadies, Dakar',
-              date: 'Aujourd\'hui · 14:20',
-              price: '2 500 FCFA',
-              status: 'Terminée',
-              carCategory: 'Seddo Eco',
-            ),
-            const Divider(height: 20),
-            _buildRideHistoryTile(
-              destination: 'Plateau, rue Carnot',
-              date: 'Hier · 09:15',
-              price: '3 800 FCFA',
-              status: 'Terminée',
-              carCategory: 'Confort',
-            ),
-            const Divider(height: 20),
-            _buildRideHistoryTile(
-              destination: 'Remboursement course annulée',
-              date: '18 Oct · 18:45',
-              price: '+1 200 FCFA',
-              status: 'Crédité Orange Money',
-              carCategory: 'Remboursement',
-              isRefund: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildRideHistoryTile({
-    required String destination,
-    required String date,
-    required String price,
-    required String status,
-    required String carCategory,
-    bool isRefund = false,
-  }) {
-    return Row(
-      children: [
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: isRefund
-                ? AppColors.refundContainerBg
-                : AppColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          alignment: Alignment.center,
-          child: Icon(
-            isRefund ? Icons.refresh_rounded : Icons.directions_car_rounded,
-            color: isRefund ? AppColors.greenSuccess : AppColors.primary,
-            size: 22,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                destination,
-                style: GoogleFonts.inter(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '$carCategory · $date',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              price,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: isRefund
-                    ? AppColors.greenSuccess
-                    : AppColors.textPrimary,
-              ),
-            ),
-            Text(
-              status,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: isRefund
-                    ? AppColors.greenSuccess
-                    : AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 
-  void _openTcuSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'drawer.tcu_title'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'drawer.tcu_desc'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildTcuCard(
-              title: 'BRT Dakar',
-              subtitle: 'drawer.tcu_brt_sub'.tr(),
-              color: AppColors.skyBlue,
-              icon: Icons.electric_bolt_rounded,
-            ),
-            const SizedBox(height: 10),
-            _buildTcuCard(
-              title: 'TER Dakar',
-              subtitle: 'drawer.tcu_ter_sub'.tr(),
-              color: AppColors.greenSuccess,
-              icon: Icons.train_rounded,
-            ),
-            const SizedBox(height: 10),
-            _buildTcuCard(
-              title: 'Dakar Dem Dikk (DDD)',
-              subtitle: 'drawer.tcu_ddd_sub'.tr(),
-              color: AppColors.primary,
-              icon: Icons.directions_bus_filled_rounded,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  Widget _buildTcuCard({
-    required String title,
-    required String subtitle,
-    required Color color,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: Icon(icon, color: AppColors.white, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _openLanguageSheet(BuildContext context) {
     LanguageModal.show(context);

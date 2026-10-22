@@ -10,6 +10,7 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/domain/models/ride_option_model.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/home/presentation/pages/ride_help_page.dart';
+import 'package:seddo/services/receipt_pdf_service.dart';
 import 'package:seddo/services/route_service.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -39,6 +40,9 @@ class RideReceiptPage extends StatefulWidget {
   final String dateText;
   final String paymentPhone;
   final String orangeRef;
+  final String? priceText;
+  final String statusText;
+  final bool isRefunded;
 
   const RideReceiptPage({
     super.key,
@@ -46,6 +50,9 @@ class RideReceiptPage extends StatefulWidget {
     this.destination,
     this.driver,
     this.rideOption,
+    this.priceText,
+    this.statusText = 'Payé',
+    this.isRefunded = false,
     this.departureTime = '18:19',
     this.arrivalTime = '18:41',
     this.durationText = '22 min',
@@ -201,40 +208,76 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   Future<void> _downloadOrSharePdf() async {
     final departureName = widget.departure?.mainText ?? 'Sacré-Cœur 3';
     final arrivalName = widget.destination?.mainText ?? 'Almadies';
-    final price = widget.rideOption?.formattedPrice ?? '3 500 F';
+    final price = widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
     final driverName = widget.driver?.name ?? 'Moussa';
+    final carModel = widget.driver?.carModel ?? 'Toyota Corolla';
+    final plate = widget.driver?.licensePlate ?? 'DK 4521 AB';
+    final rating = '${widget.driver?.rating.toInt() ?? 4}';
+    final rideType = widget.rideOption?.title ?? 'Seddo Eco';
 
-    final receiptSummary = '''
-SEDDO - Reçu de course
-Date : ${widget.dateText} (${widget.departureTime} - ${widget.arrivalTime})
-Montant : $price (Payé - Prix fixe)
-Trajet : $departureName -> $arrivalName (${widget.distanceText} - ${widget.durationText})
-Chauffeur : $driverName (${widget.driver?.carModel ?? 'Toyota Corolla'} - ${widget.driver?.licensePlate ?? 'DK 4521 AB'})
-Paiement : Orange Money ${widget.paymentPhone}
-Référence Orange : ${widget.orangeRef}
-Statut : Payé
-''';
+    final saveResult = await ReceiptPdfService.saveReceiptToDevice(
+      departureName: departureName,
+      arrivalName: arrivalName,
+      departureTime: widget.departureTime,
+      arrivalTime: widget.arrivalTime,
+      distanceText: widget.distanceText,
+      durationText: widget.durationText,
+      dateText: widget.dateText,
+      priceText: price,
+      rideType: rideType,
+      driverName: driverName,
+      driverCar: carModel,
+      driverPlate: plate,
+      driverRating: rating,
+      paymentPhone: widget.paymentPhone,
+      orangeRef: widget.orangeRef,
+    );
 
-    try {
-      await SharePlus.instance.share(
-        ShareParams(
-          text: receiptSummary,
-          subject: 'Reçu Seddo - ${widget.orangeRef}',
-        ),
-      );
-    } catch (_) {}
+    if (!mounted) return;
 
-    if (mounted) {
+    if (saveResult.success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Reçu PDF téléchargé avec succès. (Reçu_Seddo_${widget.orangeRef}.pdf)',
+            'Reçu PDF téléchargé avec succès dans vos Documents (${saveResult.fileName})',
             style: GoogleFonts.inter(
               fontWeight: FontWeight.w600,
               color: AppColors.white,
             ),
           ),
           backgroundColor: AppColors.slateDark,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+          ),
+          action: SnackBarAction(
+            label: 'Partager',
+            textColor: AppColors.orangeAccent,
+            onPressed: () {
+              try {
+                SharePlus.instance.share(
+                  ShareParams(
+                    files: [XFile(saveResult.primaryPath)],
+                    subject: 'Reçu Seddo - ${widget.orangeRef}',
+                  ),
+                );
+              } catch (_) {}
+            },
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erreur lors du téléchargement : ${saveResult.errorMessage ?? 'Erreur de stockage'}',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: AppColors.white,
+            ),
+          ),
+          backgroundColor: AppColors.alert,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
@@ -257,8 +300,9 @@ Statut : Payé
                 latitude: 14.7431,
                 longitude: -17.5186,
               ),
-          priceText: widget.rideOption?.formattedPrice ?? '3 500 F',
-          dateText: '15 avr. · Course terminée',
+          priceText:
+              widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F',
+          dateText: '${widget.dateText} · ${widget.statusText}',
         ),
       ),
     );
@@ -456,24 +500,32 @@ Statut : Payé
             vertical: AppConstants.spacingXs,
           ),
           decoration: BoxDecoration(
-            color: AppColors.receiptPaidBadgeBg,
+            color: widget.isRefunded
+                ? AppColors.grayBgLight
+                : AppColors.receiptPaidBadgeBg,
             borderRadius: BorderRadius.circular(AppConstants.radiusPill),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.check_circle_rounded,
+              Icon(
+                widget.isRefunded
+                    ? Icons.refresh_rounded
+                    : Icons.check_circle_rounded,
                 size: AppConstants.iconSizeSm,
-                color: AppColors.receiptPaidBadgeText,
+                color: widget.isRefunded
+                    ? AppColors.slateDark
+                    : AppColors.receiptPaidBadgeText,
               ),
               const SizedBox(width: AppConstants.spacingXs),
               Text(
-                'Payé',
+                widget.statusText,
                 style: GoogleFonts.inter(
                   fontSize: AppConstants.fontSm,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.receiptPaidBadgeText,
+                  color: widget.isRefunded
+                      ? AppColors.slateDark
+                      : AppColors.receiptPaidBadgeText,
                 ),
               ),
             ],
@@ -484,7 +536,8 @@ Statut : Payé
   }
 
   Widget _buildAmountSection() {
-    final amountText = widget.rideOption?.formattedPrice ?? '3 500 F';
+    final amountText =
+        widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
     final optionTitle = widget.rideOption?.title ?? 'Seddo Eco';
 
     return Column(

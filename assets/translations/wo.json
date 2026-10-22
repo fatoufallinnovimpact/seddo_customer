@@ -342,5 +342,33 @@
   "refund": {
     "refunded": "delloon nañu ko",
     "on_orange_money": "Ci sa Orange Money · réf. {}"
+  },
+  "tcu": {
+    "title": "Fan lañuy dem ?",
+    "origin_label": "Fi ngay jóge",
+    "destination_label": "Fa ngay dem",
+    "filter_all": "Lépp",
+    "filter_ddd": "Dem Dikk",
+    "filter_aftu": "AFTU",
+    "filter_brt": "BRT",
+    "filter_ter": "TER",
+    "options_count": "{} tànnéef ngir sa yoon",
+    "options_count_singular": "1 tànnéef ngir sa yoon",
+    "bus_line": "Ligg bus bi : {}",
+    "train_line": "Ligg bi : {}",
+    "estimated_duration": "Diir bi: {}",
+    "next_departure": "Bi ci tegu",
+    "duration": "Diir",
+    "stops_count": "Taxawaay yi",
+    "route_to_stop": "Yoonu taxawaay bi",
+    "stops": "Taxawaay yi",
+    "walking_time": "{} · {} ci tànk",
+    "nav_destination": "Jëm {}",
+    "start_walking": "Dóor doxiin bi",
+    "walking_dist": "Ci tànk",
+    "next_bus": "Bus bi ci tegu",
+    "next_train": "Tren bi ci tegu",
+    "walking_started": "Yoonu doxiin bi tàmbli na jëm {}",
+    "stops_list_title": "Limu taxawaay yi"
   }
 }

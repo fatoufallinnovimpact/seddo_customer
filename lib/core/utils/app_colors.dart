@@ -271,4 +271,16 @@ abstract class AppColors {
   static const Color receiptArrivalPin = Color(0xFFFB5B00);
   static const Color receiptRouteLine = Color(0xFF1E293B);
   static const Color supportTagBorder = Color(0xFFE5E7EB);
+
+  // Public Transport (TCU) tokens
+  static const Color tcuDddGreen = Color(0xFF10B981);
+  static const Color tcuAftuBlue = Color(0xFF1D4ED8);
+  static const Color tcuBrtOrange = Color(0xFFF59E0B);
+  static const Color tcuTerPurple = Color(0xFF6B21A8);
+  static const Color tcuTimelineTrack = Color(0xFFD1D5DB);
+  static const Color tcuWalkingDot = Color(0xFFEA580C);
+  static const Color tcuStopPin = Color(0xFF1E3A8A);
+  static const Color tcuStatCardBg = Color(0xFFF4F4F5);
+  static const Color tcuDurationGreen = Color(0xFF10B981);
+  static const Color tcuFieldBorder = Color(0xFFE5E7EB);
 }

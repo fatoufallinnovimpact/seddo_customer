@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:seddo/core/localization/wolof_localizations_delegate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TestJsonAssetLoader extends AssetLoader {
@@ -37,7 +38,11 @@ Widget wrapWithTestLocalization({
     child: Builder(
       builder: (context) {
         return MaterialApp(
-          localizationsDelegates: context.localizationDelegates,
+          localizationsDelegates: [
+            const WolofMaterialLocalizationsDelegate(),
+            const WolofCupertinoLocalizationsDelegate(),
+            ...context.localizationDelegates,
+          ],
           supportedLocales: context.supportedLocales,
           locale: context.locale,
           home: child,

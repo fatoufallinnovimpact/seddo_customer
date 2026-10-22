@@ -77,6 +77,8 @@ class _RideHelpPageState extends State<RideHelpPage> {
     'Chauffeur impoli',
   ];
 
+  final FocusNode _notesFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
@@ -88,10 +90,12 @@ class _RideHelpPageState extends State<RideHelpPage> {
   @override
   void dispose() {
     _notesController.dispose();
+    _notesFocusNode.dispose();
     super.dispose();
   }
 
   void _onTagPressed(String tag) {
+    FocusScope.of(context).unfocus();
     setState(() {
       final current = _notesController.text.trim();
       if (current.isEmpty) {
@@ -132,21 +136,26 @@ class _RideHelpPageState extends State<RideHelpPage> {
   Widget build(BuildContext context) {
     final destinationTitle = widget.destination?.mainText ?? 'Almadies';
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top App Bar
-            _buildTopAppBar(),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: AppColors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Top App Bar
+              _buildTopAppBar(),
 
-            // Scrollable Content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingMd,
-                ),
-                child: Column(
+              // Scrollable Content
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingMd,
+                  ),
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: AppConstants.spacingSm),
@@ -207,8 +216,9 @@ class _RideHelpPageState extends State<RideHelpPage> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildTopAppBar() {
     return Padding(
@@ -333,6 +343,7 @@ class _RideHelpPageState extends State<RideHelpPage> {
       padding: const EdgeInsets.only(bottom: AppConstants.spacingUnitLg),
       child: GestureDetector(
         onTap: () {
+          FocusScope.of(context).unfocus();
           setState(() {
             _selectedIssueIndex = index;
           });
@@ -398,8 +409,8 @@ class _RideHelpPageState extends State<RideHelpPage> {
               ),
               // Radio indicator
               Container(
-                width: 22,
-                height: 22,
+                width: AppConstants.iconSizeLg,
+                height: AppConstants.iconSizeLg,
                 decoration: BoxDecoration(
                   color: isSelected ? AppColors.primary : AppColors.transparent,
                   shape: BoxShape.circle,
@@ -413,7 +424,7 @@ class _RideHelpPageState extends State<RideHelpPage> {
                 child: isSelected
                     ? const Icon(
                         Icons.check,
-                        size: 14,
+                        size: AppConstants.spacingUnitXl,
                         color: AppColors.white,
                       )
                     : null,
@@ -437,6 +448,7 @@ class _RideHelpPageState extends State<RideHelpPage> {
         children: [
           TextField(
             controller: _notesController,
+            focusNode: _notesFocusNode,
             maxLines: 4,
             maxLength: AppConstants.helpMaxCharacters,
             style: GoogleFonts.inter(

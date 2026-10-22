@@ -342,5 +342,33 @@
   "refund": {
     "refunded": "remboursés",
     "on_orange_money": "Sur votre Orange Money · réf. {}"
+  },
+  "tcu": {
+    "title": "Où allons-nous ?",
+    "origin_label": "Origine",
+    "destination_label": "Destination",
+    "filter_all": "Tous",
+    "filter_ddd": "Dem Dikk",
+    "filter_aftu": "AFTU",
+    "filter_brt": "BRT",
+    "filter_ter": "TER",
+    "options_count": "{} options pour votre trajet",
+    "options_count_singular": "1 option pour votre trajet",
+    "bus_line": "Ligne de bus : {}",
+    "train_line": "Ligne : {}",
+    "estimated_duration": "Durée estimée: {}",
+    "next_departure": "Prochain",
+    "duration": "Durée",
+    "stops_count": "Arrêts",
+    "route_to_stop": "Itinéraire vers l'arrêt",
+    "stops": "Arrêts",
+    "walking_time": "{} · {} à pied",
+    "nav_destination": "Vers {}",
+    "start_walking": "Démarrer la marche",
+    "walking_dist": "À pied",
+    "next_bus": "Prochain bus",
+    "next_train": "Prochain train",
+    "walking_started": "Guidage piéton démarré vers {}",
+    "stops_list_title": "Liste des arrêts"
   }
 }

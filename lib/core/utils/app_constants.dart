@@ -84,4 +84,23 @@ abstract class AppConstants {
   static const double elevationNone = 0.0;
   static const double mapPolylineWidth = 4.0;
   static const int helpMaxCharacters = 300;
+
+  // Activity Component Dimensions & Tokens
+  static const double activityMapPreviewHeight = 140.0;
+  static const double activityMetricCardHeight = 84.0;
+  static const double activityRefundCardHeight = 138.0;
+  static const double activityCircleAccentSize = 145.0;
+  static const double activityCircleAccentTop = -25.0;
+  static const double activityCircleAccentRight = -25.0;
+  static const double fontTitleLarge = 26.0;
+  static const double fontNumberBig = 30.0;
+  static const int activityItemsPerPage = 3;
+
+  // TCU (Public Transport) Component Tokens
+  static const double tcuVehicleImageHeight = 50.0;
+  static const double tcuUnderlineHeight = 3.5;
+  static const double tcuUnderlineWidth = 90.0;
+  static const double tcuTimelineDotSize = 14.0;
+  static const double tcuTimelineInnerDotSize = 8.0;
+  static const double tcuBadgeSize = 28.0;
 }

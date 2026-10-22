@@ -382,6 +382,19 @@ void main() {
       expect(find.text('Détour inutile'), findsOneWidget);
       expect(find.text('Envoyer au support'), findsOneWidget);
 
+      // Tap TextField to focus (opens keyboard)
+      final textFieldFinder = find.byType(TextField);
+      await tester.tap(textFieldFinder);
+      await tester.pump();
+      final FocusNode textFieldFocus =
+          tester.widget<TextField>(textFieldFinder).focusNode!;
+      expect(textFieldFocus.hasFocus, isTrue);
+
+      // Tap outside (on "Quel est le problème ?") to dismiss keyboard
+      await tester.tap(find.text('Quel est le problème ?'));
+      await tester.pump();
+      expect(textFieldFocus.hasFocus, isFalse);
+
       // Tap back from RideHelpPage
       await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
       await tester.pumpAndSettle();

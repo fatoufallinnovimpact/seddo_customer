@@ -1,0 +1,280 @@
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:seddo/features/home/data/services/public_transport_service.dart';
+import 'package:seddo/features/home/domain/models/tcu_route_model.dart';
+import 'package:seddo/features/home/presentation/pages/public_transport_page.dart';
+import 'package:seddo/features/home/presentation/pages/public_transport_stop_route_page.dart';
+import 'package:seddo/features/home/presentation/widgets/seddo_drawer_widget.dart';
+import '../../test_helpers/test_localization_helper.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
+
+  group('TCU Public Transport Page & Navigation Flow Tests', () {
+    testWidgets('Opens PublicTransportPage from SeddoDrawerWidget across entire row',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const Scaffold(
+            drawer: SeddoDrawerWidget(),
+            body: Center(child: Text('Home')),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Open drawer
+      final ScaffoldState state = tester.firstState(find.byType(Scaffold));
+      state.openDrawer();
+      await tester.pumpAndSettle();
+
+      // Tap "TCU"
+      expect(find.text('TCU'), findsOneWidget);
+      await tester.tap(find.text('TCU'));
+      await tester.pumpAndSettle();
+
+      // We should now be on PublicTransportPage
+      expect(find.byType(PublicTransportPage), findsOneWidget);
+      expect(find.text('Où allons-nous ?'), findsOneWidget);
+    });
+
+    testWidgets(
+        'PublicTransportPage renders header, origin/destination swap, and filters',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Header title
+      expect(find.text('Où allons-nous ?'), findsOneWidget);
+
+      // Default origin and destination
+      expect(find.text('Fann Hock'), findsWidgets);
+      expect(find.text('Liberté 6'), findsWidgets);
+
+      // Swap button inverts fields
+      final swapButton = find.byKey(const Key('tcu_swap_button'));
+      await tester.tap(swapButton);
+      await tester.pumpAndSettle();
+
+      // Filter chips bar
+      expect(find.text('Tous'), findsOneWidget);
+      expect(find.text('Dem Dikk'), findsWidgets);
+      expect(find.text('AFTU'), findsWidgets);
+      expect(find.text('BRT'), findsWidgets);
+      expect(find.text('TER'), findsWidgets);
+
+      // Subtitle counter
+      expect(find.text('4 options pour votre trajet'), findsOneWidget);
+
+      // Filter by AFTU
+      await tester.tap(find.text('AFTU'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 option pour votre trajet'), findsOneWidget);
+      expect(find.textContaining('AFTU 24'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Card displays 3 metric columns, expandable stops, and opens navigation map',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Verify DDD 10 card
+      expect(find.textContaining('DDD 10'), findsOneWidget);
+      expect(find.text('19 min'), findsWidgets);
+      expect(find.text('Prochain'), findsWidgets);
+      expect(find.text('Durée'), findsWidgets);
+      expect(find.text('Arrêts'), findsWidgets);
+
+      // Expand stops list
+      final arretsButton =
+          find.widgetWithText(OutlinedButton, 'Arrêts').first;
+      await tester.tap(arretsButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Liste des arrêts'), findsOneWidget);
+      expect(find.text('Fann Résidence'), findsOneWidget);
+      expect(find.text('Stade Marius Ndiaye'), findsWidgets);
+
+      // Tap "Itinéraire vers l'arrêt"
+      final itineraireButton =
+          find.widgetWithText(ElevatedButton, 'Itinéraire vers l\'arrêt').first;
+      await tester.tap(itineraireButton);
+      await tester.pumpAndSettle();
+
+      // Navigated to PublicTransportStopRoutePage
+      expect(find.byType(PublicTransportStopRoutePage), findsOneWidget);
+      expect(find.text('Démarrer la marche'), findsOneWidget);
+      expect(find.text('À pied'), findsOneWidget);
+
+      // Tap "Démarrer la marche"
+      await tester.tap(find.text('Démarrer la marche'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Arrêter le guidage'), findsOneWidget);
+    });
+
+    testWidgets('PublicTransportPage renders translated title in Wolof',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final BuildContext context =
+          tester.element(find.byType(PublicTransportPage));
+      await context.setLocale(const Locale('wo'));
+      await tester.pumpAndSettle();
+
+      // Wolof title
+      expect(find.text('Fan lañuy dem ?'), findsOneWidget);
+      expect(find.text('Lépp'), findsOneWidget);
+      expect(find.text('Fi ngay jóge'), findsOneWidget);
+      expect(find.text('Fa ngay dem'), findsOneWidget);
+
+      // Reset to French
+      await context.setLocale(const Locale('fr'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+        'Floating Seddo VTC card is displayed, dismissible with cross, and navigates to PlaceSearchPage',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(
+            initialOrigin: 'Fann Hock',
+            initialDestination: 'Liberté 6',
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Seddo card elements
+      expect(find.text('En Seddo : 19 min, porte'), findsOneWidget);
+      expect(find.text('à porte'), findsWidgets);
+      expect(find.text('Prix fixe 3 200 F'), findsOneWidget);
+      expect(find.byKey(const Key('tcu_seddo_commander_button')), findsOneWidget);
+
+      // Dismiss card with cross
+      final closeButton = find.byKey(const Key('tcu_seddo_card_close'));
+      expect(closeButton, findsOneWidget);
+      await tester.tap(closeButton);
+      await tester.pumpAndSettle();
+
+      // Card is now dismissed
+      expect(find.text('En Seddo : 19 min, porte'), findsNothing);
+    });
+
+    testWidgets(
+        'Tapping Commander on Seddo card navigates to PlaceSearchPage with prefilled fields',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(
+            initialOrigin: 'Ouakam',
+            initialDestination: 'Plateau',
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Tap "Commander"
+      final commanderButton =
+          find.byKey(const Key('tcu_seddo_commander_button'));
+      await tester.tap(commanderButton);
+      await tester.pumpAndSettle();
+
+      // Navigated to PlaceSearchPage with prefilled departure & destination
+      expect(find.text('Votre trajet'), findsOneWidget);
+      expect(find.text('Ouakam'), findsWidgets);
+      expect(find.text('Plateau'), findsWidgets);
+    });
+
+    testWidgets('Selecting Ma position and autocomplete updates origin/destination',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Tap "Ma position"
+      expect(find.text('Ma position'), findsOneWidget);
+      await tester.tap(find.text('Ma position'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ma position actuelle'), findsWidgets);
+    });
+
+    test('PublicTransportService returns default options and filters correctly',
+        () async {
+      const service = PublicTransportService();
+
+      final all = await service.getRouteOptions();
+      expect(all.length, 4);
+
+      final ddd = await service.getRouteOptions(filter: TcuTransportType.ddd);
+      expect(ddd.length, 1);
+      expect(ddd.first.lineCode, 'DDD 10');
+
+      final brt = await service.getRouteOptions(filter: TcuTransportType.brt);
+      expect(brt.length, 1);
+      expect(brt.first.lineCode, 'B1');
+
+      final aftu = await service.getRouteOptions(filter: TcuTransportType.aftu);
+      expect(aftu.length, 1);
+      expect(aftu.first.lineCode, 'AFTU 24');
+
+      final ter = await service.getRouteOptions(filter: TcuTransportType.ter);
+      expect(ter.length, 1);
+      expect(ter.first.lineCode, 'TER');
+    });
+  });
+}
+
