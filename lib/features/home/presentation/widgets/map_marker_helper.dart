@@ -11,6 +11,10 @@ abstract class MapMarkerHelper {
   static BitmapDescriptor? _userMarkerIcon;
   static BitmapDescriptor? _departurePinIcon;
   static BitmapDescriptor? _destinationPinIcon;
+  static BitmapDescriptor? _ecoCarMarkerIcon;
+  static BitmapDescriptor? _confortCarMarkerIcon;
+  static BitmapDescriptor? _userHaloMarkerIcon;
+  static final Map<String, BitmapDescriptor> _transitMarkerIcons = {};
 
   /// Clear in-memory cached marker icons to force reload on hot restart or asset updates.
   static void clearCache() {
@@ -18,6 +22,10 @@ abstract class MapMarkerHelper {
     _userMarkerIcon = null;
     _departurePinIcon = null;
     _destinationPinIcon = null;
+    _ecoCarMarkerIcon = null;
+    _confortCarMarkerIcon = null;
+    _userHaloMarkerIcon = null;
+    _transitMarkerIcons.clear();
   }
 
   /// Generate high-fidelity compact top-view car marker (Yango-style):
@@ -690,5 +698,213 @@ abstract class MapMarkerHelper {
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
     return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  /// User location marker matching the new Home screen design:
+  /// Concentric orange halo + white circle ring + orange core dot
+  static Future<BitmapDescriptor> getUserLocationHaloMarker() async {
+    if (_userHaloMarkerIcon != null) return _userHaloMarkerIcon!;
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    const double size = 48.0;
+    const center = Offset(size / 2, size / 2);
+
+    // 1. Outer soft translucent orange aura
+    final auraPaint = Paint()
+      ..color = const Color(0x38FF6B00)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 22.0, auraPaint);
+
+    // 2. White shadow ring
+    final shadowPaint = Paint()
+      ..color = const Color(0x22000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawCircle(center.translate(0, 1), 10.0, shadowPaint);
+
+    // 3. Middle white circle ring
+    final whitePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 9.0, whitePaint);
+
+    // 4. Inner orange core dot
+    final corePaint = Paint()
+      ..color = const Color(0xFFFF6B00)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 5.5, corePaint);
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    _userHaloMarkerIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    return _userHaloMarkerIcon!;
+  }
+
+  /// Dark Eco car top-down marker matching Screenshot 1
+  static Future<BitmapDescriptor> getEcoCarMarker() async {
+    if (_ecoCarMarkerIcon != null) return _ecoCarMarkerIcon!;
+    _ecoCarMarkerIcon = await getTopDownCarMarker(
+      bodyColor: const Color(0xFF222326),
+      roofColor: const Color(0xFF141517),
+      windowColor: const Color(0xFF42444A),
+    );
+    return _ecoCarMarkerIcon!;
+  }
+
+  /// Vibrant Orange Confort car top-down marker matching Screenshot 2
+  static Future<BitmapDescriptor> getConfortCarMarker() async {
+    if (_confortCarMarkerIcon != null) return _confortCarMarkerIcon!;
+    _confortCarMarkerIcon = await getTopDownCarMarker(
+      bodyColor: const Color(0xFFFF6B00),
+      roofColor: const Color(0xFFE05300),
+      windowColor: const Color(0xFFFFA266),
+    );
+    return _confortCarMarkerIcon!;
+  }
+
+  /// Top-down car generator matching the reference screenshots
+  static Future<BitmapDescriptor> getTopDownCarMarker({
+    required Color bodyColor,
+    required Color roofColor,
+    required Color windowColor,
+  }) async {
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    const double width = 32.0;
+    const double height = 48.0;
+
+    // 1. Soft shadow
+    final shadowPaint = Paint()
+      ..color = const Color(0x35000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(3, 4, width - 6, height - 6),
+        const Radius.circular(8),
+      ),
+      shadowPaint,
+    );
+
+    // 2. Wheels (4 black wheels)
+    final tirePaint = Paint()..color = const Color(0xFF111111);
+    // Front wheels
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(0, 7, 4.0, 9), const Radius.circular(2)), tirePaint);
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(width - 4.0, 7, 4.0, 9), const Radius.circular(2)), tirePaint);
+    // Rear wheels
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(0, height - 16, 4.0, 9), const Radius.circular(2)), tirePaint);
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(width - 4.0, height - 16, 4.0, 9), const Radius.circular(2)), tirePaint);
+
+    // 3. Car Body
+    final bodyPaint = Paint()..color = bodyColor;
+    final bodyRRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(2.5, 2, width - 5, height - 4),
+      const Radius.circular(7.5),
+    );
+    canvas.drawRRect(bodyRRect, bodyPaint);
+
+    // White outline for contrast on map
+    final borderPaint = Paint()
+      ..color = Colors.white.withAlpha(160)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawRRect(bodyRRect, borderPaint);
+
+    // 4. Windshield & Rear window
+    final windowPaint = Paint()..color = windowColor;
+    // Front windshield
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(6.0, 11, width - 12, 7.5),
+        const Radius.circular(2.5),
+      ),
+      windowPaint,
+    );
+    // Rear window
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(7.0, height - 16, width - 14, 5.5),
+        const Radius.circular(2.0),
+      ),
+      windowPaint,
+    );
+
+    // 5. Roof
+    final roofPaint = Paint()..color = roofColor;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(6.0, 19, width - 12, height - 36),
+        const Radius.circular(2.5),
+      ),
+      roofPaint,
+    );
+
+    // 6. Headlights
+    final headlightPaint = Paint()..color = const Color(0xFFFFF9C4);
+    canvas.drawCircle(const Offset(6.5, 3.5), 1.5, headlightPaint);
+    canvas.drawCircle(Offset(width - 6.5, 3.5), 1.5, headlightPaint);
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(width.toInt(), height.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  /// Circular transit stop pin with white border and single letter matching Screenshot 3
+  static Future<BitmapDescriptor> getTransitStopLetterMarker({
+    required String letter,
+    required Color color,
+  }) async {
+    final key = '${letter}_${color.toARGB32()}';
+    if (_transitMarkerIcons.containsKey(key)) return _transitMarkerIcons[key]!;
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    const double size = 36.0;
+    const center = Offset(size / 2, size / 2);
+
+    // Shadow
+    final shadowPaint = Paint()
+      ..color = const Color(0x33000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawCircle(center.translate(0, 1.5), 13.5, shadowPaint);
+
+    // White outer ring
+    final whitePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 13.5, whitePaint);
+
+    // Inner colored circle
+    final fillPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 11.0, fillPaint);
+
+    // Bold White Letter
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: letter,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 13.0,
+          fontWeight: FontWeight.w900,
+          fontFamily: 'Inter',
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset(center.dx - textPainter.width / 2, center.dy - textPainter.height / 2),
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final icon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    _transitMarkerIcons[key] = icon;
+    return icon;
   }
 }

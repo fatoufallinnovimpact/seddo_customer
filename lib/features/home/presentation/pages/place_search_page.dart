@@ -8,12 +8,12 @@ import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
-import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
-import 'package:seddo/features/home/presentation/pages/saved_places_page.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
+import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
-import 'package:seddo/features/home/presentation/widgets/service_unavailable_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
 
 /// Interactive place search screen matching the reference design:
 /// - Header: Back arrow + "Votre trajet"

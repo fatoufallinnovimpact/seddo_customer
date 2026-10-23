@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:seddo/features/home/domain/models/nearby_driver_model.dart';
+import 'package:seddo/features/ride/data/models/nearby_driver_model.dart';
 
 class HomeState extends Equatable {
   final LatLng userLocation;

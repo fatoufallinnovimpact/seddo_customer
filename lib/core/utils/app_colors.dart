@@ -283,4 +283,42 @@ abstract class AppColors {
   static const Color tcuStatCardBg = Color(0xFFF4F4F5);
   static const Color tcuDurationGreen = Color(0xFF10B981);
   static const Color tcuFieldBorder = Color(0xFFE5E7EB);
+
+  // Safety Feature Tokens (Innov & Impact Africa Guidelines)
+  static const Color safetyScaffoldBg = Color(0xFFF7F8FA);
+  static const Color safetyHeroBg = Color(0xFFFB5B00);
+  static const Color safetyHeroArc = Color(0xFFFF7A1A);
+  static const Color sosOuterRing = Color(0xFFFFD5D8);
+  static const Color sosInnerCircle = Color(0xFFE53935);
+  static const Color sosAlertBannerBg = Color(0xFFFEE2E2);
+  static const Color sosAlertBannerRed = Color(0xFFDC2626);
+  static const Color contactAvatarPeachBg = Color(0xFFFFEDE1);
+  static const Color contactAvatarPeachText = Color(0xFFC2410C);
+  static const Color contactAvatarBlueBg = Color(0xFFE0F2FE);
+  static const Color contactAvatarBlueText = Color(0xFF0284C7);
+  static const Color contactAvatarYellowBg = Color(0xFFFEF3C7);
+  static const Color contactAvatarYellowText = Color(0xFFB45309);
+  static const Color contactSquirclePeachBg = Color(0xFFFFF0E6);
+  static const Color contactSquircleOrangeIcon = Color(0xFFC2410C);
+  static const Color dashedBorderGrey = Color(0xFFD1D5DB);
+  static const Color usefulNumberPoliceBlue = Color(0xFF2563EB);
+  static const Color usefulNumberPompiersRed = Color(0xFFEF4444);
+  static const Color usefulNumberSamuGreen = Color(0xFF10B981);
+
+  // Privacy Feature Tokens (Innov & Impact Africa Guidelines)
+  static const Color privacyHeroBg = Color(0xFF3352B8);
+  static const Color privacyHeroArc = Color(0xFF4C6EF5);
+  static const Color privacyLocationSquircleBg = Color(0xFFEFF6FF);
+  static const Color privacyLocationBlueIcon = Color(0xFF2563EB);
+  static const Color privacySegmentBg = Color(0xFFF3F4F6);
+  static const Color privacyDeleteRed = Color(0xFFDC2626);
+  static const Color privacyDeleteLightBg = Color(0xFFFEE2E2);
+
+  // Help Feature Tokens (Innov & Impact Africa Guidelines)
+  static const Color helpWhatsAppGreen = Color(0xFF1E9E5A);
+  static const Color helpCallBlack = Color(0xFF121212);
+  static const Color helpSearchIconGrey = Color(0xFF6B7280);
+  static const Color helpFaqTextGrey = Color(0xFF4B5563);
+  static const Color helpChevronGrey = Color(0xFF9CA3AF);
+  static const Color helpResponseTimeGrey = Color(0xFF6B7280);
 }

@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
-import 'package:seddo/features/home/presentation/pages/ride_booking_page.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/services/places_service.dart';
 
 import 'dart:convert';

@@ -8,7 +8,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
-import 'package:seddo/features/home/presentation/widgets/service_unavailable_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
 
 /// Fullscreen interactive map picker matching the reference design:
 /// - Floating top-left circular back button

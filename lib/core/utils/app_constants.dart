@@ -103,4 +103,34 @@ abstract class AppConstants {
   static const double tcuTimelineDotSize = 14.0;
   static const double tcuTimelineInnerDotSize = 8.0;
   static const double tcuBadgeSize = 28.0;
+
+  // Safety, Privacy & Help Feature Constants (Innov & Impact Africa)
+  static const int sosHoldDurationSeconds = 3;
+  static const String emergencyPoliceNumber = '17';
+  static const String emergencyPompiersNumber = '18';
+  static const String emergencySamuNumber = '1515';
+  static const String initialContactPhone1 = '77 456 12 09';
+  static const String initialContactPhone2 = '78 321 45 67';
+  static const String helpSupportPhone = '+221771234512';
+  static const String helpSupportWhatsAppNumber = '+221771234512';
+
+  // Dimension & Sizing Tokens
+  static const double radiusHeroBanner = 24.0;
+  static const double radiusCardContainer = 22.0;
+  static const double radiusSegmentPill = 14.0;
+  static const double radiusSquircle = 14.0;
+  static const double radiusActionCard = 22.0;
+  static const double heightSearchBar = 52.0;
+  static const double heightActionCard = 112.0;
+  static const double heightDashedButton = 52.0;
+  static const double sosOuterRingSize = 74.0;
+  static const double sosInnerCircleSize = 56.0;
+  static const double heroIconContainerSize = 52.0;
+  static const double avatarInitialsSize = 44.0;
+  static const double usefulNumberCardPaddingV = 18.0;
+  static const double usefulNumberCardPaddingH = 8.0;
+  static const double dashedStrokeWidth = 1.3;
+  static const double dashedDashLength = 6.0;
+  static const double dashedGapLength = 4.0;
+  static const double dashedRadius = 18.0;
 }

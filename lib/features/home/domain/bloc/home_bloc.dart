@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:seddo/features/home/domain/models/nearby_driver_model.dart';
+import 'package:seddo/features/ride/data/models/nearby_driver_model.dart';
 import 'home_event.dart';
 import 'home_state.dart';
 
