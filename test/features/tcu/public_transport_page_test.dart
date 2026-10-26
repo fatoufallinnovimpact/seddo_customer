@@ -227,7 +227,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Navigated to PlaceSearchPage with prefilled departure & destination
-      expect(find.text('Votre trajet'), findsOneWidget);
+      expect(find.text('VOTRE TRAJET'), findsOneWidget);
       expect(find.text('Ouakam'), findsWidgets);
       expect(find.text('Plateau'), findsWidgets);
     });

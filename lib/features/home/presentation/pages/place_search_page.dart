@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
@@ -32,6 +31,8 @@ class PlaceSearchPage extends StatefulWidget {
   final String? initialPickup;
   final String? initialDestination;
   final LatLng? currentUserLocation;
+  final PlaceSearchResult? initialDepartureResult;
+  final PlaceSearchResult? initialDestinationResult;
 
   const PlaceSearchPage({
     super.key,
@@ -39,6 +40,8 @@ class PlaceSearchPage extends StatefulWidget {
     this.initialPickup,
     this.initialDestination,
     this.currentUserLocation,
+    this.initialDepartureResult,
+    this.initialDestinationResult,
   });
 
   @override
@@ -74,7 +77,11 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
     _departureController.text =
         widget.initialPickup ?? currentPositionText;
-    _arrivalController.text = widget.initialDestination ?? '';
+    _arrivalController.text = widget.initialDestination ??
+        widget.initialDestinationResult?.mainText ??
+        '';
+    _selectedDepartureResult = widget.initialDepartureResult;
+    _selectedArrivalResult = widget.initialDestinationResult;
 
     _arrivalController.addListener(_onArrivalChanged);
     _departureController.addListener(_onDepartureChanged);
@@ -97,8 +104,12 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       }
     });
 
-    // Initial search for arrival
-    _searchPlaces(_arrivalController.text);
+    // Only search places for arrival if not already prefilled with a concrete destination result
+    if (_selectedArrivalResult == null && _arrivalController.text.isNotEmpty) {
+      _searchPlaces(_arrivalController.text);
+    } else if (_selectedArrivalResult != null) {
+      _isEditingArrival = false;
+    }
 
     // Resolve real physical address for current position
     _resolveInitialCurrentPosition();
@@ -274,23 +285,22 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         page: SavedPlacesPage(
           placesService: _placesService,
           currentUserLocation: widget.currentUserLocation,
+          isSelectionMode: true,
         ),
       ),
     );
 
     if (selectedSavedPlace != null && mounted) {
       setState(() {
-        if (_isEditingArrival) {
-          _selectedArrivalResult = selectedSavedPlace;
-          _arrivalController.text = selectedSavedPlace.mainText;
-        } else {
-          _selectedDepartureResult = selectedSavedPlace;
-          _departureController.text = selectedSavedPlace.mainText;
-          _isEditingArrival = true;
-          _arrivalFocusNode.requestFocus();
+        _selectedArrivalResult = selectedSavedPlace;
+        _arrivalController.text = selectedSavedPlace.mainText;
+        if (_departureController.text.isEmpty ||
+            _departureController.text == currentPositionText) {
+          _departureController.text = currentPositionText;
         }
         _suggestions = [];
       });
+      _resolveInitialCurrentPosition();
     }
   }
 
@@ -409,6 +419,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           departure: departure,
           destination: arrival,
           placesService: _placesService,
+          showHowToFindYouInitially: true,
         ),
       ),
     );
@@ -443,141 +454,183 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Top Bar: Back Arrow + "Votre trajet"
+            // 1. Top Bar: Back Arrow + "VOTRE TRAJET"
             Padding(
               padding: const EdgeInsets.symmetric(
-                 horizontal: AppConstants.spacingMd,
-                 vertical: AppConstants.spacingSm,
+                horizontal: AppConstants.spacingMd,
+                vertical: AppConstants.spacingSm,
               ),
               child: Row(
                 children: [
                   Container(
                     width: AppConstants.circularButtonSize,
                     height: AppConstants.circularButtonSize,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: AppColors.white,
                       shape: BoxShape.circle,
-                      boxShadow: const [
+                      boxShadow: [
                         BoxShadow(
                           color: AppColors.shadowSoftBlack,
-                          blurRadius: 8,
+                          blurRadius: AppConstants.spacingSm,
                           offset: Offset(0, 2),
                         ),
                       ],
                     ),
                     child: IconButton(
                       icon: const Icon(
-                        Icons.arrow_back_rounded,
+                        Icons.arrow_back,
                         color: AppColors.textPrimary,
-                        size: 20,
+                        size: AppConstants.iconSizeMd,
                       ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ),
                   const SizedBox(width: AppConstants.spacingMd),
                   Text(
-                    'search.your_trip'.tr(),
+                    'search.your_trip_caps'.tr(),
                     style: GoogleFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
+                      fontSize: AppConstants.fontTitleLarge,
+                      fontWeight: FontWeight.w900,
                       color: AppColors.textPrimary,
-                      letterSpacing: -0.4,
+                      letterSpacing: AppConstants.titleLetterSpacing,
+                      height: AppConstants.titleLineHeight,
                     ),
                   ),
                 ],
               ),
             ),
 
-            const SizedBox(height: 6),
+            const SizedBox(height: AppConstants.spacingSm),
 
-            // 2. Card Container for Departure & Arrival with Switch Button
+            // 2. Departure & Arrival Card Container with Switch Button
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppConstants.spacingMd,
               ),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => FocusScope.of(context).unfocus(),
+              child: Container(
+                padding: const EdgeInsets.all(AppConstants.spacingUnitXl),
+                decoration: BoxDecoration(
+                  color: AppColors.peachContainer,
+                  borderRadius: BorderRadius.circular(
+                    AppConstants.radiusHeroBanner,
+                  ),
+                ),
                 child: Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingMd,
+                    vertical: AppConstants.spacingUnitXl,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.warmCream, // Soft cream warm grey background
-                    borderRadius: BorderRadius.circular(AppConstants.radiusContainer),
-                    border: Border.all(
-                      color: AppColors.cardBorder,
-                      width: 1,
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.radiusDialog,
                     ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.shadowSoftBlack,
+                        blurRadius: AppConstants.spacingUnit,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Left Column: Icons + Connecting Line
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Departure Icon
-                        SvgPicture.asset(
-                          'assets/icons/location.svg',
-                          width: 18,
-                          height: 18,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
-                          ),
-                        ),
-                        // Vertical Connecting Line
-                        Container(
-                          width: 2,
-                          height: 32,
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          color: AppColors.inactiveIndicator,
-                        ),
-                        // Arrival Icon (location.svg as requested)
-                        SvgPicture.asset(
-                          'assets/icons/location.svg',
-                          width: 18,
-                          height: 18,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.primary,
-                            BlendMode.srcIn,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    // Center Column: Departure & Arrival Inputs
-                    Expanded(
-                      child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Left Column: Icons & Dotted Connecting Line
+                      Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Departure Row
+                          // Departure Squircle
                           Container(
-                            height: 42,
+                            width: AppConstants.searchIconBoxSize,
+                            height: AppConstants.searchIconBoxSize,
+                            decoration: const BoxDecoration(
+                              color: AppColors.grayBgLight,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: AppColors.textPrimary,
+                              size: AppConstants.iconSizeMd,
+                            ),
+                          ),
+                          // Dotted Connecting Line
+                          Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
+                              vertical: AppConstants.spacingXs,
                             ),
-                            decoration: BoxDecoration(
-                              color: !_isEditingArrival
-                                  ? AppColors.white
-                                  : AppColors.transparent,
-                              borderRadius: BorderRadius.circular(12),
-                              border: !_isEditingArrival
-                                  ? Border.all(
-                                      color: AppColors.textPrimary,
-                                      width: 1.5,
-                                    )
-                                  : null,
+                            child: Column(
+                              children: List.generate(
+                                3,
+                                (index) => Container(
+                                  width: AppConstants.searchDottedDotSize,
+                                  height: AppConstants.searchDottedDotSize,
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: AppConstants.spacingXxs,
+                                  ),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
                             ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
+                          ),
+                          // Arrival Squircle
+                          Container(
+                            width: AppConstants.searchIconBoxSize,
+                            height: AppConstants.searchIconBoxSize,
+                            decoration: const BoxDecoration(
+                              color: AppColors.peachContainer,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: AppColors.primary,
+                              size: AppConstants.iconSizeMd,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(width: AppConstants.spacingUnitLg),
+
+                      // Center Column: Departure & Arrival Input Fields
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Departure Input
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                setState(() => _isEditingArrival = false);
+                                _departureFocusNode.requestFocus();
+                              },
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'search.pickup_caps'.tr(),
+                                    style: GoogleFonts.inter(
+                                      fontSize: AppConstants.fontXs,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textSecondary,
+                                      letterSpacing:
+                                          AppConstants.searchLetterSpacing,
+                                    ),
+                                  ),
+                                  const SizedBox(
+                                    height: AppConstants.spacingXxs,
+                                  ),
+                                  TextField(
                                     controller: _departureController,
                                     focusNode: _departureFocusNode,
                                     style: GoogleFonts.inter(
-                                      fontSize: 15,
+                                      fontSize: AppConstants.fontBase,
                                       fontWeight: FontWeight.w700,
                                       color: AppColors.textPrimary,
                                     ),
@@ -589,234 +642,178 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                       contentPadding: EdgeInsets.zero,
                                     ),
                                   ),
-                                ),
-                                if (_departureController.text.isNotEmpty &&
-                                    !_isEditingArrival) ...[
-                                  GestureDetector(
-                                    onTap: () {
-                                      _departureController.clear();
-                                      _selectedDepartureResult = null;
-                                    },
-                                    child: const Icon(
-                                      Icons.close_rounded,
-                                      size: 18,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
                                 ],
-                                GestureDetector(
-                                  onTap: () =>
-                                      _openMapPicker(isArrival: false),
-                                  child: SvgPicture.asset(
-                                    'assets/icons/map-svgrepo-com.svg',
-                                    width: 17,
-                                    height: 17,
-                                    colorFilter: ColorFilter.mode(
-                                      !_isEditingArrival
-                                          ? AppColors.primary
-                                          : AppColors.textSecondary,
-                                      BlendMode.srcIn,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          // Arrival Row (Framed White Card matching reference image)
-                          Container(
-                            height: 46,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: _isEditingArrival
-                                    ? AppColors.textPrimary
-                                    : AppColors.cardBorder,
-                                width: _isEditingArrival ? 1.5 : 1,
                               ),
                             ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _arrivalController,
-                                    focusNode: _arrivalFocusNode,
-                                    autofocus: true,
+
+                            const SizedBox(height: AppConstants.spacingUnitXl),
+
+                            // Arrival Input
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                setState(() => _isEditingArrival = true);
+                                _arrivalFocusNode.requestFocus();
+                              },
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'search.arrival_caps'.tr(),
                                     style: GoogleFonts.inter(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                    cursorColor: AppColors.primary,
-                                    decoration: InputDecoration(
-                                      hintText: 'search.where_to'.tr(),
-                                      border: InputBorder.none,
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.zero,
+                                      fontSize: AppConstants.fontXs,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.textSecondary,
+                                      letterSpacing:
+                                          AppConstants.searchLetterSpacing,
                                     ),
                                   ),
-                                ),
-                                if (_arrivalController.text.isNotEmpty) ...[
-                                  GestureDetector(
-                                    onTap: () {
-                                      _arrivalController.clear();
-                                      _selectedArrivalResult = null;
-                                    },
-                                    child: const Icon(
-                                      Icons.close_rounded,
-                                      size: 18,
-                                      color: AppColors.textPrimary,
-                                    ),
+                                  const SizedBox(
+                                    height: AppConstants.spacingXxs,
                                   ),
-                                  const SizedBox(width: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextField(
+                                          controller: _arrivalController,
+                                          focusNode: _arrivalFocusNode,
+                                          autofocus: true,
+                                          style: GoogleFonts.inter(
+                                            fontSize: AppConstants.fontBase,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                          cursorColor: AppColors.primary,
+                                          decoration: InputDecoration(
+                                            hintText: 'search.where_to'.tr(),
+                                            border: InputBorder.none,
+                                            isDense: true,
+                                            contentPadding: EdgeInsets.zero,
+                                          ),
+                                        ),
+                                      ),
+                                      if (_arrivalController.text.isNotEmpty)
+                                        GestureDetector(
+                                          onTap: () {
+                                            _arrivalController.clear();
+                                            _selectedArrivalResult = null;
+                                          },
+                                          child: Container(
+                                            width: AppConstants.iconSizeMd,
+                                            height: AppConstants.iconSizeMd,
+                                            decoration: const BoxDecoration(
+                                              color: AppColors.grayBgLight,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            alignment: Alignment.center,
+                                            child: const Icon(
+                                              Icons.close_rounded,
+                                              size: AppConstants.iconSizeXs +
+                                                  2.0,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ],
-                                GestureDetector(
-                                  onTap: () =>
-                                      _openMapPicker(isArrival: true),
-                                  child: SvgPicture.asset(
-                                    'assets/icons/map-svgrepo-com.svg',
-                                    width: 17,
-                                    height: 17,
-                                    colorFilter: ColorFilter.mode(
-                                      _isEditingArrival
-                                          ? AppColors.primary
-                                          : AppColors.textSecondary,
-                                      BlendMode.srcIn,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(width: 10),
-
-                    // Right Side: Floating Switch Button (switch-vertical-svgrepo-com.svg)
-                    GestureDetector(
-                      onTap: _swapLocations,
-                      child: Container(
-                        width: AppConstants.circularIconContainerSize,
-                        height: AppConstants.circularIconContainerSize,
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.cardBorder,
-                          ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: AppColors.shadowCardBlack,
-                              blurRadius: 8,
-                              offset: Offset(0, 2),
+                              ),
                             ),
                           ],
                         ),
-                        alignment: Alignment.center,
-                        child: SvgPicture.asset(
-                          'assets/icons/switch-vertical-svgrepo-com.svg',
-                          width: 20,
-                          height: 20,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
+                      ),
+
+                      const SizedBox(width: AppConstants.spacingSm),
+
+                      // Right Column: Floating Swap Vertical Button
+                      GestureDetector(
+                        onTap: _swapLocations,
+                        child: Container(
+                          width: AppConstants.circularIconContainerSize,
+                          height: AppConstants.circularIconContainerSize,
+                          decoration: const BoxDecoration(
+                            color: AppColors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.shadowSoftBlack,
+                                blurRadius: AppConstants.spacingUnit,
+                                offset: Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.swap_vert_rounded,
+                            color: AppColors.primary,
+                            size: AppConstants.iconSizeLg,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: AppConstants.spacingSm),
 
-            // Use Current Location Chip / Action (allows using current position for both)
+            // 3. Quick Action Chips Row (Ma position, Lieux enregistrés, Sur la carte)
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppConstants.spacingMd,
+                vertical: AppConstants.spacingSm,
               ),
-              child: GestureDetector(
-                onTap: _useCurrentPositionForActiveField,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.my_location_rounded,
-                      size: 16,
-                      color: AppColors.primary,
+                    _buildQuickActionChip(
+                      icon: Icons.my_location_rounded,
+                      label: 'search.my_position'.tr(),
+                      onTap: _useCurrentPositionForActiveField,
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _isEditingArrival
-                            ? 'search.use_current_position_arrival'.tr()
-                            : 'search.use_current_position_departure'.tr(),
-                        style: GoogleFonts.inter(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    const SizedBox(width: AppConstants.spacingSm),
+                    _buildQuickActionChip(
+                      icon: Icons.star_outline_rounded,
+                      label: 'search.saved_places'.tr(),
+                      onTap: _openSavedPlaces,
+                    ),
+                    const SizedBox(width: AppConstants.spacingSm),
+                    _buildQuickActionChip(
+                      icon: Icons.map_outlined,
+                      onTap: () => _openMapPicker(isArrival: _isEditingArrival),
                     ),
                   ],
                 ),
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: AppConstants.spacingSm),
 
-            // 3. Quick Actions: Lieux enregistrés & Choisir sur la carte
-            _QuickActionTile(
-              iconSvgPath: 'assets/icons/star-svgrepo-com.svg',
-              title: 'drawer.saved_places'.tr(),
-              subtitle: 'drawer.saved_places_sub'.tr(),
-              onTap: _openSavedPlaces,
-            ),
-
-            _QuickActionTile(
-              iconSvgPath: 'assets/icons/map-svgrepo-com.svg',
-              title: 'search.choose_on_map'.tr(),
-              subtitle: _isEditingArrival
-                  ? 'search.choose_arrival_on_map'.tr()
-                  : 'search.choose_departure_on_map'.tr(),
-              onTap: () => _openMapPicker(isArrival: _isEditingArrival),
-            ),
-
-            const SizedBox(height: AppConstants.spacingUnitLg),
-
-            // 4. Section Title: "Résultats"
+            // 4. Section Title: "RÉSULTATS"
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppConstants.spacingMd,
-                vertical: 4,
+                vertical: AppConstants.spacingXs,
               ),
               child: Row(
                 children: [
                   Text(
-                    'search.results'.tr(),
+                    'search.results_caps'.tr(),
                     style: GoogleFonts.inter(
-                      fontSize: 15,
+                      fontSize: AppConstants.fontSm,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
+                      color: AppColors.textSecondary,
+                      letterSpacing: AppConstants.searchLetterSpacing,
                     ),
                   ),
                   const Spacer(),
                   if (_isLoading)
                     const SizedBox(
-                      width: 14,
-                      height: 14,
+                      width: AppConstants.spacingUnitXl,
+                      height: AppConstants.spacingUnitXl,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: AppColors.primary,
@@ -826,7 +823,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
               ),
             ),
 
-            const SizedBox(height: 4),
+            const SizedBox(height: AppConstants.spacingXs),
 
             // 5. Results List
             Expanded(
@@ -835,7 +832,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                       child: Text(
                         'search.no_results'.tr(),
                         style: GoogleFonts.inter(
-                          fontSize: 14,
+                          fontSize: AppConstants.fontMd,
                           color: AppColors.textSecondary,
                         ),
                       ),
@@ -845,13 +842,17 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       itemCount: _suggestions.length,
-                      separatorBuilder: (context, index) => const SizedBox(
-                        height: AppConstants.spacingXs,
+                      separatorBuilder: (context, index) => const Divider(
+                        height: 1,
+                        color: AppColors.cardBorder,
                       ),
                       itemBuilder: (context, index) {
                         final item = _suggestions[index];
                         final title = item.mainText ?? item.description;
-                        final subtitle = item.secondaryText ?? item.description;
+                        final subtitle = _cleanSubtitle(
+                          item.secondaryText ?? item.description,
+                        );
+                        final distance = _getDistanceText(item);
 
                         return Material(
                           color: AppColors.white,
@@ -860,53 +861,49 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: AppConstants.spacingMd,
-                                vertical: 12,
+                                vertical: AppConstants.spacingUnitLg,
                               ),
                               child: Row(
                                 children: [
-                                  // Circular icon container with location.svg
+                                  // Circular icon container with location outline
                                   Container(
-                                    width: AppConstants.circularIconContainerSize,
-                                    height: AppConstants.circularIconContainerSize,
+                                    width: AppConstants.circularButtonSize,
+                                    height: AppConstants.circularButtonSize,
                                     decoration: const BoxDecoration(
-                                      color: AppColors.iconCircleBg,
+                                      color: AppColors.grayBgLight,
                                       shape: BoxShape.circle,
                                     ),
                                     alignment: Alignment.center,
-                                    child: SvgPicture.asset(
-                                      'assets/icons/location.svg',
-                                      width: 20,
-                                      height: 20,
-                                      colorFilter: const ColorFilter.mode(
-                                        AppColors.textPrimary,
-                                        BlendMode.srcIn,
-                                      ),
+                                    child: const Icon(
+                                      Icons.location_on_outlined,
+                                      size: AppConstants.iconSizeMd,
+                                      color: AppColors.textPrimary,
                                     ),
                                   ),
-                                  const SizedBox(width: 14),
+                                  const SizedBox(
+                                    width: AppConstants.spacingUnitXl,
+                                  ),
 
-                                  // Title & Subtitle
+                                  // Title with query highlighting & Subtitle
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Text(
+                                        _buildHighlightedTitle(
                                           title,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                          _isEditingArrival
+                                              ? _arrivalController.text
+                                              : _departureController.text,
                                         ),
-                                        const SizedBox(height: 2),
+                                        const SizedBox(
+                                          height: AppConstants.spacingXxs,
+                                        ),
                                         Text(
                                           subtitle,
                                           style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w400,
+                                            fontSize:
+                                                AppConstants.fontSm + 1.0,
                                             color: AppColors.textSecondary,
                                           ),
                                           maxLines: 1,
@@ -915,6 +912,34 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                                       ],
                                     ),
                                   ),
+
+                                  // Distance Capsule Badge
+                                  if (distance.isNotEmpty) ...[
+                                    const SizedBox(
+                                      width: AppConstants.spacingSm,
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppConstants.spacingUnit,
+                                        vertical: AppConstants.spacingXs,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.grayBgLight,
+                                        borderRadius: BorderRadius.circular(
+                                          AppConstants
+                                              .searchDistancePillRadius,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        distance,
+                                        style: GoogleFonts.inter(
+                                          fontSize: AppConstants.fontSm,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -932,20 +957,22 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppConstants.spacingMd,
-                4,
+                AppConstants.spacingXs,
                 AppConstants.spacingMd,
-                12,
+                AppConstants.spacingUnitLg,
               ),
               child: SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: AppConstants.buttonHeight,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: AppColors.white,
-                    elevation: 0,
+                    elevation: AppConstants.elevationNone,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusLg,
+                      ),
                     ),
                   ),
                   onPressed: _confirmTrip,
@@ -957,17 +984,17 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                         child: Text(
                           'search.confirm_trip'.tr(),
                           style: GoogleFonts.inter(
-                            fontSize: 15,
+                            fontSize: AppConstants.fontBase,
                             fontWeight: FontWeight.w700,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppConstants.spacingSm),
                       const Icon(
                         Icons.arrow_forward_rounded,
-                        size: 18,
+                        size: AppConstants.iconSizeDefault,
                       ),
                     ],
                   ),
@@ -978,86 +1005,123 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         : null,
     );
   }
-}
 
-
-class _QuickActionTile extends StatelessWidget {
-  final String iconSvgPath;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _QuickActionTile({
-    required this.iconSvgPath,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildQuickActionChip({
+    required IconData icon,
+    String? label,
+    required VoidCallback onTap,
+  }) {
     return Material(
       color: AppColors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+        side: const BorderSide(color: AppColors.grayBorderDivider),
+      ),
       child: InkWell(
         onTap: onTap,
-        child: Padding(
+        borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+        child: Container(
           padding: const EdgeInsets.symmetric(
-            horizontal: AppConstants.spacingMd,
-            vertical: 10,
+            horizontal: AppConstants.spacingUnitXl,
+            vertical: AppConstants.spacingSm,
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: AppConstants.circularIconContainerSize,
-                height: AppConstants.circularIconContainerSize,
-                decoration: const BoxDecoration(
-                  color: AppColors.iconCircleBg,
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: SvgPicture.asset(
-                  iconSvgPath,
-                  width: 20,
-                  height: 20,
-                  colorFilter: const ColorFilter.mode(
-                    AppColors.textPrimary,
-                    BlendMode.srcIn,
+              Icon(
+                icon,
+                size: AppConstants.iconSizeDefault,
+                color: AppColors.primary,
+              ),
+              if (label != null) ...[
+                const SizedBox(width: AppConstants.spacingS),
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: AppConstants.fontMd - 1.0,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: AppColors.textSecondary,
-              ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+
+  String _cleanSubtitle(String text) {
+    final idx = text.indexOf(' · ');
+    if (idx != -1) {
+      return text.substring(0, idx);
+    }
+    return text;
+  }
+
+  String _getDistanceText(PlaceSuggestion item) {
+    if (item.distanceKm != null && item.distanceKm!.isNotEmpty) {
+      return item.distanceKm!;
+    }
+    if (item.secondaryText != null && item.secondaryText!.contains(' · ')) {
+      return item.secondaryText!.split(' · ').last;
+    }
+    return '';
+  }
+
+  Widget _buildHighlightedTitle(String title, String query) {
+    final cleanQuery = query.trim().toLowerCase();
+    if (cleanQuery.isEmpty) {
+      return Text(
+        title,
+        style: GoogleFonts.inter(
+          fontSize: AppConstants.fontBase,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    final lowerTitle = title.toLowerCase();
+    final matchIndex = lowerTitle.indexOf(cleanQuery);
+    if (matchIndex == -1) {
+      return Text(
+        title,
+        style: GoogleFonts.inter(
+          fontSize: AppConstants.fontBase,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    final before = title.substring(0, matchIndex);
+    final matched = title.substring(matchIndex, matchIndex + cleanQuery.length);
+    final after = title.substring(matchIndex + cleanQuery.length);
+
+    return Text.rich(
+      TextSpan(
+        style: GoogleFonts.inter(
+          fontSize: AppConstants.fontBase,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        children: [
+          if (before.isNotEmpty) TextSpan(text: before),
+          TextSpan(
+            text: matched,
+            style: const TextStyle(color: AppColors.primary),
+          ),
+          if (after.isNotEmpty) TextSpan(text: after),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
 }
+

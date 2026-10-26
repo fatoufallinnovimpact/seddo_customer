@@ -1,6 +1,5 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -115,17 +114,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PlaceSearchPage), findsOneWidget);
-      expect(find.text('Votre trajet'), findsOneWidget);
+      expect(find.text('VOTRE TRAJET'), findsOneWidget);
 
-      // Verify Quick Action Tiles
+      // Verify Quick Action Chips
+      expect(find.text('Ma position'), findsOneWidget);
       expect(find.text('Lieux enregistrés'), findsOneWidget);
-      expect(find.text('Maison, Travail, Aéroport'), findsOneWidget);
-      expect(find.text('Choisir sur la carte'), findsOneWidget);
-      expect(find.text('Placer le point d\'arrivée à la main'), findsOneWidget);
-      expect(find.text('Résultats'), findsOneWidget);
-
-      // Verify SVG icons are present
-      expect(find.byType(SvgPicture), findsWidgets);
+      expect(find.text('RÉSULTATS'), findsOneWidget);
 
       // Type 'o' into the arrival text field
       final textFields = find.byType(TextField);
@@ -188,9 +182,9 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Find "Utiliser ma position actuelle pour l'arrivée"
+      // Find "Ma position"
       final useCurrentLocationBtn =
-          find.text('Utiliser ma position actuelle pour l\'arrivée');
+          find.text('Ma position');
       expect(useCurrentLocationBtn, findsOneWidget);
 
       await tester.tap(useCurrentLocationBtn);

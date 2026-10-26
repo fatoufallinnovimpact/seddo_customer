@@ -4,8 +4,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
-import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
+import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
 
@@ -107,6 +108,15 @@ class _RideRatingPageState extends State<RideRatingPage> {
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
+  void _redirectToPlaceSearch() {
+    Navigator.of(context).pushAndRemoveUntil(
+      SlideRightToLeftRoute(
+        page: const PlaceSearchPage(),
+      ),
+      (route) => route.isFirst,
+    );
+  }
+
   void _showReceipt() {
     Navigator.of(context).push(
       SlideRightToLeftRoute(
@@ -123,7 +133,6 @@ class _RideRatingPageState extends State<RideRatingPage> {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final _ = context.locale;
@@ -132,29 +141,36 @@ class _RideRatingPageState extends State<RideRatingPage> {
         : 'Moussa';
     final bottomInset = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
-      body: Stack(
-        children: [
-          // Background organic waves (top-right peach blob and bottom-left orange wave)
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _RatingBackgroundWavesPainter(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          _redirectToPlaceSearch();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.white,
+        body: Stack(
+          children: [
+            // Background organic waves (top-right peach blob and bottom-left orange wave)
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _RatingBackgroundWavesPainter(),
+              ),
             ),
-          ),
 
-          SafeArea(
-            child: Column(
-              children: [
-                // 1. Top Navigation Bar
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Circular Back Button
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).maybePop(),
+            SafeArea(
+              child: Column(
+                children: [
+                  // 1. Top Navigation Bar
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Circular Back Button
+                        GestureDetector(
+                          onTap: _redirectToPlaceSearch,
                         child: Container(
                           width: 42,
                           height: 42,
@@ -304,8 +320,9 @@ class _RideRatingPageState extends State<RideRatingPage> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildTagChip(_FeedbackTag tag) {
     final isSelected = _selectedTags.contains(tag.translationKey);

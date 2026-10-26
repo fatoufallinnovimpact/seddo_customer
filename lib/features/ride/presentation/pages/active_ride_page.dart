@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
@@ -15,6 +14,7 @@ import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
+import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -83,13 +83,20 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   bool _isStopped = false;
   String _stopReason = 'Arrêt feu rouge';
   bool _followCar = true;
+  bool _isProgrammaticCameraMove = false;
+  double _currentSheetExtent = 0.38;
   DateTime _lastCameraUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   late bool _isOffline;
+
+  /// Whether to display the simulation toggle button in the bottom sheet.
+  /// Kept in code for later use as requested by the user.
+  static const bool _showNetworkSimulationControls = false;
 
   @override
   void initState() {
     super.initState();
     _isOffline = widget.isOffline;
+    _currentSheetExtent = _isOffline ? 0.25 : 0.38;
     _initRoute();
     _loadCustomMarkers();
 
@@ -328,8 +335,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     // Recentrage automatique fluide si le mode suivi est activé
     if (_followCar && _mapController != null) {
       final now = DateTime.now();
-      if (now.difference(_lastCameraUpdateTime).inMilliseconds > 450) {
+      if (now.difference(_lastCameraUpdateTime).inMilliseconds > 1000) {
         _lastCameraUpdateTime = now;
+        _isProgrammaticCameraMove = true;
         _mapController?.animateCamera(
           CameraUpdate.newLatLng(newPos),
         );
@@ -430,16 +438,34 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         if (p.longitude > maxLng) maxLng = p.longitude;
       }
 
+      final deltaLat = (maxLat - minLat).abs();
+      final deltaLng = (maxLng - minLng).abs();
+
+      if (deltaLat < 0.0005 && deltaLng < 0.0005) {
+        _isProgrammaticCameraMove = true;
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(_effectiveRoute.first, 15.5),
+        );
+        return;
+      }
+
+      _isProgrammaticCameraMove = true;
       _mapController?.animateCamera(
         CameraUpdate.newLatLngBounds(
           LatLngBounds(
-            southwest: LatLng(minLat, minLng),
-            northeast: LatLng(maxLat, maxLng),
+            southwest: LatLng(minLat - 0.001, minLng - 0.001),
+            northeast: LatLng(maxLat + 0.001, maxLng + 0.001),
           ),
-          65.0,
+          50.0,
         ),
       );
-    } catch (_) {}
+    } catch (_) {
+      try {
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(_currentCarPosition, 15.0),
+        );
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadCustomMarkers() async {
@@ -457,93 +483,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Future<void> _callDriver() async {
-    final uri = Uri.parse('tel:${widget.driver.phone.replaceAll(' ', '')}');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else {
-        if (mounted) {
-          _showCallDialog();
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        _showCallDialog();
-      }
-    }
-  }
-
-  void _showCallDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
-        ),
-        title: Text(
-          'Appeler ${widget.driver.name}',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Numéro direct du chauffeur :',
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.driver.phone,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textPrimary,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              'Annuler',
-              style: GoogleFonts.inter(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.success,
-              foregroundColor: AppColors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-              ),
-            ),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Appel vers ${widget.driver.phone}...'),
-                  backgroundColor: AppColors.primary,
-                ),
-              );
-            },
-            child: const Text('Appeler'),
-          ),
-        ],
-      ),
-    );
+    await InAppCallPage.show(context, driver: widget.driver);
   }
 
   void _openChat() {
@@ -850,6 +790,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               }
             },
             child: GoogleMap(
+              key: const ValueKey('active_ride_map_view'),
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   (widget.departure.latitude + widget.destination.latitude) / 2,
@@ -857,9 +798,30 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                 ),
                 zoom: 13.8,
               ),
+              padding: const EdgeInsets.only(
+                bottom: 300,
+                top: 70,
+                left: 16,
+                right: 16,
+              ),
+              mapType: MapType.normal,
               onMapCreated: (ctrl) {
                 _mapController = ctrl;
-                _fitRouteBounds();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  Future.delayed(const Duration(milliseconds: 300), () {
+                    if (mounted) {
+                      _fitRouteBounds();
+                    }
+                  });
+                });
+              },
+              onCameraMoveStarted: () {
+                if (!_isProgrammaticCameraMove && _followCar) {
+                  setState(() {
+                    _followCar = false;
+                  });
+                }
+                _isProgrammaticCameraMove = false;
               },
               markers: _buildMarkers(),
               polylines: _buildPolylines(),
@@ -1086,8 +1048,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           // 3. Floating Recenter & Auto-Follow Button
           Positioned(
             right: 16,
-            bottom: MediaQuery.of(context).size.height *
-                    (_isOffline ? 0.25 : 0.38) +
+            bottom: MediaQuery.of(context).size.height * _currentSheetExtent +
                 12,
             child: Container(
               width: 44,
@@ -1115,6 +1076,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                   setState(() {
                     _followCar = true;
                   });
+                  _isProgrammaticCameraMove = true;
                   _mapController?.animateCamera(
                     CameraUpdate.newLatLngZoom(_currentCarPosition, 16.5),
                   );
@@ -1124,15 +1086,24 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           ),
 
           // 4. Draggable Bottom Sheet with Driver Information & Communication
-          DraggableScrollableSheet(
-            initialChildSize: _isOffline ? 0.25 : 0.38,
-            minChildSize: 0.14,
-            maxChildSize: 0.78,
-            snap: true,
-            snapSizes: _isOffline
-                ? const [0.14, 0.25, 0.78]
-                : const [0.14, 0.38, 0.78],
-            builder: (context, scrollController) {
+          NotificationListener<DraggableScrollableNotification>(
+            onNotification: (notification) {
+              if ((_currentSheetExtent - notification.extent).abs() > 0.005) {
+                setState(() {
+                  _currentSheetExtent = notification.extent;
+                });
+              }
+              return false;
+            },
+            child: DraggableScrollableSheet(
+              initialChildSize: _isOffline ? 0.25 : 0.38,
+              minChildSize: 0.14,
+              maxChildSize: 0.78,
+              snap: true,
+              snapSizes: _isOffline
+                  ? const [0.14, 0.25, 0.78]
+                  : const [0.14, 0.38, 0.78],
+              builder: (context, scrollController) {
               return Container(
                 decoration: const BoxDecoration(
                   color: AppColors.white,
@@ -1279,27 +1250,28 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                         onCallPressed: _callDriver,
                       ),
 
-                      const SizedBox(height: 14),
-
-                      // Toggle network button for simulation & testing
-                      Center(
-                        child: TextButton.icon(
-                          onPressed: _toggleOfflineMode,
-                          icon: const Icon(
-                            Icons.wifi_rounded,
-                            size: 16,
-                            color: AppColors.primary,
-                          ),
-                          label: Text(
-                            'Simuler le retour de connexion',
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
+                      // Toggle network button for simulation & testing (preserved in code for testing / debugging)
+                      if (_showNetworkSimulationControls) ...[
+                        const SizedBox(height: 14),
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: _toggleOfflineMode,
+                            icon: const Icon(
+                              Icons.wifi_rounded,
+                              size: 16,
                               color: AppColors.primary,
-                              fontWeight: FontWeight.w700,
+                            ),
+                            label: Text(
+                              'Simuler le retour de connexion',
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                      ],
                     ] else ...[
 
                     // Header: "En route vers [Destination]" with Yango-style live badge & progress
@@ -1545,8 +1517,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             );
           },
         ),
-      ],
-    ),
-  );
+      ),
+    ],
+  ),
+);
 }
 }

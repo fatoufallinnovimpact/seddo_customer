@@ -2,8 +2,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/activity/presentation/pages/activity_page.dart';
 import 'package:seddo/features/drawer/presentation/widgets/language_modal.dart';
 import 'package:seddo/features/drawer/presentation/widgets/logout_modal.dart';
@@ -106,10 +109,16 @@ class SeddoDrawerWidget extends StatelessWidget {
                           title: 'drawer.saved_places'.tr(),
                           subtitle: 'drawer.saved_places_sub'.tr(),
                           onTap: () {
+                            LatLng? userLoc;
+                            try {
+                              userLoc = context.read<HomeBloc>().state.userLocation;
+                            } catch (_) {}
                             Navigator.of(context).pop();
                             Navigator.of(context).push(
                               SlideRightToLeftRoute(
-                                page: const SavedPlacesPage(),
+                                page: SavedPlacesPage(
+                                  currentUserLocation: userLoc,
+                                ),
                               ),
                             );
                           },
@@ -128,18 +137,6 @@ class SeddoDrawerWidget extends StatelessWidget {
                                 page: const SafetyPage(),
                               ),
                             );
-                          },
-                        ),
-                        const SizedBox(height: 6),
-
-                        _buildMenuItem(
-                          context: context,
-                          iconPath: 'assets/icons/notification-svgrepo-com.svg',
-                          title: 'drawer.notifications'.tr(),
-                          subtitle: 'drawer.notifications_sub'.tr(),
-                          onTap: () {
-                            Navigator.of(context).pop();
-                            openNotificationsSheet(context);
                           },
                         ),
                         const SizedBox(height: 6),
@@ -194,12 +191,13 @@ class SeddoDrawerWidget extends StatelessWidget {
                           },
                         ),
 
-                        // Spacer pushes logout button to the very bottom
+                        // Spacer pushes logout button towards the bottom
                         const Spacer(),
                         const SizedBox(height: 18),
 
-                        // Logout Button (Red with SVG tout en bas)
+                        // Logout Button (Red with SVG, surélevé du bas)
                         _buildLogoutButton(context),
+                        const SizedBox(height: 36),
                       ],
                     ),
                   ),

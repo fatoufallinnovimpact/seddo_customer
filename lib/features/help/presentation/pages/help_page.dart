@@ -11,7 +11,7 @@ import 'package:seddo/features/help/presentation/widgets/help_search_bar.dart';
 /// Dedicated Help Center Page following Innov & Impact Africa guidelines:
 /// - Architecture: features/help/
 /// - State Management: BLoC (flutter_bloc)
-/// - Zero hardcoded colors or constants
+/// - Modern, calm, elegant aesthetic (easy on the eyes)
 /// - Fully responsive to dynamic locale changes
 class HelpPage extends StatelessWidget {
   const HelpPage({super.key});
@@ -37,7 +37,7 @@ class _HelpPageView extends StatelessWidget {
     final _ = context.locale;
 
     return Scaffold(
-      backgroundColor: AppColors.safetyScaffoldBg,
+      backgroundColor: const Color(0xFFF9FAFB),
       body: SafeArea(
         child: Column(
           children: [
@@ -45,20 +45,54 @@ class _HelpPageView extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+                padding: const EdgeInsets.fromLTRB(18, 6, 18, 30),
                 child: Column(
-                  children: const [
-                    HelpActionButtons(),
-                    SizedBox(height: 18),
-                    HelpSearchBar(),
-                    SizedBox(height: 24),
-                    HelpFaqSection(),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 18),
+                    const HelpActionButtons(),
+                    const SizedBox(height: 18),
+                    const HelpSearchBar(),
+                    const SizedBox(height: 24),
+                    const HelpFaqSection(),
                   ],
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Comment pouvons-nous vous aider ?',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF111827),
+              letterSpacing: -0.4,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Consultez nos réponses rapides ou contactez notre équipe.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              color: const Color(0xFF6B7280),
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -71,14 +105,18 @@ class _HelpPageView extends StatelessWidget {
           Container(
             width: 42,
             height: 42,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppColors.white,
               shape: BoxShape.circle,
+              border: Border.all(
+                color: const Color(0xFFE5E7EB),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.cardShadow,
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 8,
-                  offset: Offset(0, 2),
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
@@ -96,12 +134,14 @@ class _HelpPageView extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          Text(
-            'help.page_title'.tr(),
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+          Expanded(
+            child: Text(
+              'help.page_title'.tr(),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
             ),
           ),
         ],

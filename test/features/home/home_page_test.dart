@@ -89,7 +89,7 @@ void main() {
     // 2. Top bar elements
     expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
     expect(find.text('SEDDO'), findsOneWidget);
-    expect(find.byIcon(Icons.notifications_none_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.notifications_none_rounded), findsNothing);
 
     // 3. Floating vehicle indicator pill and GPS button
     expect(find.text('5 Eco autour · 2 min'), findsOneWidget);

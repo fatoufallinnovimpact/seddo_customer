@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
@@ -16,6 +15,7 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
+import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
@@ -74,10 +74,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   int _remainingEtaMinutes = 4;
   bool _driverArrived = false;
   bool _followCar = true;
+  int _lastTickMs = 0;
 
   @override
   void initState() {
     super.initState();
+
     _pickupPosition =
         LatLng(widget.departure.latitude, widget.departure.longitude);
 
@@ -158,6 +160,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   void _onApproachTick() {
     if (!mounted || _approachController == null) return;
     final t = _approachController!.value;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // Throttle UI rebuilds to ~20fps (every 50ms) to avoid lagging native Google Map PlatformView
+    if (now - _lastTickMs < 50 && t < 1.0) return;
+    _lastTickMs = now;
 
     // Smooth easeInOut curve towards pickup location
     final progress = Curves.easeInOut.transform(t);
@@ -274,10 +281,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   Future<void> _callDriver() async {
-    final uri = Uri.parse('tel:${widget.driver.phone}');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
+    await InAppCallPage.show(context, driver: widget.driver);
   }
 
   void _openShare() {
@@ -314,16 +318,32 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       final maxLng = math.max(
           _pickupPosition.longitude, _driverInitialPosition.longitude);
 
+      final deltaLat = (maxLat - minLat).abs();
+      final deltaLng = (maxLng - minLng).abs();
+
+      if (deltaLat < 0.0005 && deltaLng < 0.0005) {
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(_pickupPosition, 16.0),
+        );
+        return;
+      }
+
       _mapController?.animateCamera(
         CameraUpdate.newLatLngBounds(
           LatLngBounds(
-            southwest: LatLng(minLat - 0.002, minLng - 0.002),
-            northeast: LatLng(maxLat + 0.002, maxLng + 0.002),
+            southwest: LatLng(minLat - 0.0015, minLng - 0.0015),
+            northeast: LatLng(maxLat + 0.0015, maxLng + 0.0015),
           ),
-          65.0,
+          45.0,
         ),
       );
-    } catch (_) {}
+    } catch (_) {
+      try {
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(_pickupPosition, 15.2),
+        );
+      } catch (_) {}
+    }
   }
 
   Set<Marker> _buildMarkers() {
@@ -400,7 +420,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   Set<Polyline> _buildPolylines() {
-    return {
+    final polylines = <Polyline>{
       // Dashed orange line connecting approaching car to pickup location
       Polyline(
         polylineId: const PolylineId('approach_dashed_route'),
@@ -413,6 +433,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         ],
       ),
     };
+
+    if (widget.polylinePoints.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('approaching_trip_route'),
+          points: widget.polylinePoints,
+          color: AppColors.primary.withAlpha(90),
+          width: 4,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      );
+    }
+
+    return polylines;
   }
 
   @override
@@ -454,6 +490,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               }
             },
             child: GoogleMap(
+              key: const ValueKey('approaching_google_map'),
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   (_pickupPosition.latitude + _driverInitialPosition.latitude) /
@@ -464,9 +501,21 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                 ),
                 zoom: 15.2,
               ),
+              padding: const EdgeInsets.only(
+                bottom: 375,
+                top: 70,
+                left: 16,
+                right: 16,
+              ),
               onMapCreated: (ctrl) {
                 _mapController = ctrl;
-                _fitMapBounds();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  Future.delayed(const Duration(milliseconds: 300), () {
+                    if (mounted) {
+                      _fitMapBounds();
+                    }
+                  });
+                });
               },
               markers: _buildMarkers(),
               circles: _buildCircles(),
@@ -480,6 +529,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               tiltGesturesEnabled: true,
               compassEnabled: false,
               mapToolbarEnabled: false,
+              mapType: MapType.normal,
               gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
                 Factory<OneSequenceGestureRecognizer>(
                   () => EagerGestureRecognizer(),

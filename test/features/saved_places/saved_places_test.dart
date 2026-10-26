@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
 import 'package:seddo/features/saved_places/data/services/saved_places_service.dart';
@@ -157,6 +158,7 @@ void main() {
                       builder: (_) => SavedPlacesPage(
                         savedPlacesService: mockSavedService,
                         currentUserLocation: const LatLng(14.72, -17.48),
+                        isSelectionMode: true,
                       ),
                     ),
                   );
@@ -174,8 +176,8 @@ void main() {
       await tester.tap(find.text('Open Saved Places'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Lieux enregistrés'), findsOneWidget);
-      expect(find.text('Vos adresses favorites'), findsOneWidget);
+      expect(find.text('LIEUX\nENREGISTRÉS'), findsOneWidget);
+      expect(find.text("Touchez un lieu pour l'utiliser comme départ ou arrivée."), findsOneWidget);
       expect(find.text('Maison Familiale'), findsOneWidget);
       expect(find.text('Bureau Seddo'), findsOneWidget);
 
@@ -188,6 +190,31 @@ void main() {
       expect(returnedResult!.mainText, 'Maison Familiale');
       expect(returnedResult!.latitude, 14.723);
       expect(returnedResult!.longitude, -17.491);
+    });
+
+    testWidgets('Tapping a saved place in standalone mode navigates to PlaceSearchPage prefilled', (tester) async {
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: SavedPlacesPage(
+            savedPlacesService: mockSavedService,
+            currentUserLocation: const LatLng(14.72, -17.48),
+            isSelectionMode: false,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Maison Familiale'), findsOneWidget);
+
+      // Tap on "Maison Familiale"
+      await tester.tap(find.text('Maison Familiale'));
+      await tester.pumpAndSettle();
+
+      // Should have redirected to PlaceSearchPage with departure and destination prefilled
+      expect(find.byType(PlaceSearchPage), findsOneWidget);
+      expect(find.text('Maison Familiale'), findsOneWidget);
+      expect(find.text('Ma position actuelle'), findsOneWidget);
     });
 
     testWidgets('Delete confirmation dialog removes item from list', (tester) async {
@@ -203,10 +230,14 @@ void main() {
 
       expect(find.text('Maison Familiale'), findsOneWidget);
 
-      // Tap delete icon on first place
-      final deleteButtons = find.byTooltip('Supprimer');
-      expect(deleteButtons, findsNWidgets(2));
-      await tester.tap(deleteButtons.first);
+      // Tap more options on first place
+      final moreButtons = find.byIcon(Icons.more_vert_rounded);
+      expect(moreButtons, findsNWidgets(2));
+      await tester.tap(moreButtons.first);
+      await tester.pumpAndSettle();
+
+      // Tap 'Supprimer' in options bottom sheet
+      await tester.tap(find.text('Supprimer'));
       await tester.pumpAndSettle();
 
       // Check dialog appears

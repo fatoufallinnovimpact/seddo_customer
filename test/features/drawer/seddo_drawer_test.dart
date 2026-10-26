@@ -145,8 +145,8 @@ void main() {
     expect(find.text('Sécurité'), findsOneWidget);
     expect(find.text('Contacts d’urgence, partage de trajet'), findsOneWidget);
 
-    expect(find.text('Notifications'), findsOneWidget);
-    expect(find.text('Push et SMS'), findsOneWidget);
+    expect(find.text('Notifications'), findsNothing);
+    expect(find.text('Push et SMS'), findsNothing);
 
     expect(find.text('Langue'), findsOneWidget);
 

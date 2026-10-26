@@ -13,6 +13,7 @@ import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/insufficient_balance_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_option_card_widget.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
@@ -31,6 +32,8 @@ class RideBookingPage extends StatefulWidget {
   final PlaceSearchResult destination;
   final PlacesService? placesService;
   final RouteService? routeService;
+  final bool showHowToFindYouInitially;
+  final String? initialPickupLandmark;
 
   const RideBookingPage({
     super.key,
@@ -38,6 +41,8 @@ class RideBookingPage extends StatefulWidget {
     required this.destination,
     this.placesService,
     this.routeService,
+    this.showHowToFindYouInitially = false,
+    this.initialPickupLandmark,
   });
 
   @override
@@ -60,14 +65,36 @@ class _RideBookingPageState extends State<RideBookingPage> {
   RideType _selectedRideType = RideType.eco;
   late RideOptionModel _ecoOption;
   late RideOptionModel _confortOption;
+  String? _pickupLandmark;
 
   @override
   void initState() {
     super.initState();
+    _pickupLandmark = widget.initialPickupLandmark;
     _routeService = widget.routeService ?? RouteService();
     _computeRideOptions();
     _loadCustomMarkers();
     _fetchRoute();
+
+    if (widget.showHowToFindYouInitially) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openHowToFindYouSheet();
+        }
+      });
+    }
+  }
+
+  Future<void> _openHowToFindYouSheet() async {
+    final result = await PickupLandmarkSheet.show(
+      context,
+      initialLandmark: _pickupLandmark,
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _pickupLandmark = result;
+      });
+    }
   }
 
   @override
@@ -275,6 +302,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
               destination: widget.destination,
               rideOption: selectedOption,
               polylinePoints: _polylinePoints,
+              pickupLandmark: _pickupLandmark,
             ),
           ),
         );
@@ -412,8 +440,32 @@ class _RideBookingPageState extends State<RideBookingPage> {
                         ),
                       ),
 
-                      // Balance spacing for center pill
-                      const SizedBox(width: AppConstants.circularButtonSize),
+                      const SizedBox(width: AppConstants.spacingSm),
+
+                      // Circular GPS / Recenter Button matching the user's reference mockup
+                      Container(
+                        width: AppConstants.circularButtonSize,
+                        height: AppConstants.circularButtonSize,
+                        decoration: const BoxDecoration(
+                          color: AppColors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.shadowMarker,
+                              blurRadius: 10,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.near_me_rounded,
+                            color: AppColors.textPrimary,
+                            size: 20,
+                          ),
+                          onPressed: _fitCameraToBounds,
+                        ),
+                      ),
                     ],
                   ),
                   if (_isLoadingRoute)
@@ -482,7 +534,84 @@ class _RideBookingPageState extends State<RideBookingPage> {
                       letterSpacing: -0.3,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+
+                  // Pickup Landmark / "Comment vous trouver ?" Banner
+                  GestureDetector(
+                    onTap: _openHowToFindYouSheet,
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spacingUnitLg,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _pickupLandmark != null && _pickupLandmark!.isNotEmpty
+                            ? AppColors.peachContainer
+                            : AppColors.pickupSuggestionBg,
+                        borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+                        border: Border.all(
+                          color: _pickupLandmark != null && _pickupLandmark!.isNotEmpty
+                              ? AppColors.pickupLandmarkBorder
+                              : AppColors.pickupSuggestionBorder,
+                          width: 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: AppColors.pickupIconBg,
+                              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.near_me_rounded,
+                              color: AppColors.primary,
+                              size: 15,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _pickupLandmark != null && _pickupLandmark!.isNotEmpty
+                                      ? _pickupLandmark!
+                                      : 'ride.how_to_find_you'.tr(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  _pickupLandmark != null && _pickupLandmark!.isNotEmpty
+                                      ? 'Indication enregistrée · Toucher pour modifier'
+                                      : 'ride.how_to_find_you_sub'.tr(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: AppColors.textSecondary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                   // Option 1: Seddo Eco Card (3D Vehicle)
                   RideOptionCardWidget(

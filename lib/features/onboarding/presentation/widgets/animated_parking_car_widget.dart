@@ -119,6 +119,7 @@ class AnimatedParkingCarWidgetState extends State<AnimatedParkingCarWidget>
                 child: Image.asset(
                   'assets/images/seddo_car.png',
                   fit: BoxFit.contain,
+                  filterQuality: FilterQuality.high,
                   errorBuilder: (_, _, _) => const SizedBox(),
                 ),
               ),

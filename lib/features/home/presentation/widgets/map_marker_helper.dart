@@ -712,25 +712,25 @@ abstract class MapMarkerHelper {
 
     // 1. Outer soft translucent orange aura
     final auraPaint = Paint()
-      ..color = const Color(0x38FF6B00)
+      ..color = AppColors.userHaloAura
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 22.0, auraPaint);
 
     // 2. White shadow ring
     final shadowPaint = Paint()
-      ..color = const Color(0x22000000)
+      ..color = AppColors.userHaloShadow
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
     canvas.drawCircle(center.translate(0, 1), 10.0, shadowPaint);
 
     // 3. Middle white circle ring
     final whitePaint = Paint()
-      ..color = Colors.white
+      ..color = AppColors.white
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 9.0, whitePaint);
 
     // 4. Inner orange core dot
     final corePaint = Paint()
-      ..color = const Color(0xFFFF6B00)
+      ..color = AppColors.userHaloCore
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 5.5, corePaint);
 
@@ -746,9 +746,9 @@ abstract class MapMarkerHelper {
   static Future<BitmapDescriptor> getEcoCarMarker() async {
     if (_ecoCarMarkerIcon != null) return _ecoCarMarkerIcon!;
     _ecoCarMarkerIcon = await getTopDownCarMarker(
-      bodyColor: const Color(0xFF222326),
-      roofColor: const Color(0xFF141517),
-      windowColor: const Color(0xFF42444A),
+      bodyColor: AppColors.topDownEcoBody,
+      roofColor: AppColors.topDownEcoRoof,
+      windowColor: AppColors.topDownEcoWindow,
     );
     return _ecoCarMarkerIcon!;
   }
@@ -757,9 +757,9 @@ abstract class MapMarkerHelper {
   static Future<BitmapDescriptor> getConfortCarMarker() async {
     if (_confortCarMarkerIcon != null) return _confortCarMarkerIcon!;
     _confortCarMarkerIcon = await getTopDownCarMarker(
-      bodyColor: const Color(0xFFFF6B00),
-      roofColor: const Color(0xFFE05300),
-      windowColor: const Color(0xFFFFA266),
+      bodyColor: AppColors.topDownConfortBody,
+      roofColor: AppColors.topDownConfortRoof,
+      windowColor: AppColors.topDownConfortWindow,
     );
     return _confortCarMarkerIcon!;
   }
@@ -772,12 +772,15 @@ abstract class MapMarkerHelper {
   }) async {
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 32.0;
-    const double height = 48.0;
+    const double width = 22.0;
+    const double height = 34.0;
+    const double baseWidth = 32.0;
+    const double baseHeight = 48.0;
+    canvas.scale(width / baseWidth, height / baseHeight);
 
     // 1. Soft shadow
     final shadowPaint = Paint()
-      ..color = const Color(0x35000000)
+      ..color = AppColors.topDownShadow
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
@@ -788,7 +791,7 @@ abstract class MapMarkerHelper {
     );
 
     // 2. Wheels (4 black wheels)
-    final tirePaint = Paint()..color = const Color(0xFF111111);
+    final tirePaint = Paint()..color = AppColors.topDownWheel;
     // Front wheels
     canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(0, 7, 4.0, 9), const Radius.circular(2)), tirePaint);
     canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(width - 4.0, 7, 4.0, 9), const Radius.circular(2)), tirePaint);
@@ -806,7 +809,7 @@ abstract class MapMarkerHelper {
 
     // White outline for contrast on map
     final borderPaint = Paint()
-      ..color = Colors.white.withAlpha(160)
+      ..color = AppColors.white.withAlpha(160)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
     canvas.drawRRect(bodyRRect, borderPaint);
@@ -841,7 +844,7 @@ abstract class MapMarkerHelper {
     );
 
     // 6. Headlights
-    final headlightPaint = Paint()..color = const Color(0xFFFFF9C4);
+    final headlightPaint = Paint()..color = AppColors.topDownHeadlight;
     canvas.drawCircle(const Offset(6.5, 3.5), 1.5, headlightPaint);
     canvas.drawCircle(Offset(width - 6.5, 3.5), 1.5, headlightPaint);
 
@@ -866,13 +869,13 @@ abstract class MapMarkerHelper {
 
     // Shadow
     final shadowPaint = Paint()
-      ..color = const Color(0x33000000)
+      ..color = AppColors.transitStopShadow
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
     canvas.drawCircle(center.translate(0, 1.5), 13.5, shadowPaint);
 
     // White outer ring
     final whitePaint = Paint()
-      ..color = Colors.white
+      ..color = AppColors.white
       ..style = PaintingStyle.fill;
     canvas.drawCircle(center, 13.5, whitePaint);
 
@@ -887,7 +890,7 @@ abstract class MapMarkerHelper {
       text: TextSpan(
         text: letter,
         style: const TextStyle(
-          color: Colors.white,
+          color: AppColors.white,
           fontSize: 13.0,
           fontWeight: FontWeight.w900,
           fontFamily: 'Inter',

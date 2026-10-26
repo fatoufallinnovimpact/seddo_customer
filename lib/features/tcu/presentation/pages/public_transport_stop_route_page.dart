@@ -3,19 +3,21 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/tcu/data/models/tcu_route_model.dart';
 
-/// Screen displaying walking navigation towards the nearest transit stop on the map.
+/// Screen displaying walking navigation towards the nearest transit stop on the map (Yango style).
 /// Displays Google Maps with:
-/// - User position marker & destination stop marker
-/// - Route polyline to nearest transit stop
-/// - Floating live distance badge showing real-time remaining meters & minutes
-/// - Bottom sheet with stat boxes (distance restante, temps restant, prochain bus)
-/// - "Démarrer la marche" button which starts live simulation decrementing remaining distance
+/// - Real-time turn-by-turn navigation HUD at the top with next maneuver & distance
+/// - Voice guidance (Text-to-Speech) guiding the user with spoken instructions
+/// - Yango-style route coloring (vibrant green for remaining path, subtle grey for traveled path)
+/// - Floating live distance badge showing real-time remaining meters & minutes in Yango green
+/// - Bottom sheet with stat boxes (distance restante highlighted in Yango green, temps restant, prochain bus)
+/// - "Démarrer la marche" / "Arrêter le guidage" action button
 class PublicTransportStopRoutePage extends StatefulWidget {
   final TcuRouteOption routeOption;
 
@@ -46,6 +48,11 @@ class _PublicTransportStopRoutePageState
   late int _remainingDurationMinutes;
   double _progress = 0.0;
 
+  // Voice Guidance (TTS)
+  FlutterTts? _flutterTts;
+  bool _isVoiceEnabled = true;
+  int _lastSpokenPhase = -1;
+
   @override
   void initState() {
     super.initState();
@@ -57,11 +64,67 @@ class _PublicTransportStopRoutePageState
     _initialDuration = widget.routeOption.departureStop.walkingDurationMinutes;
     _remainingDistanceMeters = _initialDistance;
     _remainingDurationMinutes = _initialDuration;
+
+    _initTts();
+  }
+
+  void _initTts() {
+    if (_isTestEnvironment) return;
+    try {
+      _flutterTts = FlutterTts();
+      _flutterTts?.setLanguage('fr-FR').catchError((_) {
+        _flutterTts?.setLanguage('fr').catchError((_) {});
+      });
+      _flutterTts?.setSpeechRate(0.5).catchError((_) {});
+      _flutterTts?.setVolume(1.0).catchError((_) {});
+      _flutterTts?.setPitch(1.0).catchError((_) {});
+    } catch (e) {
+      debugPrint('TTS init error: $e');
+    }
+  }
+
+  Future<void> _speak(String message) async {
+    if (!_isVoiceEnabled || _isTestEnvironment || _flutterTts == null) return;
+    try {
+      await _flutterTts?.stop();
+      await _flutterTts?.speak(message);
+    } catch (e) {
+      debugPrint('TTS speak error: $e');
+    }
+  }
+
+  void _toggleVoiceGuidance() {
+    setState(() {
+      _isVoiceEnabled = !_isVoiceEnabled;
+    });
+    if (!_isVoiceEnabled) {
+      _flutterTts?.stop();
+    } else {
+      _speak('Guidage vocal activé.');
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _isVoiceEnabled ? 'Guidage vocal activé' : 'Guidage vocal désactivé',
+          style: GoogleFonts.inter(
+            color: AppColors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        backgroundColor: AppColors.buttonBlack,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+        ),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 
   @override
   void dispose() {
     _navigationTimer?.cancel();
+    _flutterTts?.stop();
     _mapController?.dispose();
     super.dispose();
   }
@@ -76,7 +139,9 @@ class _PublicTransportStopRoutePageState
       Marker(
         markerId: const MarkerId('user_location'),
         position: _currentUserPos,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          _isNavigating ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueOrange,
+        ),
         infoWindow: InfoWindow(
           title: 'Votre position',
           snippet: _isArrived
@@ -100,20 +165,45 @@ class _PublicTransportStopRoutePageState
   }
 
   Set<Polyline> _buildPolylines() {
+    final polylines = <Polyline>{};
+    final fullPath = widget.routeOption.walkingPathToStop.isNotEmpty
+        ? widget.routeOption.walkingPathToStop
+        : [_userPos, _stopPos];
+
+    // 1. Traveled path (Discreet grey, style Yango)
+    if (_progress > 0.0 && !_isArrived) {
+      final traveledPoints =
+          _calculateTraveledPath(fullPath, _currentUserPos, _progress);
+      if (traveledPoints.length >= 2) {
+        polylines.add(
+          Polyline(
+            polylineId: const PolylineId('walking_route_traveled'),
+            points: traveledPoints,
+            color: AppColors.routeTraveled,
+            width: 6,
+          ),
+        );
+      }
+    }
+
+    // 2. Remaining path (Vibrant Yango green style)
     final points = _getRemainingWalkingPath();
-    if (points.isEmpty) return {};
-    return {
-      Polyline(
-        polylineId: const PolylineId('walking_route'),
-        points: points,
-        color: AppColors.primary,
-        width: 5,
-        patterns: [
-          PatternItem.dot,
-          PatternItem.gap(10.0),
-        ],
-      ),
-    };
+    if (points.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('walking_route'),
+          points: points,
+          color: _isNavigating ? AppColors.yangoRouteGreen : AppColors.primary,
+          width: 7,
+          patterns: [
+            PatternItem.dot,
+            PatternItem.gap(8.0),
+          ],
+        ),
+      );
+    }
+
+    return polylines;
   }
 
   double _distanceBetween(LatLng p1, LatLng p2) {
@@ -206,6 +296,40 @@ class _PublicTransportStopRoutePageState
     return remaining;
   }
 
+  List<LatLng> _calculateTraveledPath(
+    List<LatLng> path,
+    LatLng currentPos,
+    double t,
+  ) {
+    if (path.length <= 1) return [currentPos];
+    final segmentLengths = <double>[];
+    double totalDistance = 0.0;
+    for (int i = 0; i < path.length - 1; i++) {
+      final d = _distanceBetween(path[i], path[i + 1]);
+      segmentLengths.add(d);
+      totalDistance += d;
+    }
+    if (totalDistance == 0.0) return [currentPos];
+
+    final targetDistance = t * totalDistance;
+    double accumulated = 0.0;
+    int currentSegIndex = 0;
+    for (int i = 0; i < segmentLengths.length; i++) {
+      if (accumulated + segmentLengths[i] >= targetDistance) {
+        currentSegIndex = i;
+        break;
+      }
+      accumulated += segmentLengths[i];
+    }
+
+    final traveled = <LatLng>[];
+    for (int i = 0; i <= currentSegIndex; i++) {
+      traveled.add(path[i]);
+    }
+    traveled.add(currentPos);
+    return traveled;
+  }
+
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _fitMapBounds();
@@ -250,14 +374,20 @@ class _PublicTransportStopRoutePageState
         _remainingDistanceMeters = _initialDistance;
         _remainingDurationMinutes = _initialDuration;
         _currentUserPos = _userPos;
+        _lastSpokenPhase = 0;
       });
       _fitMapBounds();
+      _speak(
+        'Guidage piéton démarré. Continuez tout droit vers l\'arrêt ${widget.routeOption.departureStop.name}.',
+      );
       _startWalkingSimulation();
       return;
     }
 
     if (_isNavigating) {
       _navigationTimer?.cancel();
+      _flutterTts?.stop();
+      _lastSpokenPhase = -1;
       setState(() {
         _isNavigating = false;
       });
@@ -282,19 +412,32 @@ class _PublicTransportStopRoutePageState
     } else {
       setState(() {
         _isNavigating = true;
+        _lastSpokenPhase = 0;
       });
 
       final stopName = widget.routeOption.departureStop.name;
+      _speak(
+        'Guidage piéton démarré. Continuez tout droit vers l\'arrêt $stopName.',
+      );
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'tcu.walking_started'.tr(args: [stopName]),
-            style: GoogleFonts.inter(
-              color: AppColors.white,
-              fontWeight: FontWeight.w600,
-            ),
+          content: Row(
+            children: [
+              const Icon(Icons.navigation_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'tcu.walking_started'.tr(args: [stopName]),
+                  style: GoogleFonts.inter(
+                    color: AppColors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppColors.yangoRouteGreen,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
@@ -360,11 +503,30 @@ class _PublicTransportStopRoutePageState
           }
         });
 
+        // Voice Guidance step announcements
+        if (_isNavigating) {
+          if (_progress >= 0.35 && _progress < 0.70 && _lastSpokenPhase < 1) {
+            _lastSpokenPhase = 1;
+            _speak('Dans cinquante mètres, tournez à droite vers l\'arrêt.');
+          } else if (_progress >= 0.70 && _progress < 1.0 && _lastSpokenPhase < 2) {
+            _lastSpokenPhase = 2;
+            _speak(
+              'L\'arrêt ${widget.routeOption.departureStop.name} est à cinquante mètres tout droit.',
+            );
+          }
+        }
+
         if (_isNavigating && _mapController != null) {
           _mapController?.animateCamera(
             CameraUpdate.newLatLng(_currentUserPos),
           );
         } else if (_isArrived) {
+          if (_lastSpokenPhase < 3) {
+            _lastSpokenPhase = 3;
+            _speak(
+              'Vous êtes arrivé à l\'arrêt ${widget.routeOption.departureStop.name}. Bon voyage !',
+            );
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
@@ -404,7 +566,7 @@ class _PublicTransportStopRoutePageState
       backgroundColor: const Color(0xFFEBE6DC),
       body: Stack(
         children: [
-          // 1. Guaranteed Dakar Vector Street Map (underlying fallback)
+          // 1. Guaranteed Dakar Vector Street Map (underlying fallback with Yango route coloring)
           Positioned.fill(
             child: CustomPaint(
               painter: _DakarWalkingMapPainter(
@@ -435,15 +597,15 @@ class _PublicTransportStopRoutePageState
             ),
           ),
 
-          // 3. Floating Distance Badge on the map (indicates live remaining distance & duration)
+          // 3. Floating Distance Badge on the map (colored in Yango Green when navigating)
           Positioned(
-            top: MediaQuery.of(context).padding.top + 70,
+            top: MediaQuery.of(context).padding.top + (_isNavigating ? 98 : 70),
             right: AppConstants.spacingMd,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingUnitLg,
-                vertical: AppConstants.spacingUnit,
+                horizontal: 14,
+                vertical: 8,
               ),
               decoration: BoxDecoration(
                 color: AppColors.white,
@@ -459,9 +621,9 @@ class _PublicTransportStopRoutePageState
                   color: _isArrived
                       ? AppColors.tcuDddGreen
                       : (_isNavigating
-                          ? AppColors.primary
+                          ? AppColors.yangoRouteGreen
                           : AppColors.tcuFieldBorder),
-                  width: 1.5,
+                  width: _isNavigating ? 2.0 : 1.5,
                 ),
               ),
               child: Row(
@@ -472,7 +634,9 @@ class _PublicTransportStopRoutePageState
                     size: 16,
                     color: _isArrived
                         ? AppColors.tcuDddGreen
-                        : AppColors.primary,
+                        : (_isNavigating
+                            ? AppColors.yangoRouteGreen
+                            : AppColors.primary),
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -486,7 +650,9 @@ class _PublicTransportStopRoutePageState
                       fontWeight: FontWeight.w700,
                       color: _isArrived
                           ? AppColors.tcuDddGreen
-                          : AppColors.textPrimary,
+                          : (_isNavigating
+                              ? AppColors.yangoRouteGreen
+                              : AppColors.textPrimary),
                     ),
                   ),
                 ],
@@ -494,78 +660,14 @@ class _PublicTransportStopRoutePageState
             ),
           ),
 
-          // 4. Top Navigation Bar matching Screenshot 4
+          // 4. Top Navigation Bar: Either Yango Turn-by-Turn HUD (navigating) or Standard Header
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  // Circular back button
-                  Container(
-                    decoration: const BoxDecoration(
-                      color: AppColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.shadowLight,
-                          blurRadius: 10,
-                          offset: Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back,
-                        color: AppColors.textPrimary,
-                        size: AppConstants.iconSizeLg,
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                      tooltip: 'common.back'.tr(),
-                    ),
-                  ),
-                  const SizedBox(width: AppConstants.spacingUnitLg),
-
-                  // Destination Stop Banner
-                  Expanded(
-                    child: Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppConstants.spacingMd,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.white,
-                        borderRadius:
-                            BorderRadius.circular(AppConstants.radiusPill),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: AppColors.shadowLight,
-                            blurRadius: 10,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'tcu.nav_destination'.tr(args: [stop.name]),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontMd,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: _isNavigating
+                ? _buildYangoNavigationHeader()
+                : _buildStandardTopBar(stop),
           ),
 
-          // 5. Bottom Sheet firmly anchored at the bottom (matching Screenshot 4)
+          // 5. Bottom Sheet firmly anchored at the bottom
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
@@ -607,7 +709,7 @@ class _PublicTransportStopRoutePageState
                   ),
                   const SizedBox(height: AppConstants.spacingUnitLg),
 
-                  // Stop name & Transit Badge (Screenshot 4)
+                  // Stop name & Transit Badge
                   Row(
                     children: [
                       // Badge (AFTU, DDD, BRT, TER)
@@ -665,13 +767,14 @@ class _PublicTransportStopRoutePageState
                   ),
                   const SizedBox(height: AppConstants.spacingMd),
 
-                  // 3 Stat Cards: À pied (Distance restante), Durée (Temps restant), Prochain bus
+                  // 3 Stat Cards: Distance restante (colorée style Yango), Temps, Prochain bus
                   Row(
                     children: [
                       Expanded(
                         child: _buildStatBox(
                           label: _isNavigating ? 'Restant' : 'tcu.walking_dist'.tr(),
                           value: '$_remainingDistanceMeters m',
+                          highlightValue: _isNavigating,
                         ),
                       ),
                       const SizedBox(width: AppConstants.spacingSm),
@@ -694,7 +797,7 @@ class _PublicTransportStopRoutePageState
                   ),
                   const SizedBox(height: AppConstants.spacingUnitLg),
 
-                  // Big Action Button at the very bottom: "Démarrer la marche"
+                  // Big Action Button: "Démarrer la marche" / "Arrêter le guidage"
                   SizedBox(
                     width: double.infinity,
                     height: AppConstants.buttonHeight,
@@ -705,7 +808,7 @@ class _PublicTransportStopRoutePageState
                         backgroundColor: _isArrived
                             ? AppColors.tcuDddGreen
                             : (_isNavigating
-                                ? AppColors.buttonBlack
+                                ? const Color(0xFF1F2937)
                                 : AppColors.primary),
                         foregroundColor: AppColors.white,
                         elevation: AppConstants.elevationNone,
@@ -721,7 +824,7 @@ class _PublicTransportStopRoutePageState
                             _isArrived
                                 ? Icons.refresh
                                 : (_isNavigating
-                                    ? Icons.pause
+                                    ? Icons.stop_rounded
                                     : Icons.directions_walk),
                             size: 20,
                             color: AppColors.white,
@@ -751,15 +854,243 @@ class _PublicTransportStopRoutePageState
     );
   }
 
-  Widget _buildStatBox({required String label, required String value}) {
+  /// Turn-by-Turn GPS Navigation Banner matching Yango experience
+  Widget _buildYangoNavigationHeader() {
+    IconData turnIcon;
+    String turnInstruction;
+    String turnDistance;
+    String subInstruction;
+
+    if (_isArrived) {
+      turnIcon = Icons.check_circle_rounded;
+      turnInstruction = 'Vous êtes arrivé !';
+      turnDistance = '0 m';
+      subInstruction = 'Arrêt ${widget.routeOption.departureStop.name}';
+    } else if (_progress < 0.35) {
+      turnIcon = Icons.arrow_upward_rounded;
+      turnInstruction = 'Marchez tout droit';
+      turnDistance = '${(_remainingDistanceMeters * 0.4).round().clamp(20, 200)} m';
+      subInstruction = 'En direction de ${widget.routeOption.departureStop.name}';
+    } else if (_progress < 0.70) {
+      turnIcon = Icons.turn_right_rounded;
+      turnInstruction = 'Tournez à droite';
+      turnDistance = '${(_remainingDistanceMeters * 0.5).round().clamp(15, 100)} m';
+      subInstruction = 'Prenez la rue vers l\'arrêt';
+    } else {
+      turnIcon = Icons.place_rounded;
+      turnInstruction = 'Votre arrêt est tout droit';
+      turnDistance = '$_remainingDistanceMeters m';
+      subInstruction = 'Arrêt ${widget.routeOption.departureStop.name}';
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B2330),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Maneuver Turn Icon in vibrant green
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: _isArrived ? AppColors.tcuDddGreen : AppColors.yangoRouteGreen,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: (_isArrived ? AppColors.tcuDddGreen : AppColors.yangoRouteGreen)
+                      .withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Icon(
+              turnIcon,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          // Maneuver instruction & colored distance
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      turnDistance,
+                      style: GoogleFonts.inter(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.yangoRouteGreen,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        turnInstruction,
+                        style: GoogleFonts.inter(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subInstruction,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF9CA3AF),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Voice guidance toggle button
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: _toggleVoiceGuidance,
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _isVoiceEnabled
+                      ? AppColors.yangoRouteGreen.withValues(alpha: 0.2)
+                      : Colors.white.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _isVoiceEnabled
+                        ? AppColors.yangoRouteGreen.withValues(alpha: 0.5)
+                        : Colors.white.withValues(alpha: 0.15),
+                  ),
+                ),
+                child: Icon(
+                  _isVoiceEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                  color: _isVoiceEnabled ? AppColors.yangoRouteGreen : const Color(0xFF9CA3AF),
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStandardTopBar(TcuStop stop) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingMd,
+        vertical: AppConstants.spacingSm,
+      ),
+      child: Row(
+        children: [
+          // Circular back button
+          Container(
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.shadowLight,
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back,
+                color: AppColors.textPrimary,
+                size: AppConstants.iconSizeLg,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'common.back'.tr(),
+            ),
+          ),
+          const SizedBox(width: AppConstants.spacingUnitLg),
+
+          // Destination Stop Banner
+          Expanded(
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingMd,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                boxShadow: const [
+                  BoxShadow(
+                    color: AppColors.shadowLight,
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'tcu.nav_destination'.tr(args: [stop.name]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: AppConstants.fontMd,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatBox({
+    required String label,
+    required String value,
+    bool highlightValue = false,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(
         vertical: AppConstants.spacingUnitLg,
         horizontal: AppConstants.spacingSm,
       ),
       decoration: BoxDecoration(
-        color: AppColors.tcuStatCardBg,
+        color: highlightValue
+            ? const Color(0xFFE8F8F0)
+            : AppColors.tcuStatCardBg,
         borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        border: highlightValue
+            ? Border.all(
+                color: AppColors.yangoRouteGreen.withValues(alpha: 0.3),
+                width: 1.2,
+              )
+            : null,
       ),
       child: Column(
         children: [
@@ -767,8 +1098,10 @@ class _PublicTransportStopRoutePageState
             label,
             style: GoogleFonts.inter(
               fontSize: AppConstants.fontSm,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+              color: highlightValue
+                  ? const Color(0xFF047857)
+                  : AppColors.textSecondary,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -779,7 +1112,9 @@ class _PublicTransportStopRoutePageState
             style: GoogleFonts.inter(
               fontSize: 16.5,
               fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+              color: highlightValue
+                  ? AppColors.yangoRouteGreen
+                  : AppColors.textPrimary,
             ),
           ),
         ],
@@ -788,7 +1123,7 @@ class _PublicTransportStopRoutePageState
   }
 }
 
-/// Custom painter rendering the exact Dakar street map matching Screenshot 4 (media_1792687485707.png)
+/// Custom painter rendering the Dakar street map matching Screenshot 4 with Yango route coloring
 class _DakarWalkingMapPainter extends CustomPainter {
   final bool isNavigating;
   final double progress;
@@ -824,7 +1159,7 @@ class _DakarWalkingMapPainter extends CustomPainter {
     );
     canvas.drawRRect(parkRRect, parkPaint);
 
-    // 4. Dakar Road Grid (Wide white road stripes with soft borders)
+    // 4. Dakar Road Grid
     final roadPaint = Paint()
       ..color = Colors.white
       ..strokeCap = StrokeCap.round
@@ -836,49 +1171,42 @@ class _DakarWalkingMapPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     void drawRoad(Offset p1, Offset p2, double roadWidth) {
-      // Road border / shadow
       roadBorderPaint.strokeWidth = roadWidth + 2.5;
       canvas.drawLine(p1, p2, roadBorderPaint);
-      // Road surface
       roadPaint.strokeWidth = roadWidth;
       canvas.drawLine(p1, p2, roadPaint);
     }
 
-    // Vertical Main Street 1 (left)
     drawRoad(
       Offset(width * 0.23, height * 0.10),
       Offset(width * 0.33, height * 0.70),
       18,
     );
 
-    // Vertical Main Street 2 (right)
     drawRoad(
       Offset(width * 0.72, height * 0.12),
       Offset(width * 0.76, height * 0.70),
       18,
     );
 
-    // Horizontal Street 1 (middle-upper)
     drawRoad(
       Offset(0, height * 0.32),
       Offset(width, height * 0.27),
       16,
     );
 
-    // Horizontal Street 2 (lower)
     drawRoad(
       Offset(0, height * 0.52),
       Offset(width, height * 0.48),
       18,
     );
 
-    // 5. Walking Route: Orange Dotted Line matching Screenshot 4
+    // 5. Walking Route: Yango Green Remaining & Traveled Grey
     final startPos = Offset(width * 0.29, height * 0.53);
     final cornerTurn1 = Offset(width * 0.29, height * 0.50);
     final cornerTurn2 = Offset(width * 0.73, height * 0.48);
     final stopPos = Offset(width * 0.73, height * 0.36);
 
-    // Compute animated user position along the segments
     final seg1 = (cornerTurn1 - startPos).distance;
     final seg2 = (cornerTurn2 - cornerTurn1).distance;
     final seg3 = (stopPos - cornerTurn2).distance;
@@ -897,11 +1225,23 @@ class _DakarWalkingMapPainter extends CustomPainter {
       currentUserPos = Offset.lerp(cornerTurn2, stopPos, t) ?? stopPos;
     }
 
+    final activeRouteColor =
+        isNavigating ? AppColors.yangoRouteGreen : AppColors.primary;
+
     final dotPaint = Paint()
-      ..color = AppColors.primary
+      ..color = activeRouteColor
       ..style = PaintingStyle.fill;
 
-    void drawDottedSegment(Offset start, Offset end, double step) {
+    final traveledPaint = Paint()
+      ..color = AppColors.routeTraveled
+      ..style = PaintingStyle.fill;
+
+    void drawDottedSegment(
+      Offset start,
+      Offset end,
+      double step,
+      Paint paintToUse,
+    ) {
       final dx = end.dx - start.dx;
       final dy = end.dy - start.dy;
       final distance = Offset(dx, dy).distance;
@@ -911,34 +1251,50 @@ class _DakarWalkingMapPainter extends CustomPainter {
       for (int i = 0; i <= count; i++) {
         final t = i / count;
         final point = Offset(start.dx + dx * t, start.dy + dy * t);
-        canvas.drawCircle(point, 3.2, dotPaint);
+        canvas.drawCircle(point, 3.4, paintToUse);
       }
     }
 
+    // Traveled segments in grey
+    if (progress > 0.0) {
+      if (targetLen <= seg1) {
+        drawDottedSegment(startPos, currentUserPos, 9.0, traveledPaint);
+      } else if (targetLen <= seg1 + seg2) {
+        drawDottedSegment(startPos, cornerTurn1, 9.0, traveledPaint);
+        drawDottedSegment(cornerTurn1, currentUserPos, 9.0, traveledPaint);
+      } else {
+        drawDottedSegment(startPos, cornerTurn1, 9.0, traveledPaint);
+        drawDottedSegment(cornerTurn1, cornerTurn2, 9.0, traveledPaint);
+        drawDottedSegment(cornerTurn2, currentUserPos, 9.0, traveledPaint);
+      }
+    }
+
+    // Remaining segments in Yango Green
     if (progress < 1.0) {
       if (targetLen <= seg1) {
-        drawDottedSegment(currentUserPos, cornerTurn1, 9.0);
-        drawDottedSegment(cornerTurn1, cornerTurn2, 9.0);
-        drawDottedSegment(cornerTurn2, stopPos, 9.0);
+        drawDottedSegment(currentUserPos, cornerTurn1, 9.0, dotPaint);
+        drawDottedSegment(cornerTurn1, cornerTurn2, 9.0, dotPaint);
+        drawDottedSegment(cornerTurn2, stopPos, 9.0, dotPaint);
       } else if (targetLen <= seg1 + seg2) {
-        drawDottedSegment(currentUserPos, cornerTurn2, 9.0);
-        drawDottedSegment(cornerTurn2, stopPos, 9.0);
+        drawDottedSegment(currentUserPos, cornerTurn2, 9.0, dotPaint);
+        drawDottedSegment(cornerTurn2, stopPos, 9.0, dotPaint);
       } else {
-        drawDottedSegment(currentUserPos, stopPos, 9.0);
+        drawDottedSegment(currentUserPos, stopPos, 9.0, dotPaint);
       }
     }
 
-    // 6. User Location Dot with Soft Halo
-    final haloPaint = Paint()..color = const Color(0x332B66FF);
-    canvas.drawCircle(currentUserPos, 22, haloPaint);
+    // 6. User Location Dot with Soft Halo (Green when navigating, blue when not)
+    final haloColor = isNavigating
+        ? AppColors.yangoRouteGreen.withValues(alpha: 0.25)
+        : const Color(0x332B66FF);
+    final userDotColor =
+        isNavigating ? AppColors.yangoRouteGreen : const Color(0xFF2B66FF);
 
-    final userWhiteBorderPaint = Paint()..color = Colors.white;
-    canvas.drawCircle(currentUserPos, 10, userWhiteBorderPaint);
+    canvas.drawCircle(currentUserPos, 22, Paint()..color = haloColor);
+    canvas.drawCircle(currentUserPos, 10, Paint()..color = Colors.white);
+    canvas.drawCircle(currentUserPos, 6.5, Paint()..color = userDotColor);
 
-    final userDotPaint = Paint()..color = const Color(0xFF2B66FF);
-    canvas.drawCircle(currentUserPos, 6.5, userDotPaint);
-
-    // 7. Destination Stop Pin (Blue Teardrop Marker matching Screenshot 4)
+    // 7. Destination Stop Pin
     _drawStopPin(canvas, stopPos);
   }
 
@@ -951,7 +1307,6 @@ class _DakarWalkingMapPainter extends CustomPainter {
       ..color = const Color(0x33000000)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
 
-    // Pin Shadow
     canvas.drawOval(
       Rect.fromCenter(
         center: Offset(tip.dx, tip.dy + 3),
@@ -961,7 +1316,6 @@ class _DakarWalkingMapPainter extends CustomPainter {
       shadowPaint,
     );
 
-    // Teardrop marker path
     const headRadius = 15.0;
     final headCenter = Offset(tip.dx, tip.dy - 22);
 
@@ -976,7 +1330,6 @@ class _DakarWalkingMapPainter extends CustomPainter {
 
     canvas.drawPath(path, pinPaint);
 
-    // Inner White Dot
     final whiteDotPaint = Paint()
       ..color = Colors.white
       ..style = PaintingStyle.fill;

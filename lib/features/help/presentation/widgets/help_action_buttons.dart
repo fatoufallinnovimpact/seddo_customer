@@ -1,5 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
@@ -8,9 +9,15 @@ import 'package:url_launcher/url_launcher.dart';
 class HelpActionButtons extends StatelessWidget {
   const HelpActionButtons({super.key});
 
+  static const String _whatsappSvg =
+      'assets/icons/whatsapp-icon-logo-svgrepo-com.svg';
+  static const String _phoneCallSvg =
+      'assets/icons/telephone-call-svgrepo-com.svg';
+
   Future<void> _openWhatsApp() async {
-    final cleanPhone =
-        AppConstants.helpSupportWhatsAppNumber.replaceAll('+', '').replaceAll(' ', '');
+    final cleanPhone = AppConstants.helpSupportWhatsAppNumber
+        .replaceAll('+', '')
+        .replaceAll(' ', '');
     final uri = Uri.parse('https://wa.me/$cleanPhone');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -28,22 +35,32 @@ class HelpActionButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
+        // WhatsApp Card
         Expanded(
           child: _buildActionCard(
-            icon: Icons.chat_bubble_outline_rounded,
-            iconColor: AppColors.helpWhatsAppGreen,
+            svgPath: _whatsappSvg,
+            badgeText: 'help.whatsapp_sub'.tr(),
+            badgeBgColor: const Color(0xFFF0FDF4),
+            badgeTextColor: const Color(0xFF16A34A),
+            badgeBorderColor: const Color(0xFFDCFCE7),
             title: 'help.whatsapp'.tr(),
-            subtitle: 'help.whatsapp_sub'.tr(),
+            iconContainerBg: const Color(0xFFF0FDF4),
+            iconContainerBorder: const Color(0xFFDCFCE7),
             onTap: _openWhatsApp,
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 14),
+        // Telephone Call Card
         Expanded(
           child: _buildActionCard(
-            icon: Icons.phone_outlined,
-            iconColor: AppColors.helpCallBlack,
+            svgPath: _phoneCallSvg,
+            badgeText: 'help.call_sub'.tr(),
+            badgeBgColor: const Color(0xFFFFF7ED),
+            badgeTextColor: const Color(0xFFEA580C),
+            badgeBorderColor: const Color(0xFFFFEDD5),
             title: 'help.call'.tr(),
-            subtitle: 'help.call_sub'.tr(),
+            iconContainerBg: const Color(0xFFFFF7ED),
+            iconContainerBorder: const Color(0xFFFFEDD5),
             onTap: _makeCall,
           ),
         ),
@@ -52,58 +69,93 @@ class HelpActionButtons extends StatelessWidget {
   }
 
   Widget _buildActionCard({
-    required IconData icon,
-    required Color iconColor,
+    required String svgPath,
+    required String badgeText,
+    required Color badgeBgColor,
+    required Color badgeTextColor,
+    required Color badgeBorderColor,
     required String title,
-    required String subtitle,
+    required Color iconContainerBg,
+    required Color iconContainerBorder,
     required VoidCallback onTap,
   }) {
     return Container(
-      height: AppConstants.heightActionCard,
+      height: 118,
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius: BorderRadius.circular(AppConstants.radiusActionCard),
-        boxShadow: const [
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        boxShadow: [
           BoxShadow(
-            color: AppColors.cardShadow,
-            blurRadius: 10,
-            offset: Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.035),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Material(
         color: AppColors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppConstants.radiusActionCard),
+          borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(icon, size: 28, color: iconColor),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+                    Container(
+                      width: 40,
+                      height: 40,
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: iconContainerBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: iconContainerBorder,
+                          width: 1,
+                        ),
+                      ),
+                      child: SvgPicture.asset(
+                        svgPath,
+                        fit: BoxFit.contain,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: badgeBgColor,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: badgeBorderColor,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        badgeText,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: badgeTextColor,
+                        ),
                       ),
                     ),
                   ],
+                ),
+                Text(
+                  title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF111827),
+                  ),
                 ),
               ],
             ),

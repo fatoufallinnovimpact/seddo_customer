@@ -29,8 +29,8 @@ class HelpFaqSection extends StatelessWidget {
               'help.section_faq'.tr(),
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF6B7280),
                 letterSpacing: 0.8,
               ),
             ),
@@ -43,19 +43,24 @@ class HelpFaqSection extends StatelessWidget {
                   color: AppColors.white,
                   borderRadius:
                       BorderRadius.circular(AppConstants.radiusCardContainer),
+                  border: Border.all(
+                    color: const Color(0xFFE5E7EB),
+                    width: 1,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   'help.no_faq_found'.tr(),
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 13,
+                    fontWeight: FontWeight.w500,
                     color: AppColors.textSecondary,
                   ),
                 ),
               )
             else
               ...filteredItems.map((item) => _buildFaqCard(context, item)),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             _buildResponseTimeNote(),
           ],
         );
@@ -65,16 +70,23 @@ class HelpFaqSection extends StatelessWidget {
 
   Widget _buildFaqCard(BuildContext context, FaqItemModel item) {
     final isExpanded = item.isExpanded;
-    return Container(
+    final meta = _getFaqCategoryMeta(item.questionKey);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(AppConstants.radiusCardContainer),
-        boxShadow: const [
+        border: Border.all(
+          color: isExpanded ? const Color(0xFFD1D5DB) : const Color(0xFFE5E7EB),
+          width: 1,
+        ),
+        boxShadow: [
           BoxShadow(
-            color: AppColors.cardShadow,
-            blurRadius: 10,
-            offset: Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -87,44 +99,68 @@ class HelpFaqSection extends StatelessWidget {
             context.read<HelpBloc>().add(HelpFaqToggled(item.id));
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: meta.bgColor,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: meta.borderColor,
+                          width: 1,
+                        ),
+                      ),
+                      child: Icon(
+                        meta.icon,
+                        size: 18,
+                        color: meta.iconColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         item.questionKey.tr(),
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
+                          color: const Color(0xFF111827),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     AnimatedRotation(
                       turns: isExpanded ? 0.25 : 0.0,
                       duration: const Duration(milliseconds: 200),
                       child: const Icon(
                         Icons.chevron_right,
                         size: 20,
-                        color: AppColors.helpChevronGrey,
+                        color: Color(0xFF9CA3AF),
                       ),
                     ),
                   ],
                 ),
                 if (isExpanded)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
+                  Container(
+                    margin: const EdgeInsets.only(top: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Text(
                       item.answerKey.tr(),
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
-                        color: AppColors.helpFaqTextGrey,
+                        color: const Color(0xFF4B5563),
                         height: 1.5,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ),
@@ -136,18 +172,59 @@ class HelpFaqSection extends StatelessWidget {
     );
   }
 
+  _FaqCategoryMeta _getFaqCategoryMeta(String key) {
+    final lower = key.toLowerCase();
+    if (lower.contains('1') || lower.contains('payer') || lower.contains('money')) {
+      return const _FaqCategoryMeta(
+        icon: Icons.account_balance_wallet_outlined,
+        iconColor: Color(0xFFEA580C),
+        bgColor: Color(0xFFFFF7ED),
+        borderColor: Color(0xFFFFEDD5),
+      );
+    } else if (lower.contains('2') || lower.contains('remboursement')) {
+      return const _FaqCategoryMeta(
+        icon: Icons.currency_exchange_rounded,
+        iconColor: Color(0xFF059669),
+        bgColor: Color(0xFFF0FDF4),
+        borderColor: Color(0xFFDCFCE7),
+      );
+    } else if (lower.contains('3') || lower.contains('annuler')) {
+      return const _FaqCategoryMeta(
+        icon: Icons.event_busy_outlined,
+        iconColor: Color(0xFFDC2626),
+        bgColor: Color(0xFFFEF2F2),
+        borderColor: Color(0xFFFEE2E2),
+      );
+    }
+    return const _FaqCategoryMeta(
+      icon: Icons.help_outline_rounded,
+      iconColor: Color(0xFF4B5563),
+      bgColor: Color(0xFFF3F4F6),
+      borderColor: Color(0xFFE5E7EB),
+    );
+  }
+
   Widget _buildResponseTimeNote() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFE5E7EB),
+          width: 1,
+        ),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(
-            Icons.info_outline,
-            size: 14,
-            color: AppColors.helpResponseTimeGrey,
+            Icons.info_outline_rounded,
+            size: 15,
+            color: Color(0xFF6B7280),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Flexible(
             child: Text(
               'help.response_time_note'.tr(),
@@ -155,7 +232,7 @@ class HelpFaqSection extends StatelessWidget {
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: AppColors.helpResponseTimeGrey,
+                color: const Color(0xFF6B7280),
               ),
             ),
           ),
@@ -163,4 +240,18 @@ class HelpFaqSection extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FaqCategoryMeta {
+  final IconData icon;
+  final Color iconColor;
+  final Color bgColor;
+  final Color borderColor;
+
+  const _FaqCategoryMeta({
+    required this.icon,
+    required this.iconColor,
+    required this.bgColor,
+    required this.borderColor,
+  });
 }

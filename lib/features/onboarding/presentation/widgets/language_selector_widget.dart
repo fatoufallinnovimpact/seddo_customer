@@ -96,13 +96,32 @@ class _LanguageOption extends StatelessWidget {
         height: double.infinity,
         decoration: BoxDecoration(
           color: isSelected ? AppColors.white : AppColors.transparent,
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [
+                    Color(0xFFFFF9F5),
+                    Color(0xFFFFFFFF),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                )
+              : null,
           borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.transparent,
+            width: 1.5,
+          ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: AppColors.textPrimary.withAlpha(25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    color: AppColors.primary.withValues(alpha: 0.22),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
                   ),
                 ]
               : null,
@@ -111,22 +130,34 @@ class _LanguageOption extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Circular Flag Icon
-            ClipOval(
-              child: Image.asset(
-                flagAsset,
-                width: 24,
-                height: 24,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox(
-                  width: 24,
-                  height: 24,
+            // Circular Flag Icon with subtle active ring
+            Container(
+              padding: const EdgeInsets.all(1.5),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected
+                      ? AppColors.primary.withValues(alpha: 0.35)
+                      : Colors.transparent,
+                  width: 1.5,
+                ),
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  flagAsset,
+                  width: 22,
+                  height: 22,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const SizedBox(
+                    width: 22,
+                    height: 22,
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: AppConstants.spacingSm),
 
-            // Language Title
+            // Language Title in Brand Orange when active
             Flexible(
               child: Text(
                 title,
@@ -134,12 +165,25 @@ class _LanguageOption extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
                   fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: isSelected ? AppColors.textPrimary : AppColors.white,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected
+                      ? AppColors.primary
+                      : AppColors.textSecondary,
                   letterSpacing: 0.1,
                 ),
               ),
             ),
+            if (isSelected) ...[
+              const SizedBox(width: 6),
+              Container(
+                width: 6,
+                height: 6,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
           ],
         ),
       ),

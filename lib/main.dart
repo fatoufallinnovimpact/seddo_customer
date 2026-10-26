@@ -4,9 +4,24 @@ import 'package:seddo/core/localization/wolof_localizations_delegate.dart';
 import 'package:seddo/core/themes/app_theme.dart';
 import 'package:seddo/features/splash/presentation/pages/splash_page.dart';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:seddo/firebase_options.dart';
+import 'package:seddo/services/fcm_service.dart';
+import 'package:seddo/services/notification_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
+  await NotificationService().initialize();
+
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    await FcmService().init();
+  } catch (e) {
+    debugPrint('[Firebase] Initialisation reportée: $e');
+  }
 
   runApp(
     EasyLocalization(

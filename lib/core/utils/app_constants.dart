@@ -133,4 +133,17 @@ abstract class AppConstants {
   static const double dashedDashLength = 6.0;
   static const double dashedGapLength = 4.0;
   static const double dashedRadius = 18.0;
+
+  // Saved Places Screen Tokens
+  static const double savedPlaceIconContainerSize = 52.0;
+  static const double titleLineHeight = 1.05;
+  static const double titleLetterSpacing = -0.5;
+  static const double bannerLineHeight = 1.35;
+
+  // Place Search Screen Tokens
+  static const double searchDottedDotSize = 3.5;
+  static const double searchDottedSpacing = 4.0;
+  static const double searchIconBoxSize = 40.0;
+  static const double searchDistancePillRadius = 10.0;
+  static const double searchLetterSpacing = 0.8;
 }

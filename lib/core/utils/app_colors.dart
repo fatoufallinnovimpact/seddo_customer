@@ -52,9 +52,9 @@ abstract class AppColors {
   static const Color otpBoxEmpty = Color(0xFFF2F2F2);
   static const Color shadowLight = Color(0x14000000);
 
-  /// Language selector pill container background
-  static const Color languageContainerBackground = Color(0x33FFFFFF);
-  static const Color languageContainerBorder = Color(0x26FFFFFF);
+  /// Language selector pill container background (clean light theme)
+  static const Color languageContainerBackground = Color(0xFFF3F4F6);
+  static const Color languageContainerBorder = Color(0xFFE5E7EB);
 
   /// Decorative background contour rings
   static const Color decorativeArc = Color(0x1AFFFFFF);
@@ -161,6 +161,14 @@ abstract class AppColors {
   static const Color chatBubbleCustomer = Color(0xFFFB5B00);
   static const Color chatBubbleDriver = Color(0xFFF2F4F7);
 
+  // Pickup landmark / How to find you ("Comment vous trouver ?") tokens
+  static const Color pickupLandmarkBorder = Color(0xFFFFD1B8);
+  static const Color pickupLandmarkBg = Color(0xFFFFFBF8);
+  static const Color pickupSuggestionBg = Color(0xFFF8F9FA);
+  static const Color pickupSuggestionBorder = Color(0xFFF1F3F5);
+  static const Color pickupIconBg = Color(0xFFFFF0E6);
+  static const Color cancelTextBlue = Color(0xFF5A6B82);
+
   // Active Ride & Safety & Rating tokens
   static const Color sirenRed = Color(0xFFDC2626);
   static const Color avatarBeige = Color(0xFFEBE5DF);
@@ -248,6 +256,25 @@ abstract class AppColors {
   static const Color orangeDarkPin = Color(0xFFD64400);
   static const Color pinDarkGradientStart = Color(0xFF333333);
   static const Color shadowCanvasSoft = Color(0x30000000);
+
+  // Map Top-Down Vehicle & Stop Marker tokens
+  static const Color topDownEcoBody = Color(0xFF222326);
+  static const Color topDownEcoRoof = Color(0xFF141517);
+  static const Color topDownEcoWindow = Color(0xFF42444A);
+  static const Color topDownConfortBody = Color(0xFFFF6B00);
+  static const Color topDownConfortRoof = Color(0xFFE05300);
+  static const Color topDownConfortWindow = Color(0xFFFFA266);
+  static const Color topDownShadow = Color(0x35000000);
+  static const Color topDownWheel = Color(0xFF111111);
+  static const Color topDownHeadlight = Color(0xFFFFF9C4);
+  static const Color userHaloAura = Color(0x38FF6B00);
+  static const Color userHaloShadow = Color(0x22000000);
+  static const Color userHaloCore = Color(0xFFFF6B00);
+  static const Color transitStopShadow = Color(0x33000000);
+  static const Color transitDakarDemDikk = Color(0xFF10B981);
+  static const Color transitAftu = Color(0xFF3B82F6);
+  static const Color transitBrt = Color(0xFFF59E0B);
+  static const Color transitTer = Color(0xFF8B5CF6);
 
   // Rating Illustration & Avatar tokens
   static const Color avatarCollar = Color(0xFFE64A19);

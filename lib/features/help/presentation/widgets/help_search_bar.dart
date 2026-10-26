@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
-import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/help/domain/bloc/help_bloc.dart';
 
 class HelpSearchBar extends StatefulWidget {
@@ -42,25 +41,29 @@ class _HelpSearchBarState extends State<HelpSearchBar> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: AppConstants.heightSearchBar,
+      height: 52,
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
+        border: Border.all(
+          color: const Color(0xFFE5E7EB),
+          width: 1,
+        ),
+        boxShadow: [
           BoxShadow(
-            color: AppColors.cardShadow,
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
         children: [
           const Icon(
             Icons.search,
-            size: 22,
-            color: AppColors.helpSearchIconGrey,
+            size: 21,
+            color: Color(0xFF6B7280),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -90,7 +93,7 @@ class _HelpSearchBarState extends State<HelpSearchBar> {
               child: const Icon(
                 Icons.cancel,
                 size: 18,
-                color: AppColors.textSecondary,
+                color: Color(0xFF9CA3AF),
               ),
             ),
         ],

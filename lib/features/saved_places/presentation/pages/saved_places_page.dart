@@ -1,6 +1,5 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -9,6 +8,10 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
 import 'package:seddo/features/saved_places/data/services/saved_places_service.dart';
 import 'package:seddo/features/saved_places/presentation/widgets/add_saved_place_sheet.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:seddo/core/navigation/slide_page_route.dart';
+import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
+import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/services/places_service.dart';
 
 /// Fullscreen modern page for managing and selecting user saved places
@@ -16,12 +19,14 @@ class SavedPlacesPage extends StatefulWidget {
   final PlacesService? placesService;
   final SavedPlacesService? savedPlacesService;
   final LatLng? currentUserLocation;
+  final bool isSelectionMode;
 
   const SavedPlacesPage({
     super.key,
     this.placesService,
     this.savedPlacesService,
     this.currentUserLocation,
+    this.isSelectionMode = false,
   });
 
   @override
@@ -106,14 +111,22 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
+        ),
         title: Text(
           'saved_places.delete_title'.tr(),
-          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 18),
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800,
+            fontSize: AppConstants.fontXl,
+          ),
         ),
         content: Text(
           'saved_places.delete_confirm'.tr(args: [place.name]),
-          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+          style: GoogleFonts.inter(
+            fontSize: AppConstants.fontMd,
+            color: AppColors.textSecondary,
+          ),
         ),
         actions: [
           TextButton(
@@ -130,9 +143,9 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,
               foregroundColor: AppColors.white,
-              elevation: 0,
+              elevation: AppConstants.elevationNone,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppConstants.radiusItem),
               ),
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -160,8 +173,138 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
     }
   }
 
+  LatLng? _getUserLocation() {
+    if (widget.currentUserLocation != null) return widget.currentUserLocation;
+    try {
+      return context.read<HomeBloc>().state.userLocation;
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _selectPlace(SavedPlaceModel place) {
-    Navigator.of(context).pop<PlaceSearchResult>(place.toPlaceSearchResult());
+    if (widget.isSelectionMode) {
+      Navigator.of(context).pop<PlaceSearchResult>(place.toPlaceSearchResult());
+    } else {
+      Navigator.of(context).pushReplacement(
+        SlideRightToLeftRoute(
+          page: PlaceSearchPage(
+            placesService: _placesService,
+            initialPickup: 'Ma position actuelle',
+            initialDestination: place.name,
+            initialDestinationResult: place.toPlaceSearchResult(),
+            currentUserLocation: _getUserLocation(),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showPlaceOptionsMenu(SavedPlaceModel place) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppConstants.radiusSheet),
+        ),
+      ),
+      builder: (bottomSheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spacingMd,
+              vertical: AppConstants.spacingUnitXl,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: AppConstants.handleWidth,
+                    height: AppConstants.handleHeight,
+                    decoration: BoxDecoration(
+                      color: AppColors.dragHandle,
+                      borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppConstants.spacingMd),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Container(
+                    width: AppConstants.circularPickerSize,
+                    height: AppConstants.circularPickerSize,
+                    decoration: BoxDecoration(
+                      color: _getIconBackgroundColor(place.iconType),
+                      borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                    ),
+                    alignment: Alignment.center,
+                    child: _buildIcon(place.iconType),
+                  ),
+                  title: Text(
+                    place.name,
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontLg,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    place.address,
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontSm,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Divider(color: AppColors.divider),
+                ListTile(
+                  leading: const Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.textPrimary,
+                    size: AppConstants.iconSizeLg,
+                  ),
+                  title: Text(
+                    'saved_places.edit'.tr(),
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontBase,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(bottomSheetContext).pop();
+                    _editPlace(place);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.delete_outline_rounded,
+                    color: AppColors.deleteRed,
+                    size: AppConstants.iconSizeLg,
+                  ),
+                  title: Text(
+                    'saved_places.delete_action'.tr(),
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontBase,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.deleteRed,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(bottomSheetContext).pop();
+                    _deletePlace(place);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Color _getIconBackgroundColor(String iconType) {
@@ -185,45 +328,41 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
   Widget _buildIcon(String iconType) {
     switch (iconType) {
       case 'home':
-        return SvgPicture.asset(
-          'assets/icons/home-svgrepo-com.svg',
-          width: 20,
-          height: 20,
-          colorFilter: const ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
+        return const Icon(
+          Icons.home_outlined,
+          size: AppConstants.iconSizeXl,
+          color: AppColors.primary,
         );
       case 'work':
-        return SvgPicture.asset(
-          'assets/icons/work-alt-bag-svgrepo-com.svg',
-          width: 20,
-          height: 20,
-          colorFilter: const ColorFilter.mode(AppColors.textPrimary, BlendMode.srcIn),
+        return const Icon(
+          Icons.work_outline_rounded,
+          size: AppConstants.iconSizeLg,
+          color: AppColors.textPrimary,
         );
       case 'airport':
-        return SvgPicture.asset(
-          'assets/icons/airplane-svgrepo-com.svg',
-          width: AppConstants.iconSizeMd,
-          height: AppConstants.iconSizeMd,
-          colorFilter: const ColorFilter.mode(AppColors.savedPlaceAirportIcon, BlendMode.srcIn),
+        return const Icon(
+          Icons.flight_rounded,
+          size: AppConstants.iconSizeLg,
+          color: AppColors.savedPlaceAirportIcon,
         );
       case 'heart':
         return const Icon(
-          Icons.favorite_rounded,
-          size: AppConstants.iconSizeMd,
+          Icons.favorite_outline_rounded,
+          size: AppConstants.iconSizeLg,
           color: AppColors.savedPlaceHeartIcon,
         );
       case 'gym':
         return const Icon(
           Icons.fitness_center_rounded,
-          size: AppConstants.iconSizeMd,
+          size: AppConstants.iconSizeLg,
           color: AppColors.savedPlaceGymIcon,
         );
       case 'star':
       default:
-        return SvgPicture.asset(
-          'assets/icons/star-svgrepo-com.svg',
-          width: 20,
-          height: 20,
-          colorFilter: const ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
+        return const Icon(
+          Icons.star_outline_rounded,
+          size: AppConstants.iconSizeLg,
+          color: AppColors.primary,
         );
     }
   }
@@ -238,327 +377,307 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
           child: Column(
-          children: [
-            // 1. Top Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: AppConstants.circularButtonSize,
-                    height: AppConstants.circularButtonSize,
-                    decoration: const BoxDecoration(
-                      color: AppColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.shadowSoftBlack,
-                          blurRadius: 8,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: AppColors.textPrimary,
-                        size: 20,
-                      ),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ),
-                  const SizedBox(width: AppConstants.spacingMd),
-                  Expanded(
-                    child: Text(
-                      'saved_places.title'.tr(),
-                      style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                  ),
-                  // "+ Ajouter" Action Button
-                  GestureDetector(
-                    onTap: _addNewPlace,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.add_rounded,
-                            color: AppColors.white,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'saved_places.add'.tr(),
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            // 2. Banner info card
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.bannerGradientStart, AppColors.bannerGradientEnd],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.cardBorder),
+            children: [
+              // 1. Top Bar: Back Circle + Two-line Title + "+ Ajouter" Capsule
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingMd,
+                  vertical: AppConstants.spacingSm,
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    // Back circular button
                     Container(
-                      width: 44,
-                      height: 44,
+                      width: AppConstants.circularPickerSize,
+                      height: AppConstants.circularPickerSize,
                       decoration: const BoxDecoration(
                         color: AppColors.white,
                         shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.shadowSoftBlack,
+                            blurRadius: AppConstants.spacingSm,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      alignment: Alignment.center,
-                      child: SvgPicture.asset(
-                        'assets/icons/star-svgrepo-com.svg',
-                        width: 22,
-                        height: 22,
-                        colorFilter: const ColorFilter.mode(
-                          AppColors.primary,
-                          BlendMode.srcIn,
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          color: AppColors.textPrimary,
+                          size: AppConstants.iconSizeMd,
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                    const SizedBox(width: AppConstants.spacingMd),
+                    // Large Two-Line Title
+                    Expanded(
+                      child: Text(
+                        'saved_places.title_caps'.tr(),
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontTitleLarge,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textPrimary,
+                          height: AppConstants.titleLineHeight,
+                          letterSpacing: AppConstants.titleLetterSpacing,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'saved_places.favorite_addresses'.tr(),
-                            style: GoogleFonts.inter(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
-                            ),
+                    const SizedBox(width: AppConstants.spacingSm),
+                    // "+ Ajouter" Capsule Action Button
+                    Material(
+                      color: AppColors.transparent,
+                      child: InkWell(
+                        onTap: _addNewPlace,
+                        borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppConstants.spacingUnitXl,
+                            vertical: AppConstants.spacingUnit,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'saved_places.favorite_subtitle'.tr(),
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              color: AppColors.textSecondary,
-                            ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(AppConstants.radiusFull),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.add_rounded,
+                                color: AppColors.white,
+                                size: AppConstants.iconSizeDefault,
+                              ),
+                              const SizedBox(width: AppConstants.spacingXs),
+                              Text(
+                                'saved_places.add'.tr(),
+                                style: GoogleFonts.inter(
+                                  fontSize: AppConstants.fontMd,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
 
-            const SizedBox(height: 14),
+              const SizedBox(height: AppConstants.spacingSm),
 
-            // 3. List of saved places
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.primary),
-                    )
-                  : _savedPlaces.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SvgPicture.asset(
-                                'assets/icons/star-svgrepo-com.svg',
-                                width: 48,
-                                height: 48,
-                                colorFilter: const ColorFilter.mode(
-                                  AppColors.textSecondary,
-                                  BlendMode.srcIn,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'saved_places.empty_title'.tr(),
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'saved_places.empty_subtitle'.tr(),
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
+              // 2. Banner info card (Touchez un lieu pour l'utiliser...)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingMd,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(AppConstants.spacingMd),
+                  decoration: BoxDecoration(
+                    color: AppColors.peachContainer,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.star_outline_rounded,
+                        color: AppColors.primary,
+                        size: AppConstants.iconSizeLg,
+                      ),
+                      const SizedBox(width: AppConstants.spacingUnitLg),
+                      Expanded(
+                        child: Text(
+                          'saved_places.tap_hint'.tr(),
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontMd,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryDark,
+                            height: AppConstants.bannerLineHeight,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: AppConstants.spacingUnitXl),
+
+              // 3. List of saved places
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: AppColors.primary),
+                      )
+                    : _savedPlaces.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.star_outline_rounded,
+                                  size: AppConstants.iconSizeHuge,
                                   color: AppColors.textSecondary,
                                 ),
-                              ),
-                              const SizedBox(height: 18),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: AppColors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 12,
+                                const SizedBox(height: AppConstants.spacingUnitLg),
+                                Text(
+                                  'saved_places.empty_title'.tr(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: AppConstants.fontLg,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
                                   ),
                                 ),
-                                icon: const Icon(Icons.add_rounded),
-                                label: Text('saved_places.add_place_button'.tr()),
-                                onPressed: _addNewPlace,
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.separated(
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppConstants.spacingMd,
-                            vertical: 8,
-                          ),
-                          itemCount: _savedPlaces.length,
-                          separatorBuilder: (_, index) => const SizedBox(height: 10),
-                          itemBuilder: (context, index) {
-                            final place = _savedPlaces[index];
-
-                            return Material(
-                              color: AppColors.white,
-                              borderRadius: BorderRadius.circular(18),
-                              child: InkWell(
-                                onTap: () => _selectPlace(place),
-                                borderRadius: BorderRadius.circular(18),
-                                child: Container(
-                                  padding: const EdgeInsets.all(14),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(18),
-                                    border: Border.all(
-                                      color: AppColors.cardBorder,
-                                      width: 1,
+                                const SizedBox(height: AppConstants.spacingXs),
+                                Text(
+                                  'saved_places.empty_subtitle'.tr(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: AppConstants.fontSm,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(height: AppConstants.spacingMd),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: AppColors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        AppConstants.radiusLg,
+                                      ),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppConstants.spacingTwenty,
+                                      vertical: AppConstants.spacingUnitLg,
                                     ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      // Themed Icon circle
-                                      Container(
-                                        width: 46,
-                                        height: 46,
-                                        decoration: BoxDecoration(
-                                          color: _getIconBackgroundColor(
-                                            place.iconType,
+                                  icon: const Icon(Icons.add_rounded),
+                                  label: Text('saved_places.add_place_button'.tr()),
+                                  onPressed: _addNewPlace,
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.separated(
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppConstants.spacingMd,
+                              vertical: AppConstants.spacingSm,
+                            ),
+                            itemCount: _savedPlaces.length,
+                            separatorBuilder: (_, index) =>
+                                const SizedBox(height: AppConstants.spacingUnitLg),
+                            itemBuilder: (context, index) {
+                              final place = _savedPlaces[index];
+
+                              return Material(
+                                color: AppColors.grayBgLight,
+                                borderRadius: BorderRadius.circular(
+                                  AppConstants.radiusDialog,
+                                ),
+                                child: InkWell(
+                                  onTap: () => _selectPlace(place),
+                                  borderRadius: BorderRadius.circular(
+                                    AppConstants.radiusDialog,
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(
+                                      AppConstants.spacingUnitXl,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(
+                                        AppConstants.radiusDialog,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        // Themed Icon Squircle
+                                        Container(
+                                          width: AppConstants
+                                              .savedPlaceIconContainerSize,
+                                          height: AppConstants
+                                              .savedPlaceIconContainerSize,
+                                          decoration: BoxDecoration(
+                                            color: _getIconBackgroundColor(
+                                              place.iconType,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                              AppConstants.radiusLg,
+                                            ),
                                           ),
-                                          shape: BoxShape.circle,
+                                          alignment: Alignment.center,
+                                          child: _buildIcon(place.iconType),
                                         ),
-                                        alignment: Alignment.center,
-                                        child: _buildIcon(place.iconType),
-                                      ),
-                                      const SizedBox(width: 14),
+                                        const SizedBox(
+                                          width: AppConstants.spacingUnitXl,
+                                        ),
 
-                                      // Name & Address
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              place.name,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.textPrimary,
+                                        // Name & Address
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                place.name,
+                                                style: GoogleFonts.inter(
+                                                  fontSize:
+                                                      AppConstants.fontLg,
+                                                  fontWeight:
+                                                      FontWeight.w800,
+                                                  color:
+                                                      AppColors.textPrimary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              place.address,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 12.5,
-                                                color: AppColors.textSecondary,
+                                              const SizedBox(
+                                                height: AppConstants.spacingXs,
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
+                                              Text(
+                                                place.address,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: AppConstants.fontMd,
+                                                  fontWeight: FontWeight.w500,
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
 
-                                      // Edit Button
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.edit_outlined,
-                                          size: 19,
-                                          color: AppColors.textSecondary,
+                                        // Vertical Three-Dots Menu Button
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.more_vert_rounded,
+                                            size: AppConstants.iconSizeLg,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                          tooltip: 'saved_places.more_options'
+                                              .tr(),
+                                          onPressed: () =>
+                                              _showPlaceOptionsMenu(place),
                                         ),
-                                        tooltip: 'Modifier',
-                                        onPressed: () => _editPlace(place),
-                                      ),
-
-                                      // Delete Button
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                          size: 19,
-                                          color: AppColors.deleteRed,
-                                        ),
-                                        tooltip: 'Supprimer',
-                                        onPressed: () => _deletePlace(place),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-            ),
-          ],
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 

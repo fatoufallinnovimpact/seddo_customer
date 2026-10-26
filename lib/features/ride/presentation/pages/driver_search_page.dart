@@ -29,6 +29,7 @@ class DriverSearchPage extends StatefulWidget {
   final PlaceSearchResult destination;
   final RideOptionModel rideOption;
   final List<LatLng> polylinePoints;
+  final String? pickupLandmark;
 
   const DriverSearchPage({
     super.key,
@@ -36,6 +37,7 @@ class DriverSearchPage extends StatefulWidget {
     required this.destination,
     required this.rideOption,
     this.polylinePoints = const [],
+    this.pickupLandmark,
   });
 
   @override

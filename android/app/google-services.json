@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "508747770448",
+    "project_id": "seddo-vtc-18a8c",
+    "storage_bucket": "seddo-vtc-18a8c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:508747770448:android:17a1ce54672b6c9c743f55",
+        "android_client_info": {
+          "package_name": "com.seddo.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYGZe5YGs7t3OS7_iSN-n2r7lXlZ4aRXg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:508747770448:android:0db47ceacb85396a743f55",
+        "android_client_info": {
+          "package_name": "com.seddo.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYGZe5YGs7t3OS7_iSN-n2r7lXlZ4aRXg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

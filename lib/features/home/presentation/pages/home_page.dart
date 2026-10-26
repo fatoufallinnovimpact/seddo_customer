@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
+import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/home/domain/bloc/home_event.dart';
 import 'package:seddo/features/home/domain/bloc/home_state.dart';
@@ -109,19 +110,19 @@ class _HomePageContentState extends State<_HomePageContent> {
 
     final stopD = await MapMarkerHelper.getTransitStopLetterMarker(
       letter: 'D',
-      color: const Color(0xFF10B981),
+      color: AppColors.transitDakarDemDikk,
     );
     final stopA = await MapMarkerHelper.getTransitStopLetterMarker(
       letter: 'A',
-      color: const Color(0xFF3B82F6),
+      color: AppColors.transitAftu,
     );
     final stopB = await MapMarkerHelper.getTransitStopLetterMarker(
       letter: 'B',
-      color: const Color(0xFFF59E0B),
+      color: AppColors.transitBrt,
     );
     final stopT = await MapMarkerHelper.getTransitStopLetterMarker(
       letter: 'T',
-      color: const Color(0xFF8B5CF6),
+      color: AppColors.transitTer,
     );
 
     if (mounted) {
@@ -426,7 +427,6 @@ class _HomePageContentState extends State<_HomePageContent> {
                           onTap: () => _scaffoldKey.currentState?.openDrawer(),
                         ),
                         _buildSeddoPill(),
-                        _buildNotificationButton(context),
                       ],
                     ),
                   ),
@@ -499,7 +499,9 @@ class _HomePageContentState extends State<_HomePageContent> {
 
   Widget _buildSeddoPill() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -518,49 +520,6 @@ class _HomePageContentState extends State<_HomePageContent> {
           fontWeight: FontWeight.w900,
           color: const Color(0xFFFF5700),
           letterSpacing: 1.0,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => SeddoDrawerWidget.openNotificationsSheet(context),
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x18000000),
-              blurRadius: 10,
-              offset: Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            const Icon(
-              Icons.notifications_none_rounded,
-              color: Color(0xFF18181A),
-              size: 24,
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Container(
-                width: 7.5,
-                height: 7.5,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFF5700),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

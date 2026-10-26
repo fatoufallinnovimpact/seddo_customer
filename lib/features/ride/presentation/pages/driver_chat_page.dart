@@ -3,11 +3,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/chat_message_model.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 
 /// Screen allowing the customer to chat with the assigned driver
 class DriverChatPage extends StatefulWidget {
@@ -105,92 +105,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
   }
 
   Future<void> _makePhoneCall() async {
-    final uri = Uri.parse('tel:${widget.driver.phone.replaceAll(' ', '')}');
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      } else {
-        if (mounted) {
-          _showCallDialog();
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        _showCallDialog();
-      }
-    }
-  }
-
-  void _showCallDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
-        ),
-        title: Text(
-          'chat.call_driver'.tr(args: [widget.driver.name]),
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'chat.driver_number'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              widget.driver.phone,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              'common.close'.tr(),
-              style: GoogleFonts.inter(
-                color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-              ),
-            ),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('chat.call_in_progress'.tr(args: [widget.driver.phone])),
-                  backgroundColor: AppColors.primary,
-                ),
-              );
-            },
-            child: Text('chat.call'.tr()),
-          ),
-        ],
-      ),
-    );
+    await InAppCallPage.show(context, driver: widget.driver);
   }
 
   @override
