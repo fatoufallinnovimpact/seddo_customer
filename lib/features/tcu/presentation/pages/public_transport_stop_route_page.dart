@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -37,6 +38,8 @@ class _PublicTransportStopRoutePageState
   bool _isNavigating = false;
   bool _isArrived = false;
   Timer? _navigationTimer;
+  StreamSubscription<Position>? _positionStreamSub;
+  final List<LatLng> _realTraveledPoints = [];
 
   late final LatLng _userPos;
   late final LatLng _stopPos;
@@ -66,6 +69,55 @@ class _PublicTransportStopRoutePageState
     _remainingDurationMinutes = _initialDuration;
 
     _initTts();
+    _initRealGpsLocation();
+  }
+
+  Future<void> _initRealGpsLocation() async {
+    if (_isTestEnvironment) return;
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        debugPrint('Location service disabled');
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        debugPrint('Location permission denied forever');
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 4),
+        ),
+      );
+
+      if (mounted) {
+        final current = LatLng(pos.latitude, pos.longitude);
+        final dist = Geolocator.distanceBetween(
+          pos.latitude,
+          pos.longitude,
+          _stopPos.latitude,
+          _stopPos.longitude,
+        ).round();
+
+        setState(() {
+          _currentUserPos = current;
+          _remainingDistanceMeters = dist;
+          _remainingDurationMinutes = dist == 0 ? 0 : (dist / 75.0).ceil();
+          _realTraveledPoints.clear();
+          _realTraveledPoints.add(current);
+        });
+
+        _fitMapBounds();
+      }
+    } catch (e) {
+      debugPrint('Error getting initial GPS position: $e');
+    }
   }
 
   void _initTts() {
@@ -123,6 +175,7 @@ class _PublicTransportStopRoutePageState
 
   @override
   void dispose() {
+    _positionStreamSub?.cancel();
     _navigationTimer?.cancel();
     _flutterTts?.stop();
     _mapController?.dispose();
@@ -171,7 +224,16 @@ class _PublicTransportStopRoutePageState
         : [_userPos, _stopPos];
 
     // 1. Traveled path (Discreet grey, style Yango)
-    if (_progress > 0.0 && !_isArrived) {
+    if (_realTraveledPoints.length >= 2 && !_isArrived) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('walking_route_traveled'),
+          points: List<LatLng>.from(_realTraveledPoints),
+          color: AppColors.routeTraveled,
+          width: 6,
+        ),
+      );
+    } else if (_progress > 0.0 && !_isArrived) {
       final traveledPoints =
           _calculateTraveledPath(fullPath, _currentUserPos, _progress);
       if (traveledPoints.length >= 2) {
@@ -380,11 +442,12 @@ class _PublicTransportStopRoutePageState
       _speak(
         'Guidage piéton démarré. Continuez tout droit vers l\'arrêt ${widget.routeOption.departureStop.name}.',
       );
-      _startWalkingSimulation();
+      _startLiveGpsGuidance();
       return;
     }
 
     if (_isNavigating) {
+      _positionStreamSub?.cancel();
       _navigationTimer?.cancel();
       _flutterTts?.stop();
       _lastSpokenPhase = -1;
@@ -446,18 +509,23 @@ class _PublicTransportStopRoutePageState
         ),
       );
 
-      _startWalkingSimulation();
+      _startLiveGpsGuidance();
     }
   }
 
-  void _startWalkingSimulation() {
+  void _startLiveGpsGuidance() {
+    _positionStreamSub?.cancel();
     _navigationTimer?.cancel();
 
-    final totalDistance = _initialDistance > 0 ? _initialDistance : 280;
-    final stepDistance = (totalDistance / 9.0).clamp(25.0, 50.0);
-    final progressStep = stepDistance / totalDistance;
+    if (_realTraveledPoints.isEmpty) {
+      _realTraveledPoints.add(_currentUserPos);
+    }
 
     if (_isTestEnvironment) {
+      final totalDistance = _initialDistance > 0 ? _initialDistance : 280;
+      final stepDistance = (totalDistance / 9.0).clamp(25.0, 50.0);
+      final progressStep = stepDistance / totalDistance;
+
       setState(() {
         _progress = (_progress + progressStep).clamp(0.0, 1.0);
         _remainingDistanceMeters =
@@ -472,88 +540,110 @@ class _PublicTransportStopRoutePageState
       return;
     }
 
-    _navigationTimer = Timer.periodic(
-      const Duration(milliseconds: 1400),
-      (timer) {
-        if (!mounted) {
-          timer.cancel();
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 2, // Live real updates every 2 meters walked
+    );
+
+    _positionStreamSub = Geolocator.getPositionStream(
+      locationSettings: locationSettings,
+    ).listen(
+      (Position position) {
+        if (!mounted || !_isNavigating) return;
+
+        final newPos = LatLng(position.latitude, position.longitude);
+        final distanceMeters = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          _stopPos.latitude,
+          _stopPos.longitude,
+        ).round();
+
+        final totalDistance = _initialDistance > 0 ? _initialDistance : 280;
+        final progress =
+            (1.0 - (distanceMeters / totalDistance)).clamp(0.0, 1.0);
+        final durationMinutes =
+            distanceMeters == 0 ? 0 : (distanceMeters / 75.0).ceil();
+
+        setState(() {
+          _currentUserPos = newPos;
+          _remainingDistanceMeters = distanceMeters;
+          _remainingDurationMinutes = durationMinutes;
+          _progress = progress;
+          _realTraveledPoints.add(newPos);
+        });
+
+        // Smooth camera follow as user walks in real life
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(newPos),
+        );
+
+        // Arrival detection (within 15 meters)
+        if (distanceMeters <= 15) {
+          _handleArrival();
           return;
         }
 
-        setState(() {
-          _progress += progressStep;
-
-          if (_progress >= 1.0) {
-            _progress = 1.0;
-            _remainingDistanceMeters = 0;
-            _remainingDurationMinutes = 0;
-            _currentUserPos = _stopPos;
-            _isNavigating = false;
-            _isArrived = true;
-            timer.cancel();
-          } else {
-            _remainingDistanceMeters =
-                ((1.0 - _progress) * totalDistance).round().clamp(0, totalDistance);
-            _remainingDurationMinutes =
-                (_remainingDistanceMeters / 75.0).ceil();
-            _currentUserPos = _interpolateAlongPath(
-              widget.routeOption.walkingPathToStop,
-              _progress,
-            );
-          }
-        });
-
-        // Voice Guidance step announcements
-        if (_isNavigating) {
-          if (_progress >= 0.35 && _progress < 0.70 && _lastSpokenPhase < 1) {
-            _lastSpokenPhase = 1;
-            _speak('Dans cinquante mètres, tournez à droite vers l\'arrêt.');
-          } else if (_progress >= 0.70 && _progress < 1.0 && _lastSpokenPhase < 2) {
-            _lastSpokenPhase = 2;
-            _speak(
-              'L\'arrêt ${widget.routeOption.departureStop.name} est à cinquante mètres tout droit.',
-            );
-          }
-        }
-
-        if (_isNavigating && _mapController != null) {
-          _mapController?.animateCamera(
-            CameraUpdate.newLatLng(_currentUserPos),
+        // Voice guidance announcements along the walk
+        if (distanceMeters <= 50 && _lastSpokenPhase < 2) {
+          _lastSpokenPhase = 2;
+          _speak(
+            'L\'arrêt ${widget.routeOption.departureStop.name} est à cinquante mètres tout droit.',
           );
-        } else if (_isArrived) {
-          if (_lastSpokenPhase < 3) {
-            _lastSpokenPhase = 3;
-            _speak(
-              'Vous êtes arrivé à l\'arrêt ${widget.routeOption.departureStop.name}. Bon voyage !',
-            );
-          }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: AppColors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Vous êtes arrivé à l\'arrêt ${widget.routeOption.departureStop.name} !',
-                      style: GoogleFonts.inter(
-                        color: AppColors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: AppColors.tcuDddGreen,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-              ),
-              duration: const Duration(seconds: 4),
-            ),
+        } else if (distanceMeters <= 100 && distanceMeters > 50 && _lastSpokenPhase < 1) {
+          _lastSpokenPhase = 1;
+          _speak(
+            'Continuez tout droit vers l\'arrêt ${widget.routeOption.departureStop.name}.',
           );
         }
       },
+      onError: (e) {
+        debugPrint('GPS guidance stream error: $e');
+      },
+    );
+  }
+
+  void _handleArrival() {
+    _positionStreamSub?.cancel();
+    setState(() {
+      _remainingDistanceMeters = 0;
+      _remainingDurationMinutes = 0;
+      _progress = 1.0;
+      _isNavigating = false;
+      _isArrived = true;
+    });
+
+    if (_lastSpokenPhase < 3) {
+      _lastSpokenPhase = 3;
+      _speak(
+        'Vous êtes arrivé à l\'arrêt ${widget.routeOption.departureStop.name}. Bon voyage !',
+      );
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: AppColors.white),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Vous êtes arrivé à l\'arrêt ${widget.routeOption.departureStop.name} !',
+                style: GoogleFonts.inter(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.tcuDddGreen,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+        ),
+        duration: const Duration(seconds: 4),
+      ),
     );
   }
 
@@ -592,8 +682,35 @@ class _PublicTransportStopRoutePageState
               onMapCreated: _onMapCreated,
               zoomControlsEnabled: false,
               myLocationButtonEnabled: false,
+              myLocationEnabled: true,
               mapToolbarEnabled: false,
               compassEnabled: false,
+            ),
+          ),
+
+          // Floating Recenter on my real GPS position button
+          Positioned(
+            right: AppConstants.spacingMd,
+            bottom: 270,
+            child: FloatingActionButton.small(
+              heroTag: 'tcu_recenter_gps_button',
+              backgroundColor: AppColors.white,
+              elevation: 4,
+              onPressed: () {
+                _mapController?.animateCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(
+                      target: _currentUserPos,
+                      zoom: 17.5,
+                    ),
+                  ),
+                );
+              },
+              child: const Icon(
+                Icons.my_location_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
             ),
           ),
 

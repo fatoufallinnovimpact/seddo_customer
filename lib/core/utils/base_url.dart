@@ -1,10 +1,12 @@
 /// Centralized API base URLs for the Seddo application.
 /// Follows Innov & Impact Africa coding guidelines.
 abstract class BaseUrl {
-  // TODO: Replace with environment-based configuration when backend is ready
-  static const String development = 'https://dev-api.seddo.africa';
+  static const String seddoApi = 'https://seddo-api.innov.sn';
+  static const String development = seddoApi;
   static const String staging = 'https://staging-api.seddo.africa';
   static const String production = 'https://api.seddo.africa';
+  // Transit v2 base URL
+  static const String transitApi = 'https://transit.innov.sn';
 
-  static const String current = development;
+  static const String current = seddoApi;
 }

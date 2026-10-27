@@ -53,8 +53,8 @@ void main() {
     expect(find.text('Code reçu par SMS'), findsOneWidget);
     expect(find.text('Continuer'), findsOneWidget);
 
-    // Enter 6 digit code
-    await tester.enterText(find.byType(TextField), '390214');
+    // Enter 5 digit code to verify boxes display
+    await tester.enterText(find.byType(TextField), '39021');
     await tester.pumpAndSettle();
 
     expect(find.text('3'), findsOneWidget);
@@ -62,6 +62,12 @@ void main() {
     expect(find.text('0'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('4'), findsOneWidget);
+
+    // Enter 6th digit to trigger auto-submit and navigation
+    await tester.enterText(find.byType(TextField), '390214');
+    await tester.pumpAndSettle();
+
+    // Since mock needsProfile is false, it navigates to HomePage
+    expect(find.byType(OtpVerificationPage), findsNothing);
   });
 }

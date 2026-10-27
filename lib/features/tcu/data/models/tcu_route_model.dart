@@ -75,6 +75,35 @@ enum TcuTransportType {
   bool get isTrain => this == TcuTransportType.ter;
 }
 
+/// Route preference filters (Plus rapide, Alternative, Panoramique) matching the new design
+enum TcuRouteFilter {
+  fastest,
+  alternative,
+  panoramic;
+
+  String get displayName {
+    switch (this) {
+      case TcuRouteFilter.fastest:
+        return 'tcu.filter_fastest'.tr();
+      case TcuRouteFilter.alternative:
+        return 'tcu.filter_alternative'.tr();
+      case TcuRouteFilter.panoramic:
+        return 'tcu.filter_panoramic'.tr();
+    }
+  }
+
+  String get defaultDurationText {
+    switch (this) {
+      case TcuRouteFilter.fastest:
+        return '26 min';
+      case TcuRouteFilter.alternative:
+        return '33 min';
+      case TcuRouteFilter.panoramic:
+        return '30 min';
+    }
+  }
+}
+
 /// Represents an individual stop in a public transport journey
 class TcuStop {
   final String id;

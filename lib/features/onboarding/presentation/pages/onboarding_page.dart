@@ -11,7 +11,6 @@ import 'package:seddo/features/auth/presentation/pages/phone_input_page.dart';
 import 'package:seddo/features/onboarding/domain/bloc/onboarding_bloc.dart';
 import 'package:seddo/features/onboarding/domain/bloc/onboarding_state.dart';
 import 'package:seddo/features/onboarding/presentation/widgets/animated_parking_car_widget.dart';
-import 'package:seddo/features/onboarding/presentation/widgets/consent_modal_widget.dart';
 import 'package:seddo/features/onboarding/presentation/widgets/language_selector_widget.dart';
 
 /// Main Onboarding screen with clean white theme:
@@ -43,30 +42,14 @@ class _OnboardingView extends StatelessWidget {
     BuildContext context,
     OnboardingState state,
   ) async {
-    if (state.isCompleted) {
-      Navigator.of(context).push(
-        SlideRightToLeftRoute(
-          page: BlocProvider(
-            create: (_) => AuthBloc(),
-            child: const PhoneInputPage(),
-          ),
+    Navigator.of(context).push(
+      SlideRightToLeftRoute(
+        page: BlocProvider(
+          create: (_) => AuthBloc(),
+          child: const PhoneInputPage(),
         ),
-      );
-      return;
-    }
-
-    final accepted = await ConsentModalWidget.show(context);
-    if (!context.mounted) return;
-    if (accepted == true || context.read<OnboardingBloc>().state.isCompleted) {
-      Navigator.of(context).push(
-        SlideRightToLeftRoute(
-          page: BlocProvider(
-            create: (_) => AuthBloc(),
-            child: const PhoneInputPage(),
-          ),
-        ),
-      );
-    }
+      ),
+    );
   }
 
   @override

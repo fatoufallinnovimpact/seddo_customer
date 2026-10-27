@@ -27,7 +27,23 @@ class MockAuthTestAssetLoader extends AssetLoader {
         'code_received': 'Code reçu par SMS',
         'enter_code_sent_to': 'Entrez le code envoyé au',
         'resend_code_in': 'Renvoyer le code dans',
-        'resend_code': 'Renvoyer le code'
+        'resend_code': 'Renvoyer le code',
+        'profile_title': 'Votre profil',
+        'profile_subtitle':
+            'Entrez votre prénom et votre nom pour que votre chauffeur puisse vous identifier.',
+        'first_name': 'Prénom',
+        'first_name_hint': 'Ex: Awa',
+        'last_name': 'Nom',
+        'last_name_hint': 'Ex: Diop',
+        'accept_and_continue': 'Accepter et continuer'
+      },
+      'consent': {
+        'title': 'Consentements obligatoires',
+        'subtitle': 'Pour vous offrir un service fiable et sécurisé...',
+        'cgu': 'CGU',
+        'privacy': 'Protection des données',
+        'location': 'Géolocalisation',
+        'accept_start': 'Accepter & Commencer'
       }
     };
   }

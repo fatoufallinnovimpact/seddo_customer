@@ -1,5 +1,7 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 
 /// Service gérant les notifications push distantes Firebase Cloud Messaging (FCM).
 /// Permet la réception des notifications push en premier plan (foreground),
@@ -46,11 +48,19 @@ class FcmService {
       // ignore: deprecated_member_use
       final token = await fcm.getToken();
       debugPrint('[FCM] Token FCM de cet appareil : $token');
+      if (token != null && token.isNotEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('fcm_device_token', token);
+        await AuthRepository().registerCurrentDevicePushToken();
+      }
 
       // 4. Écoute du renouvellement de token
       // ignore: deprecated_member_use
-      fcm.onTokenRefresh.listen((newToken) {
+      fcm.onTokenRefresh.listen((newToken) async {
         debugPrint('[FCM] Token FCM renouvelé : $newToken');
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('fcm_device_token', newToken);
+        await AuthRepository().registerCurrentDevicePushToken();
       });
 
       _initialized = true;

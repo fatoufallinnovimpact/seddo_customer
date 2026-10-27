@@ -118,4 +118,22 @@ void main() {
     expect(find.text('5 arrêts à moins de 500 m'), findsOneWidget);
     expect(find.text('Où allez-vous en commun ?'), findsOneWidget);
   });
+
+  testWidgets('Tapping menu icon opens endDrawer from right to left',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(createHomeScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // Tap on burger menu button
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle();
+
+    // Verify endDrawer is open and visible
+    expect(find.text('Activité'), findsOneWidget);
+    expect(find.text('Courses et remboursements'), findsOneWidget);
+  });
 }

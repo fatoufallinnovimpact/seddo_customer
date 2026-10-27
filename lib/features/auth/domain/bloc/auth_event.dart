@@ -37,7 +37,7 @@ class AuthOtpSubmittedEvent extends AuthEvent {
   const AuthOtpSubmittedEvent();
 }
 
-/// Dispatched to resend the OTP SMS
+/// Dispatched to resend the OTP SMS / WhatsApp
 class AuthResendOtpEvent extends AuthEvent {
   const AuthResendOtpEvent();
 }
@@ -50,4 +50,40 @@ class AuthTimerTickedEvent extends AuthEvent {
 
   @override
   List<Object?> get props => [secondsRemaining];
+}
+
+/// Dispatched to complete user profile registration after OTP verification
+class AuthRegisterProfileEvent extends AuthEvent {
+  final String firstName;
+  final String lastName;
+  final String lang;
+  final bool acceptData;
+  final bool acceptLocation;
+
+  const AuthRegisterProfileEvent({
+    required this.firstName,
+    required this.lastName,
+    required this.lang,
+    this.acceptData = true,
+    this.acceptLocation = true,
+  });
+
+  @override
+  List<Object?> get props => [
+        firstName,
+        lastName,
+        lang,
+        acceptData,
+        acceptLocation,
+      ];
+}
+
+/// Dispatched to load the cached session user on app start
+class AuthLoadSessionEvent extends AuthEvent {
+  const AuthLoadSessionEvent();
+}
+
+/// Dispatched on logout confirmation
+class AuthLogoutEvent extends AuthEvent {
+  const AuthLogoutEvent();
 }

@@ -33,7 +33,9 @@
 			<string>sms</string>
 		</array>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Seddo a besoin de votre position pour vous localiser sur la carte et trouver des chauffeurs à proximité.</string>
+		<string>Seddo a besoin de votre position pour vous localiser sur la carte et vous guider en temps réel.</string>
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Seddo a besoin de votre position pour vous guider en temps réel jusqu'à l'arrêt de transport.</string>
 		<key>UIFileSharingEnabled</key>
 		<true/>
 		<key>LSSupportsOpeningDocumentsInPlace</key>

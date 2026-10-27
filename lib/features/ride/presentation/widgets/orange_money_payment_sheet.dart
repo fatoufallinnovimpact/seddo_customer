@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 
 enum OrangeMoneyPaymentResult {
   success,
@@ -34,15 +35,18 @@ class OrangeMoneyPaymentSheet extends StatefulWidget {
   static Future<OrangeMoneyPaymentResult?> show(
     BuildContext context, {
     required RideOptionModel rideOption,
-    String phoneDisplay = '77 ••• 45 12',
+    String? phoneDisplay,
   }) {
+    final effectivePhone = phoneDisplay ??
+        AuthRepository().currentUser?.maskedPhone ??
+        '77 ••• 45 12';
     return showModalBottomSheet<OrangeMoneyPaymentResult>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.transparent,
       builder: (ctx) => OrangeMoneyPaymentSheet(
         rideOption: rideOption,
-        phoneDisplay: phoneDisplay,
+        phoneDisplay: effectivePhone,
       ),
     );
   }

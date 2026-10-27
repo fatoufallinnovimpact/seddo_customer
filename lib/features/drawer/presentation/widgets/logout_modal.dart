@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
 
 /// Modal bottom sheet for logout confirmation matching the Crone project design:
@@ -13,7 +14,7 @@ import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dar
 /// - Bold title and explanatory subtitle
 /// - "Annuler" outlined capsule button and "Se déconnecter" red capsule button
 /// - Upon confirmation, clears backstack and redirects to OnboardingPage
-class LogoutModal extends StatelessWidget {
+class LogoutModal extends StatefulWidget {
   const LogoutModal({super.key});
 
   static Future<void> show(BuildContext context) {
@@ -22,6 +23,32 @@ class LogoutModal extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: AppColors.transparent,
       builder: (ctx) => const LogoutModal(),
+    );
+  }
+
+  @override
+  State<LogoutModal> createState() => _LogoutModalState();
+}
+
+class _LogoutModalState extends State<LogoutModal> {
+  bool _isLoggingOut = false;
+
+  Future<void> _handleLogout() async {
+    if (_isLoggingOut) return;
+
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    setState(() {
+      _isLoggingOut = true;
+    });
+
+    try {
+      await AuthRepository().logout();
+    } catch (_) {}
+
+    navigator.pushAndRemoveUntil(
+      SlideRightToLeftRoute(page: const OnboardingPage()),
+      (route) => false,
     );
   }
 
@@ -109,7 +136,7 @@ class LogoutModal extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _isLoggingOut ? null : () => Navigator.of(context).pop(),
                   style: OutlinedButton.styleFrom(
                     backgroundColor: AppColors.white,
                     side: const BorderSide(
@@ -134,13 +161,7 @@ class LogoutModal extends StatelessWidget {
               const SizedBox(width: AppConstants.spacingUnitLg),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pushAndRemoveUntil(
-                      SlideRightToLeftRoute(page: const OnboardingPage()),
-                      (route) => false,
-                    );
-                  },
+                  onPressed: _isLoggingOut ? null : _handleLogout,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.sirenRed,
                     foregroundColor: AppColors.white,
@@ -150,14 +171,25 @@ class LogoutModal extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: AppConstants.spacingUnitXl),
                     elevation: 0,
                   ),
-                  child: Text(
-                    'drawer.logout'.tr(),
-                    style: GoogleFonts.inter(
-                      color: AppColors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  child: _isLoggingOut
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppColors.white,
+                            ),
+                          ),
+                        )
+                      : Text(
+                          'drawer.logout'.tr(),
+                          style: GoogleFonts.inter(
+                            color: AppColors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                 ),
               ),
             ],

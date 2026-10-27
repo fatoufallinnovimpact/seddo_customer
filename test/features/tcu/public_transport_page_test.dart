@@ -49,14 +49,17 @@ void main() {
     });
 
     testWidgets(
-        'PublicTransportPage renders header, origin/destination swap, and filters',
+        'PublicTransportPage renders header, origin/destination swap, date/time search and filters',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
 
       await tester.pumpWidget(
         wrapWithTestLocalization(
-          child: const PublicTransportPage(),
+          child: const PublicTransportPage(
+            initialOrigin: 'Fann Hock',
+            initialDestination: 'Liberté 6',
+          ),
         ),
       );
 
@@ -74,21 +77,36 @@ void main() {
       await tester.tap(swapButton);
       await tester.pumpAndSettle();
 
-      // Filter chips bar
-      expect(find.text('Tous'), findsOneWidget);
-      expect(find.text('Dem Dikk'), findsWidgets);
-      expect(find.text('AFTU'), findsWidgets);
-      expect(find.text('BRT'), findsWidgets);
-      expect(find.text('TER'), findsWidgets);
+      // Date & Time pickers and Rechercher button matching user attachment
+      expect(find.byKey(const Key('tcu_date_picker_button')), findsOneWidget);
+      expect(find.byKey(const Key('tcu_time_picker_button')), findsOneWidget);
+      expect(find.byKey(const Key('tcu_search_button')), findsOneWidget);
 
-      // Subtitle counter
-      expect(find.text('4 options pour votre trajet'), findsOneWidget);
+      // Filter pills: Plus rapide, Alternative, Panoramique
+      expect(find.text('Plus rapide'), findsOneWidget);
+      expect(find.text('Alternative'), findsOneWidget);
+      expect(find.text('Panoramique'), findsOneWidget);
+      expect(find.text('26 min'), findsOneWidget);
+      expect(find.text('33 min'), findsOneWidget);
+      expect(find.text('30 min'), findsOneWidget);
 
-      // Filter by AFTU
-      await tester.tap(find.text('AFTU'));
+      // Before search, placeholder is shown and route options are not yet loaded
+      expect(find.text('Où et quand souhaitez-vous partir ?'), findsOneWidget);
+      expect(find.textContaining('DDD 10'), findsNothing);
+
+      // Tap "Rechercher"
+      await tester.tap(find.byKey(const Key('tcu_search_button')));
       await tester.pumpAndSettle();
 
-      expect(find.text('1 option pour votre trajet'), findsOneWidget);
+      // Options now displayed
+      expect(find.text('4 options pour votre trajet'), findsOneWidget);
+      expect(find.textContaining('B1'), findsOneWidget);
+
+      // Filter by Alternative
+      await tester.tap(find.byKey(const Key('tcu_filter_alternative')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 options pour votre trajet'), findsOneWidget);
       expect(find.textContaining('AFTU 24'), findsOneWidget);
     });
 
@@ -100,10 +118,21 @@ void main() {
 
       await tester.pumpWidget(
         wrapWithTestLocalization(
-          child: const PublicTransportPage(),
+          child: const PublicTransportPage(
+            autoSearch: true,
+            initialOrigin: 'Fann Hock',
+            initialDestination: 'Liberté 6',
+          ),
         ),
       );
 
+      await tester.pumpAndSettle();
+
+      // Select Panoramique filter to bring DDD 10 to top
+      final panoramicFilter = find.byKey(const Key('tcu_filter_panoramic'));
+      await tester.ensureVisible(panoramicFilter);
+      await tester.pumpAndSettle();
+      await tester.tap(panoramicFilter);
       await tester.pumpAndSettle();
 
       // Verify DDD 10 card
@@ -161,7 +190,7 @@ void main() {
 
       // Wolof title
       expect(find.text('Fan lañuy dem ?'), findsOneWidget);
-      expect(find.text('Lépp'), findsOneWidget);
+      expect(find.text('Gën a gaaw'), findsOneWidget);
       expect(find.text('Fi ngay jóge'), findsOneWidget);
       expect(find.text('Fa ngay dem'), findsOneWidget);
 
@@ -179,6 +208,7 @@ void main() {
       await tester.pumpWidget(
         wrapWithTestLocalization(
           child: const PublicTransportPage(
+            autoSearch: true,
             initialOrigin: 'Fann Hock',
             initialDestination: 'Liberté 6',
           ),
@@ -212,6 +242,7 @@ void main() {
       await tester.pumpWidget(
         wrapWithTestLocalization(
           child: const PublicTransportPage(
+            autoSearch: true,
             initialOrigin: 'Ouakam',
             initialDestination: 'Plateau',
           ),
@@ -254,12 +285,46 @@ void main() {
     });
 
     testWidgets(
+        'PublicTransportPage scrolls as a single page so header and search box move on scroll',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(
+            autoSearch: true,
+            initialOrigin: 'Fann Hock',
+            initialDestination: 'Liberté 6',
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final headerFinder = find.text('Où allons-nous ?');
+      expect(headerFinder, findsOneWidget);
+      final initialHeaderY = tester.getTopLeft(headerFinder).dy;
+
+      // Drag up to scroll the page down
+      await tester.drag(
+        find.byType(SingleChildScrollView).first,
+        const Offset(0, -250),
+      );
+      await tester.pumpAndSettle();
+
+      final scrolledHeaderY = tester.getTopLeft(headerFinder).dy;
+      // Header has moved up along with the rest of the page
+      expect(scrolledHeaderY, lessThan(initialHeaderY));
+    });
+
+    testWidgets(
         'PublicTransportStopRoutePage opens GoogleMap and live decrements remaining distance on start walking',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
 
-      const service = PublicTransportService();
+      final service = PublicTransportService();
       final options = await tester.runAsync(() => service.getRouteOptions());
       final sampleOption = options!.first;
 
@@ -296,7 +361,7 @@ void main() {
 
     test('PublicTransportService returns default options and filters correctly',
         () async {
-      const service = PublicTransportService();
+      final service = PublicTransportService();
 
       final all = await service.getRouteOptions();
       expect(all.length, 4);

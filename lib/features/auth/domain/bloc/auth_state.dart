@@ -1,4 +1,6 @@
 import 'package:equatable/equatable.dart';
+import 'package:seddo/features/auth/data/models/otp_request_response_model.dart';
+import 'package:seddo/features/auth/data/models/user_model.dart';
 
 enum AuthStatus {
   initial,
@@ -6,6 +8,9 @@ enum AuthStatus {
   phoneSubmitted,
   otpVerifying,
   otpSuccess,
+  registerSubmitting,
+  registerSuccess,
+  loggedOut,
   error,
 }
 
@@ -19,6 +24,9 @@ class AuthState extends Equatable {
   final bool canResend; // resendSeconds == 0
   final AuthStatus status;
   final String? errorMessage;
+  final UserModel? user;
+  final bool needsProfile;
+  final OtpRequestResponseModel? otpResponse;
 
   const AuthState({
     this.rawPhoneNumber = '',
@@ -30,6 +38,9 @@ class AuthState extends Equatable {
     this.canResend = false,
     this.status = AuthStatus.initial,
     this.errorMessage,
+    this.user,
+    this.needsProfile = true,
+    this.otpResponse,
   });
 
   AuthState copyWith({
@@ -42,6 +53,9 @@ class AuthState extends Equatable {
     bool? canResend,
     AuthStatus? status,
     String? errorMessage,
+    UserModel? user,
+    bool? needsProfile,
+    OtpRequestResponseModel? otpResponse,
   }) {
     return AuthState(
       rawPhoneNumber: rawPhoneNumber ?? this.rawPhoneNumber,
@@ -53,6 +67,9 @@ class AuthState extends Equatable {
       canResend: canResend ?? this.canResend,
       status: status ?? this.status,
       errorMessage: errorMessage ?? this.errorMessage,
+      user: user ?? this.user,
+      needsProfile: needsProfile ?? this.needsProfile,
+      otpResponse: otpResponse ?? this.otpResponse,
     );
   }
 
@@ -67,5 +84,8 @@ class AuthState extends Equatable {
         canResend,
         status,
         errorMessage,
+        user,
+        needsProfile,
+        otpResponse,
       ];
 }

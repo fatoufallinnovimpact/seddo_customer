@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
+import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
 
 /// Splash page showing solid Seddo orange background and an animated SEDDO logo reveal.
@@ -61,19 +63,34 @@ class _SplashPageState extends State<SplashPage>
       }
     });
 
-    // Navigate to onboarding after viewing logo
+    // Navigate to next screen after viewing logo
     _navigationTimer = Timer(
       const Duration(milliseconds: 2800),
-      _navigateToOnboarding,
+      _navigateToNextScreen,
     );
   }
 
-  void _navigateToOnboarding() {
+  Future<void> _navigateToNextScreen() async {
     if (!mounted) return;
+    final authRepo = AuthRepository();
+    final isAuth = await authRepo.isAuthenticated();
+    if (!mounted) return;
+
+    final Widget targetPage;
+    if (isAuth) {
+      targetPage = const HomePage();
+    } else {
+      // If the user has not completed their profile yet, clear the incomplete session
+      // so they restart cleanly from Onboarding and re-enter their number to receive a new OTP.
+      await authRepo.clearIncompleteSession();
+      targetPage = const OnboardingPage();
+    }
+
+    if (!mounted) return;
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder<void>(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const OnboardingPage(),
+        pageBuilder: (context, animation, secondaryAnimation) => targetPage,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },

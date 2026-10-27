@@ -39,7 +39,14 @@
     "code_received": "Kood bu ñu la yónnee ci SMS",
     "enter_code_sent_to": "Dugalal kood bu ñu yónnee ci",
     "resend_code_in": "Yónneewaat kood bi ci",
-    "resend_code": "Yónneewaat kood bi"
+    "resend_code": "Yónneewaat kood bi",
+    "profile_title": "Sa profil",
+    "profile_subtitle": "Bindal sa tur ak sa sant ngir soféer bi mën la raññee.",
+    "first_name": "Tur",
+    "first_name_hint": "Misaal: Awa",
+    "last_name": "Sant",
+    "last_name_hint": "Misaal: Diop",
+    "accept_and_continue": "Nangu te wéy"
   },
   "home": {
     "where_to": "Fan ngay dem ?",
@@ -423,7 +430,13 @@
     "next_bus": "Bus bi ci tegu",
     "next_train": "Tren bi ci tegu",
     "walking_started": "Yoonu doxiin bi tàmbli na jëm {}",
-    "stops_list_title": "Limu taxawaay yi"
+    "stops_list_title": "Limu taxawaay yi",
+    "search": "Seet",
+    "filter_fastest": "Gën a gaaw",
+    "filter_alternative": "Yeneen yoon",
+    "filter_panoramic": "Panoramique",
+    "plan_trip": "Fan ak kañ nga bëgg a dem ?",
+    "plan_trip_subtitle": "Tànnal bis bi ak waxtu wi te bës ci Seet ngir gis yoon yi."
   },
   "privacy": {
     "page_title": "Sutura ak dencu mbir",

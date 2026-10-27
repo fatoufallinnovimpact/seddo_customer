@@ -334,9 +334,8 @@ class _HomePageContentState extends State<_HomePageContent> {
 
     return Scaffold(
       key: _scaffoldKey,
-      drawer: const SeddoDrawerWidget(),
-      drawerEnableOpenDragGesture: true,
-      drawerEdgeDragWidth: 60,
+      endDrawer: const SeddoDrawerWidget(),
+      endDrawerEnableOpenDragGesture: true,
       backgroundColor: Colors.white,
       body: BlocConsumer<HomeBloc, HomeState>(
         listenWhen: (prev, curr) =>
@@ -422,11 +421,11 @@ class _HomePageContentState extends State<_HomePageContent> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        _buildSeddoPill(),
                         _buildTopCircleButton(
                           icon: Icons.menu_rounded,
-                          onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                          onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
                         ),
-                        _buildSeddoPill(),
                       ],
                     ),
                   ),

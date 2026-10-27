@@ -21,11 +21,13 @@ import 'package:seddo/services/places_service.dart';
 class PublicTransportPage extends StatefulWidget {
   final String initialOrigin;
   final String initialDestination;
+  final bool autoSearch;
 
   const PublicTransportPage({
     super.key,
-    this.initialOrigin = 'Fann Hock',
-    this.initialDestination = 'Liberté 6',
+    this.initialOrigin = '',
+    this.initialDestination = '',
+    this.autoSearch = false,
   });
 
   @override
@@ -33,7 +35,7 @@ class PublicTransportPage extends StatefulWidget {
 }
 
 class _PublicTransportPageState extends State<PublicTransportPage> {
-  final PublicTransportService _service = const PublicTransportService();
+  final PublicTransportService _service = PublicTransportService();
   final PlacesService _placesService = PlacesService();
 
   late final TextEditingController _originController;
@@ -41,9 +43,20 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   final FocusNode _originFocusNode = FocusNode();
   final FocusNode _destinationFocusNode = FocusNode();
 
-  TcuTransportType _selectedFilter = TcuTransportType.all;
+  // GPS coordinates for Transit v2 backend API (defaults to Dakar center until GPS resolution)
+  double _originLat = 14.6937949;
+  double _originLng = -17.4914255;
+  double _destinationLat = 14.7115399;
+  double _destinationLng = -17.47601;
+
+  TcuRouteFilter _selectedRouteFilter = TcuRouteFilter.fastest;
   List<TcuRouteOption> _allOptions = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+  bool _hasSearched = false;
+
+  // Selected Date and Time for TCU travel matching design
+  DateTime _selectedDate = DateTime(2026, 10, 27);
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 12, minute: 10);
 
   // Track expanded stops lists per route ID
   final Set<String> _expandedStopsRouteIds = {};
@@ -60,9 +73,23 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   @override
   void initState() {
     super.initState();
-    _originController = TextEditingController(text: widget.initialOrigin);
+    final originText = widget.initialOrigin.isNotEmpty
+        ? widget.initialOrigin
+        : 'Ma position actuelle';
+    _originController = TextEditingController(text: originText);
     _destinationController =
         TextEditingController(text: widget.initialDestination);
+
+    if (widget.initialOrigin.isEmpty ||
+        widget.initialOrigin == 'Ma position actuelle') {
+      _selectCurrentPositionAsOrigin();
+    } else {
+      _resolvePresetCoordinates(widget.initialOrigin, true);
+    }
+
+    if (widget.initialDestination.isNotEmpty) {
+      _resolvePresetCoordinates(widget.initialDestination, false);
+    }
 
     _originFocusNode.addListener(() {
       if (_originFocusNode.hasFocus) {
@@ -84,7 +111,44 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
       }
     });
 
-    _loadRoutes();
+    final now = DateTime.now();
+    _selectedDate = now.year >= 2026 ? now : DateTime(2026, 10, 27);
+
+    if (widget.autoSearch && _destinationController.text.isNotEmpty) {
+      _hasSearched = true;
+      _loadRoutes();
+    }
+  }
+
+  void _resolvePresetCoordinates(String place, bool isOrigin) {
+    final lower = place.toLowerCase();
+    double? lat;
+    double? lng;
+    if (lower.contains('ouakam')) {
+      lat = 14.7231;
+      lng = -17.4912;
+    } else if (lower.contains('plateau')) {
+      lat = 14.6738;
+      lng = -17.4372;
+    } else if (lower.contains('almadies')) {
+      lat = 14.7431;
+      lng = -17.5195;
+    } else if (lower.contains('fann')) {
+      lat = 14.6937949;
+      lng = -17.4914255;
+    } else if (lower.contains('libert')) {
+      lat = 14.7115399;
+      lng = -17.47601;
+    }
+    if (lat != null && lng != null) {
+      if (isOrigin) {
+        _originLat = lat;
+        _originLng = lng;
+      } else {
+        _destinationLat = lat;
+        _destinationLng = lng;
+      }
+    }
   }
 
   @override
@@ -97,12 +161,198 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     super.dispose();
   }
 
+  String get _formattedDate {
+    final d = _selectedDate.day.toString().padLeft(2, '0');
+    final m = _selectedDate.month.toString().padLeft(2, '0');
+    final y = _selectedDate.year.toString();
+    return '$d-$m-$y';
+  }
+
+  String get _formattedTime {
+    final h = _selectedTime.hour.toString().padLeft(2, '0');
+    final m = _selectedTime.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: now.subtract(const Duration(days: 365)),
+      lastDate: now.add(const Duration(days: 365 * 2)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: AppColors.white,
+              surface: AppColors.white,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppColors.primary,
+              onPrimary: AppColors.white,
+              surface: AppColors.white,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedTime = picked);
+    }
+  }
+
+  Future<void> _onSearchPressed() async {
+    FocusScope.of(context).unfocus();
+    if (_destinationController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Veuillez entrer une destination',
+            style: GoogleFonts.inter(
+              color: AppColors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          backgroundColor: AppColors.buttonBlack,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _showSuggestions = false;
+      _hasSearched = true;
+    });
+    await _resolveManualCoordinatesIfNeeded();
+    _loadRoutes();
+  }
+
+  Future<void> _resolveManualCoordinatesIfNeeded() async {
+    // 1. Resolve origin coordinates if typed manually and not 'Ma position actuelle'
+    if (_originController.text.trim().isNotEmpty &&
+        _originController.text != 'Ma position actuelle') {
+      final matches = await _placesService.autocomplete(_originController.text);
+      if (matches.isNotEmpty) {
+        final m = matches.first;
+        if (m.latitude != null && m.longitude != null) {
+          _originLat = m.latitude!;
+          _originLng = m.longitude!;
+        } else {
+          try {
+            final d = await _placesService.details(m.placeId);
+            _originLat = d.lat;
+            _originLng = d.lng;
+          } catch (_) {}
+        }
+      }
+    } else if (_originController.text == 'Ma position actuelle') {
+      try {
+        final coords = await _placesService.getCurrentCoordinates();
+        if (coords != null) {
+          _originLat = coords.latitude;
+          _originLng = coords.longitude;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Resolve destination coordinates if typed manually
+    if (_destinationController.text.trim().isNotEmpty) {
+      final matches =
+          await _placesService.autocomplete(_destinationController.text);
+      if (matches.isNotEmpty) {
+        final m = matches.first;
+        if (m.latitude != null && m.longitude != null) {
+          _destinationLat = m.latitude!;
+          _destinationLng = m.longitude!;
+        } else {
+          try {
+            final d = await _placesService.details(m.placeId);
+            _destinationLat = d.lat;
+            _destinationLng = d.lng;
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  List<TcuRouteOption> get _filteredOptions {
+    if (_allOptions.isEmpty) return [];
+    switch (_selectedRouteFilter) {
+      case TcuRouteFilter.fastest:
+        final list = List<TcuRouteOption>.from(_allOptions);
+        list.sort((a, b) => a.estimatedDurationMinutes
+            .compareTo(b.estimatedDurationMinutes));
+        return list;
+      case TcuRouteFilter.alternative:
+        final list = _allOptions
+            .where((o) =>
+                o.type == TcuTransportType.aftu ||
+                o.type == TcuTransportType.brt)
+            .toList();
+        return list.isNotEmpty ? list : _allOptions;
+      case TcuRouteFilter.panoramic:
+        final list = _allOptions
+            .where((o) =>
+                o.type == TcuTransportType.ddd ||
+                o.type == TcuTransportType.ter)
+            .toList();
+        return list.isNotEmpty ? list : _allOptions;
+    }
+  }
+
+  String _getFilterDuration(TcuRouteFilter filter) {
+    switch (filter) {
+      case TcuRouteFilter.fastest:
+        return '26 min';
+      case TcuRouteFilter.alternative:
+        return '33 min';
+      case TcuRouteFilter.panoramic:
+        return '30 min';
+    }
+  }
+
   Future<void> _loadRoutes() async {
     setState(() => _isLoading = true);
     final options = await _service.getRouteOptions(
       origin: _originController.text,
       destination: _destinationController.text,
-      filter: _selectedFilter,
+      departureLat: _originLat,
+      departureLon: _originLng,
+      destinationLat: _destinationLat,
+      destinationLon: _destinationLng,
+      date: _selectedDate,
+      time: _selectedTime,
+      maxDistanceFrom: 2000,
+      maxDistanceTo: 2000,
+      orderByFrom: true,
+      filter: TcuTransportType.all,
     );
     if (mounted) {
       setState(() {
@@ -112,24 +362,26 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     }
   }
 
-  void _onFilterChanged(TcuTransportType filter) {
-    if (_selectedFilter == filter) return;
-    setState(() {
-      _selectedFilter = filter;
-    });
-    _loadRoutes();
-  }
-
   void _swapOriginAndDestination() {
     final temp = _originController.text;
     _originController.text = _destinationController.text;
     _destinationController.text = temp;
+
+    final tempLat = _originLat;
+    final tempLng = _originLng;
+    _originLat = _destinationLat;
+    _originLng = _destinationLng;
+    _destinationLat = tempLat;
+    _destinationLng = tempLng;
+
     setState(() {
       _showSuggestions = false;
     });
     _originFocusNode.unfocus();
     _destinationFocusNode.unfocus();
-    _loadRoutes();
+    if (_hasSearched) {
+      _loadRoutes();
+    }
   }
 
   void _toggleStopsExpansion(String routeId) {
@@ -176,30 +428,58 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     _destinationFocusNode.unfocus();
 
     try {
-      final currentPlace = await _placesService.getCurrentPlace();
-      if (currentPlace != null && mounted) {
+      final coords = await _placesService.getCurrentCoordinates();
+      if (coords != null && mounted) {
         setState(() {
-          _originController.text = currentPlace.mainText;
+          _originLat = coords.latitude;
+          _originLng = coords.longitude;
         });
       }
     } catch (_) {}
 
-    _loadRoutes();
+    if (_hasSearched) {
+      _loadRoutes();
+    }
   }
 
-  void _selectSuggestion(PlaceSuggestion suggestion) {
+  Future<void> _selectSuggestion(PlaceSuggestion suggestion) async {
     final text = suggestion.mainText ?? suggestion.description;
-    if (_isEditingOrigin) {
-      _originController.text = text;
-    } else {
-      _destinationController.text = text;
+    double? lat = suggestion.latitude;
+    double? lng = suggestion.longitude;
+
+    if (lat == null || lng == null) {
+      try {
+        final details = await _placesService.details(suggestion.placeId);
+        lat = details.lat;
+        lng = details.lng;
+      } catch (_) {}
     }
-    setState(() {
-      _showSuggestions = false;
-    });
+
+    if (mounted) {
+      setState(() {
+        if (_isEditingOrigin) {
+          _originController.text = text;
+          if (lat != null && lng != null) {
+            _originLat = lat;
+            _originLng = lng;
+          }
+        } else {
+          _destinationController.text = text;
+          if (lat != null && lng != null) {
+            _destinationLat = lat;
+            _destinationLng = lng;
+          }
+        }
+        _showSuggestions = false;
+      });
+    }
+
     _originFocusNode.unfocus();
     _destinationFocusNode.unfocus();
-    _loadRoutes();
+
+    if (_hasSearched) {
+      _loadRoutes();
+    }
   }
 
   void _openSeddoRideSearch() {
@@ -228,34 +508,54 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
         child: SafeArea(
           child: Stack(
             children: [
-              // Main content Column
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top Bar: Back button and "Où allons-nous ?" title with orange underline
-                  _buildHeader(context),
+              // Scrollable entire page content: header, search box, date/time and results all scroll together
+              SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Top Bar: Back button and "Où allons-nous ?" title with orange underline
+                    _buildHeader(context),
 
-                  // Origin & Destination Card with Swap button and autocomplete triggers
-                  _buildSearchBox(),
+                    // Origin & Destination Card with Swap button and autocomplete triggers
+                    _buildSearchBox(),
 
-                  // Filter Chips Bar (Tous, Dem Dikk, AFTU, BRT, TER)
-                  _buildFilterBar(),
+                    // Date, Time & Rechercher Button Bar (from user attachment)
+                    _buildDateTimeSearchBar(),
 
-                  // Subtitle counter (e.g. "4 options pour votre trajet")
-                  _buildCountSubtitle(),
+                    // Filter Chips Bar (Plus rapide, Alternative, Panoramique)
+                    _buildFilterBar(),
 
-                  // Route Proposition List
-                  Expanded(
-                    child: _isLoading
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
-                              strokeWidth: 2.5,
-                            ),
-                          )
-                        : _buildRoutesList(),
-                  ),
-                ],
+                    // Subtitle counter (e.g. "4 options pour votre trajet")
+                    if (_hasSearched)
+                      _buildCountSubtitle(),
+
+                    // Route Proposition List OR Pre-search placeholder
+                    if (!_hasSearched)
+                      _buildPreSearchPlaceholder()
+                    else if (_isLoading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 2.5,
+                          ),
+                        ),
+                      )
+                    else
+                      _buildRoutesList(),
+
+                    // Bottom padding so bottom route cards are not obscured by floating Seddo card
+                    SizedBox(
+                      height: (_showSeddoCard && _hasSearched)
+                          ? 110
+                          : AppConstants.spacingLg,
+                    ),
+                  ],
+                ),
               ),
 
               // Autocomplete suggestions dropdown overlay
@@ -268,7 +568,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                 ),
 
               // Floating Seddo VTC card at bottom (stays above page when scrolling)
-              if (_showSeddoCard && !_showSuggestions)
+              if (_showSeddoCard && !_showSuggestions && _hasSearched)
                 Positioned(
                   left: AppConstants.spacingMd,
                   right: AppConstants.spacingMd,
@@ -510,8 +810,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                     _triggerDebouncedSearch(val);
                   },
                   onSubmitted: (_) {
-                    setState(() => _showSuggestions = false);
-                    _loadRoutes();
+                    _onSearchPressed();
                   },
                   style: GoogleFonts.inter(
                     fontSize: AppConstants.fontBase,
@@ -522,6 +821,14 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
                     border: InputBorder.none,
+                    hintText: isOrigin
+                        ? 'Ma position actuelle'
+                        : 'Rechercher une destination...',
+                    hintStyle: GoogleFonts.inter(
+                      fontSize: AppConstants.fontBase,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textSecondary.withValues(alpha: 0.6),
+                    ),
                     suffixIcon: controller.text.isNotEmpty
                         ? GestureDetector(
                             onTap: () {
@@ -790,75 +1097,277 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     );
   }
 
+  Widget _buildDateTimeSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingMd,
+        vertical: 4,
+      ),
+      child: Row(
+        children: [
+          // 1. Date Selector (e.g. 📅 27-10-2026)
+          Expanded(
+            flex: 4,
+            child: Material(
+              color: AppColors.transparent,
+              child: InkWell(
+                key: const Key('tcu_date_picker_button'),
+                onTap: _pickDate,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.shadowLight,
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.calendar_month_outlined,
+                        size: 18,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            _formattedDate,
+                            style: GoogleFonts.inter(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // 2. Time Selector (e.g. 12:10)
+          Expanded(
+            flex: 3,
+            child: Material(
+              color: AppColors.transparent,
+              child: InkWell(
+                key: const Key('tcu_time_picker_button'),
+                onTap: _pickTime,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: AppColors.shadowLight,
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _formattedTime,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // 3. Rechercher Button (Orange)
+          Expanded(
+            flex: 4,
+            child: Material(
+              color: AppColors.transparent,
+              child: InkWell(
+                key: const Key('tcu_search_button'),
+                onTap: _onSearchPressed,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'tcu.search'.tr(),
+                        style: GoogleFonts.inter(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.white,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreSearchPlaceholder() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.directions_bus_rounded,
+                color: AppColors.primary,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'tcu.plan_trip'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.3,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'tcu.plan_trip_subtitle'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildFilterBar() {
-    final filters = [
-      TcuTransportType.all,
-      TcuTransportType.ddd,
-      TcuTransportType.aftu,
-      TcuTransportType.brt,
-      TcuTransportType.ter,
+    const filters = [
+      TcuRouteFilter.fastest,
+      TcuRouteFilter.alternative,
+      TcuRouteFilter.panoramic,
     ];
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spacingMd,
         vertical: AppConstants.spacingSm,
       ),
       child: Row(
         children: filters.map((filter) {
-          final isSelected = _selectedFilter == filter;
+          final isSelected = _selectedRouteFilter == filter;
+          final duration = _getFilterDuration(filter);
+
           return Padding(
-            padding: const EdgeInsets.only(right: AppConstants.spacingSm),
+            padding: const EdgeInsets.only(right: 12),
             child: GestureDetector(
-              onTap: () => _onFilterChanged(filter),
+              key: Key('tcu_filter_${filter.name}'),
+              onTap: () {
+                setState(() {
+                  _selectedRouteFilter = filter;
+                });
+              },
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
+                duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingUnitXl,
-                  vertical: AppConstants.spacingUnit,
+                  horizontal: 22,
+                  vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppColors.buttonBlack : AppColors.white,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusPill),
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.buttonBlack
-                        : AppColors.tcuFieldBorder,
-                  ),
+                  color: isSelected
+                      ? const Color(0xFF1350B8)
+                      : const Color(0xFFF1F3F5),
+                  borderRadius: BorderRadius.circular(26),
                   boxShadow: isSelected
                       ? const [
                           BoxShadow(
-                            color: AppColors.shadowLight,
-                            blurRadius: 6,
-                            offset: Offset(0, 2),
+                            color: Color(0x331350B8),
+                            blurRadius: 8,
+                            offset: Offset(0, 3),
                           ),
                         ]
                       : null,
                 ),
-                child: Row(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    if (filter != TcuTransportType.all) ...[
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: filter.dotColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
                     Text(
                       filter.displayName,
                       style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontMd,
-                        fontWeight:
-                            isSelected ? FontWeight.w800 : FontWeight.w600,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
                         color: isSelected
                             ? AppColors.white
                             : AppColors.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      duration,
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected
+                            ? AppColors.white.withValues(alpha: 0.9)
+                            : AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -872,7 +1381,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   }
 
   Widget _buildCountSubtitle() {
-    final count = _allOptions.length;
+    final count = _filteredOptions.length;
     final text = count <= 1
         ? 'tcu.options_count_singular'.tr()
         : 'tcu.options_count'.tr(args: [count.toString()]);
@@ -894,37 +1403,41 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   }
 
   Widget _buildRoutesList() {
-    if (_allOptions.isEmpty) {
-      return Center(
-        child: Text(
-          'Aucune option trouvée pour ce trajet',
-          style: GoogleFonts.inter(
-            fontSize: AppConstants.fontBase,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textSecondary,
+    final routes = _filteredOptions;
+    if (routes.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: Text(
+            'Aucune option trouvée pour ce trajet',
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.fontBase,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.only(
-        left: AppConstants.spacingMd,
-        right: AppConstants.spacingMd,
-        top: AppConstants.spacingSm,
-        bottom: _showSeddoCard ? 110 : AppConstants.spacingMd,
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingMd,
+        vertical: AppConstants.spacingSm,
       ),
-      itemCount: _allOptions.length,
-      itemBuilder: (context, index) {
-        final option = _allOptions[index];
-        final isExpanded = _expandedStopsRouteIds.contains(option.id);
+      child: Column(
+        children: routes.asMap().entries.map((entry) {
+          final index = entry.key;
+          final option = entry.value;
+          final isExpanded = _expandedStopsRouteIds.contains(option.id);
 
-        return _buildRouteTimelineItem(
-          option: option,
-          isExpanded: isExpanded,
-          isLast: index == _allOptions.length - 1,
-        );
-      },
+          return _buildRouteTimelineItem(
+            option: option,
+            isExpanded: isExpanded,
+            isLast: index == routes.length - 1,
+          );
+        }).toList(),
+      ),
     );
   }
 

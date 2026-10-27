@@ -39,7 +39,14 @@
     "code_received": "Code reçu par SMS",
     "enter_code_sent_to": "Entrez le code envoyé au",
     "resend_code_in": "Renvoyer le code dans",
-    "resend_code": "Renvoyer le code"
+    "resend_code": "Renvoyer le code",
+    "profile_title": "Votre profil",
+    "profile_subtitle": "Entrez votre prénom et votre nom pour que votre chauffeur puisse vous identifier.",
+    "first_name": "Prénom",
+    "first_name_hint": "Ex: Awa",
+    "last_name": "Nom",
+    "last_name_hint": "Ex: Diop",
+    "accept_and_continue": "Accepter et continuer"
   },
   "home": {
     "where_to": "Où allez-vous ?",
@@ -423,7 +430,13 @@
     "next_bus": "Prochain bus",
     "next_train": "Prochain train",
     "walking_started": "Guidage piéton démarré vers {}",
-    "stops_list_title": "Liste des arrêts"
+    "stops_list_title": "Liste des arrêts",
+    "search": "Rechercher",
+    "filter_fastest": "Plus rapide",
+    "filter_alternative": "Alternative",
+    "filter_panoramic": "Panoramique",
+    "plan_trip": "Où et quand souhaitez-vous partir ?",
+    "plan_trip_subtitle": "Choisissez votre date, heure et cliquez sur Rechercher pour afficher les meilleures options de transport."
   },
   "privacy": {
     "page_title": "Confidentialité",

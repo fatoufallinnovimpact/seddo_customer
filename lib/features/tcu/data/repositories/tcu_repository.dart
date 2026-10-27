@@ -14,7 +14,7 @@ class TcuRepositoryImpl implements TcuRepository {
 
   TcuRepositoryImpl({
     PublicTransportService? service,
-  }) : _service = service ?? const PublicTransportService();
+  }) : _service = service ?? PublicTransportService();
 
   @override
   Future<List<TcuRouteOption>> getRouteOptions({

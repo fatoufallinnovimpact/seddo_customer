@@ -13,6 +13,8 @@ import 'package:seddo/features/drawer/presentation/widgets/logout_modal.dart';
 import 'package:seddo/features/help/presentation/pages/help_page.dart';
 import 'package:seddo/features/privacy/presentation/pages/privacy_page.dart';
 import 'package:seddo/features/safety/presentation/pages/safety_page.dart';
+import 'package:seddo/features/auth/data/models/user_model.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 
@@ -44,30 +46,36 @@ class SeddoDrawerWidget extends StatelessWidget {
       elevation: 16,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
-          topRight: Radius.circular(30),
-          bottomRight: Radius.circular(30),
+          topLeft: Radius.circular(30),
+          bottomLeft: Radius.circular(30),
         ),
       ),
       child: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: IntrinsicHeight(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 1. User Profile Header
-                        _buildProfileHeader(context),
-                        const SizedBox(height: 22),
+        child: FutureBuilder<UserModel?>(
+          future: AuthRepository().getCachedUser(),
+          initialData: AuthRepository().currentUser,
+          builder: (context, snapshot) {
+            final user = snapshot.data ?? AuthRepository().currentUser;
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: IntrinsicHeight(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 1. User Profile Header
+                            _buildProfileHeader(context, user),
+                            const SizedBox(height: 22),
 
-                        // 2. Modern Dark Payment Card with Orange Curve
-                        _buildPaymentCard(context),
-                        const SizedBox(height: 20),
+                            // 2. Modern Dark Payment Card with Orange Curve
+                            _buildPaymentCard(context, user),
+                            const SizedBox(height: 20),
 
                         // 3. Navigation List Items
                         _buildMenuItem(
@@ -205,104 +213,125 @@ class SeddoDrawerWidget extends StatelessWidget {
               ),
             );
           },
-        ),
-      ),
-    );
+        );
+      },
+    ),
+  ),
+);
   }
 
-  // Profile Header: Orange circle avatar "AD", AWA DIOP, Star 4,8 · 77 123 45 12
-  Widget _buildProfileHeader(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: const BoxDecoration(
-            color: AppColors.primary,
-            shape: BoxShape.circle,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            'AD',
-            style: GoogleFonts.inter(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              color: AppColors.white,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'AWA DIOP',
+  // Profile Header: Displays real user initials, name, and phone from authentication
+  Widget _buildProfileHeader(BuildContext context, UserModel? user) {
+    final displayName = (user != null && user.fullName.isNotEmpty)
+        ? user.fullName.toUpperCase()
+        : 'AWA DIOP';
+    final initials = (user != null && user.initials.isNotEmpty)
+        ? user.initials
+        : 'AD';
+    final displayPhone =
+        (user != null && user.formattedNationalPhone.isNotEmpty)
+            ? user.formattedNationalPhone
+            : (user != null && user.formattedDisplayPhone.isNotEmpty)
+                ? user.formattedDisplayPhone
+                : '77 123 45 12';
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 58,
+              height: 58,
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                initials,
                 style: GoogleFonts.inter(
-                  fontSize: 24,
+                  fontSize: 22,
                   fontWeight: FontWeight.w900,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.6,
+                  color: AppColors.white,
+                  letterSpacing: 0.5,
                 ),
               ),
-              const SizedBox(height: 3),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.star_rounded,
-                      size: 18,
-                      color: AppColors.amberWarning,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    displayName,
+                    style: GoogleFonts.inter(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.6,
                     ),
-                    const SizedBox(width: 3),
-                    Text(
-                      '4,8',
-                      style: GoogleFonts.inter(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 18,
+                          color: AppColors.amberWarning,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '4,8',
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          ' · ',
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          displayPhone,
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      ' · ',
-                      style: GoogleFonts.inter(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      '77 123 45 12',
-                      style: GoogleFonts.inter(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ],
-    );
+            ),
+          ],
+        );
   }
 
   // Modern Payment Card
-  Widget _buildPaymentCard(BuildContext context) {
+  Widget _buildPaymentCard(BuildContext context, UserModel? user) {
+    final paymentPhone = (user != null && user.maskedPhone.isNotEmpty)
+        ? user.maskedPhone
+        : '77 ••• 45 12';
+
     return Material(
       color: AppColors.transparent,
       child: InkWell(
         onTap: () {
           Navigator.of(context).pop();
-          _openPaymentSheet(context);
+          _openPaymentSheet(context, user);
         },
         borderRadius: BorderRadius.circular(18),
         splashColor: AppColors.primary.withValues(alpha: 0.12),
@@ -371,7 +400,7 @@ class SeddoDrawerWidget extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Orange Money 77 ••• 45 12',
+                            'Orange Money $paymentPhone',
                             style: GoogleFonts.inter(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w500,
@@ -608,7 +637,13 @@ class SeddoDrawerWidget extends StatelessWidget {
     );
   }
 
-  void _openPaymentSheet(BuildContext context) {
+  void _openPaymentSheet(BuildContext context, [UserModel? user]) {
+    final effectiveUser = user ?? AuthRepository().currentUser;
+    final sheetPhone = (effectiveUser != null &&
+            effectiveUser.formattedDisplayPhone.isNotEmpty)
+        ? effectiveUser.formattedDisplayPhone
+        : '+221 77 123 45 12';
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.transparent,
@@ -688,7 +723,7 @@ class SeddoDrawerWidget extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          '+221 77 123 45 12 · ${'drawer.default_mode'.tr()}',
+                          '$sheetPhone · ${'drawer.default_mode'.tr()}',
                           style: GoogleFonts.inter(
                             fontSize: 12.5,
                             color: AppColors.primary,

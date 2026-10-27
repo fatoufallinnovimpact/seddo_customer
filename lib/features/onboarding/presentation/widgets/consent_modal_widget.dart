@@ -20,10 +20,15 @@ class ConsentModalWidget extends StatefulWidget {
   const ConsentModalWidget({super.key});
 
   static Future<bool?> show(BuildContext context) {
-    final bloc = context.read<OnboardingBloc>();
+    OnboardingBloc? bloc;
+    try {
+      bloc = context.read<OnboardingBloc>();
+    } catch (_) {}
+
     return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
@@ -31,9 +36,16 @@ class ConsentModalWidget extends StatefulWidget {
         ),
       ),
       builder: (sheetContext) {
-        return BlocProvider.value(
-          value: bloc,
-          child: const ConsentModalWidget(),
+        final content = const ConsentModalWidget();
+        if (bloc != null) {
+          return BlocProvider.value(
+            value: bloc,
+            child: content,
+          );
+        }
+        return BlocProvider(
+          create: (_) => OnboardingBloc(),
+          child: content,
         );
       },
     );
@@ -56,7 +68,10 @@ class _ConsentModalWidgetState extends State<ConsentModalWidget> {
   bool get _allSelected => _selectedCount == 3;
 
   void _handleAcceptAndStart(BuildContext context) {
-    context.read<OnboardingBloc>().add(const OnboardingCompletedEvent());
+    if (!_allSelected) return;
+    try {
+      context.read<OnboardingBloc>().add(const OnboardingCompletedEvent());
+    } catch (_) {}
     Navigator.of(context).pop(true);
   }
 
@@ -71,26 +86,33 @@ class _ConsentModalWidgetState extends State<ConsentModalWidget> {
         final privacyLabel = 'consent.privacy'.tr();
         final locationLabel = 'consent.location'.tr();
         final startButtonLabel = 'consent.accept_start'.tr();
-        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-        final systemBottom = MediaQuery.of(context).padding.bottom;
+        final mediaQuery = MediaQuery.of(context);
+        final bottomInset = mediaQuery.viewInsets.bottom;
+        final systemBottom = mediaQuery.padding.bottom;
+        final maxHeight = mediaQuery.size.height * 0.90;
 
         return SafeArea(
           top: false,
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: AppConstants.spacingLg,
-              right: AppConstants.spacingLg,
-              top: AppConstants.spacingMd,
-              bottom: bottomInset > 0
-                  ? bottomInset + AppConstants.spacingMd
-                  : (systemBottom > 0
-                      ? systemBottom + AppConstants.spacingUnit
-                      : AppConstants.spacingLg),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: maxHeight,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.only(
+                left: AppConstants.spacingLg,
+                right: AppConstants.spacingLg,
+                top: AppConstants.spacingMd,
+                bottom: bottomInset > 0
+                    ? bottomInset + AppConstants.spacingMd
+                    : (systemBottom > 0
+                        ? systemBottom + AppConstants.spacingUnit
+                        : AppConstants.spacingLg),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                 // 1. Drag handle bar
                 Center(
                   child: Container(
@@ -290,9 +312,10 @@ class _ConsentModalWidgetState extends State<ConsentModalWidget> {
               ],
             ),
           ),
-        );
-      },
-    );
+        ),
+      );
+    },
+  );
   }
 
   Widget _buildProgressBarSegment({required bool isFilled}) {

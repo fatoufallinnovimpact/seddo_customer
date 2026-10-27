@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/core/localization/wolof_localizations_delegate.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
+import 'package:seddo/features/auth/data/models/user_model.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 
 class MockDrawerTestAssetLoader extends AssetLoader {
   const MockDrawerTestAssetLoader();
@@ -254,5 +256,49 @@ void main() {
     expect(find.text('Kaaraange'), findsOneWidget);
     expect(find.text('Fey'), findsOneWidget);
     expect(find.text('Génn'), findsOneWidget);
+  });
+
+  testWidgets(
+      'SeddoDrawerWidget displays authenticated user name, phone and dynamic Orange Money number',
+      (tester) async {
+    const testUser = UserModel(
+      id: 'usr_771004313',
+      phone: '77 100 43 13',
+      firstName: 'Fatou',
+      lastName: 'Fall',
+      lang: 'fr',
+      omEligible: true,
+      isNew: false,
+      needsProfile: false,
+    );
+    AuthRepository().setCurrentUser(testUser);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      AuthRepository().setCurrentUser(null);
+    });
+
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(seconds: 1));
+
+    // 1. Profile with real user name and phone
+    expect(find.text('FATOU FALL'), findsOneWidget);
+    expect(find.text('FF'), findsOneWidget);
+    expect(find.text('77 100 43 13'), findsOneWidget);
+
+    // 2. Dynamic Orange Money card number
+    expect(find.text('Orange Money 77 ••• 43 13'), findsOneWidget);
+
+    // 3. Tap payment card to open payment sheet and verify real number
+    await tester.tap(find.text('Orange Money 77 ••• 43 13'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('+221 77 100 43 13 · Mode par défaut'), findsOneWidget);
   });
 }

@@ -96,7 +96,7 @@ void main() {
   });
 
   testWidgets(
-      'Tapping Commencer opens ConsentModalWidget and requires acceptance before proceeding',
+      'Tapping Commencer navigates directly to PhoneInputPage without showing ConsentModalWidget',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2.625;
@@ -130,35 +130,7 @@ void main() {
     await tester.tap(find.text('Commencer'));
     await tester.pumpAndSettle();
 
-    // Verify Consent Modal is displayed
-    expect(find.byType(ConsentModalWidget), findsOneWidget);
-    expect(find.text('Consentements obligatoires'), findsOneWidget);
-    expect(
-      find.text('J\'accepte les Conditions Générales d\'Utilisation (CGU)'),
-      findsOneWidget,
-    );
-    expect(
-      find.text('J\'accepte la Politique de protection des données'),
-      findsOneWidget,
-    );
-    expect(
-      find.text(
-          'J\'autorise la géolocalisation pour trouver des trajets autour de moi'),
-      findsOneWidget,
-    );
-
-    // Verify Accepter & Commencer button is directly enabled
-    final submitButtonFinder =
-        find.widgetWithText(ElevatedButton, 'Accepter & Commencer');
-    expect(submitButtonFinder, findsOneWidget);
-    final ElevatedButton submitButton = tester.widget(submitButtonFinder);
-    expect(submitButton.onPressed, isNotNull);
-
-    // Tap Accepter & Commencer directly
-    await tester.tap(submitButtonFinder);
-    await tester.pumpAndSettle();
-
-    // Verify modal is dismissed and PhoneInputPage is displayed
+    // Verify modal is not displayed and PhoneInputPage is displayed directly
     expect(find.byType(ConsentModalWidget), findsNothing);
     expect(find.byType(PhoneInputPage), findsOneWidget);
   });

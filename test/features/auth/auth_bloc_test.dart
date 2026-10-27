@@ -1,13 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/features/auth/domain/bloc/auth_bloc.dart';
 import 'package:seddo/features/auth/domain/bloc/auth_event.dart';
 import 'package:seddo/features/auth/domain/bloc/auth_state.dart';
 
 void main() {
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('AuthBloc', () {
     late AuthBloc authBloc;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       authBloc = AuthBloc();
     });
 
@@ -65,16 +72,17 @@ void main() {
     });
 
     test('submits OTP successfully when code is valid', () {
-      authBloc.add(const AuthOtpCodeChangedEvent('390214'));
-      authBloc.add(const AuthOtpSubmittedEvent());
-
       expectLater(
         authBloc.stream,
         emitsInOrder([
           predicate<AuthState>((s) => s.isOtpValid == true),
+          predicate<AuthState>((s) => s.status == AuthStatus.otpVerifying),
           predicate<AuthState>((s) => s.status == AuthStatus.otpSuccess),
         ]),
       );
+
+      authBloc.add(const AuthOtpCodeChangedEvent('390214'));
+      authBloc.add(const AuthOtpSubmittedEvent());
     });
   });
 }
