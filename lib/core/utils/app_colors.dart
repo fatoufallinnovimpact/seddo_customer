@@ -348,4 +348,25 @@ abstract class AppColors {
   static const Color helpFaqTextGrey = Color(0xFF4B5563);
   static const Color helpChevronGrey = Color(0xFF9CA3AF);
   static const Color helpResponseTimeGrey = Color(0xFF6B7280);
+
+  // General & Feature Specific Tokens (Centralized)
+  static const Color markerIconBlack = Color(0xFF1E1E22);
+  static const Color cancelRed = Color(0xFFDC2626);
+  static const Color cancelLightBg = Color(0xFFFEE2E2);
+  static const Color textDarkGrey = Color(0xFF18181A);
+  static const Color textMutedGrey = Color(0xFF9CA3AF);
+  static const Color textBodyGrey = Color(0xFF374151);
+  static const Color textLabelGrey = Color(0xFF4B5563);
+  static const Color neutralInputBg = Color(0xFFF8FAFC);
+  static const Color neutralInputBorder = Color(0xFFE2E8F0);
+  static const Color neutralPlaceholder = Color(0xFF94A3B8);
+  static const Color neutralIconGrey = Color(0xFF64748B);
+  static const Color neutralDivider = Color(0xFFF3F4F6);
+  static const Color mapPickerPinOrange = Color(0xFFFF6D1B);
+  static const Color blueHighlightBg = Color(0xFFEFF6FF);
+  static const Color blueHighlightText = Color(0xFF3B82F6);
+  static const Color amberHighlightBg = Color(0xFFFEF3C7);
+  static const Color amberHighlightText = Color(0xFFD97706);
+  static const Color modalShadow = Color(0x24000000);
+  static const Color softGreySurface = Color(0xFFF1F1F4);
 }

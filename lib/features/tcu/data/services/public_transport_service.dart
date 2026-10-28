@@ -269,13 +269,10 @@ class PublicTransportService {
         stopsList.add(arrStop.name);
       }
 
-      // Real GPS walking path to the boarding stop
+      // Real street-aligned walking path to the boarding stop (along streets, not through buildings)
       final walkingPath = <LatLng>[
         LatLng(departureLat, departureLon),
-        LatLng(
-          (departureLat + startLat) / 2,
-          (departureLon + startLon) / 2,
-        ),
+        LatLng(departureLat, startLon),
         LatLng(startLat, startLon),
       ];
 

@@ -66,10 +66,9 @@ void main() {
       // 5. Initial selection is Seddo Eco
       expect(find.text('Commander Seddo Eco'), findsOneWidget);
 
-      // 6. Orange Money payment tile is visible
-      expect(find.text('Orange Money · 77 ••• 45 12'), findsOneWidget);
-      expect(find.text('Prix fixe, payé à la commande'), findsOneWidget);
-      expect(find.text('OM'), findsOneWidget);
+      // 6. Orange Money payment tile removed from modal sheet
+      expect(find.text('Prix fixe, payé à la commande'), findsNothing);
+      expect(find.text('OM'), findsNothing);
 
       // 7. Tap on Seddo Confort
       await tester.tap(find.text('Seddo Confort'));
@@ -82,7 +81,21 @@ void main() {
       await tester.tap(find.text('Commander Seddo Confort'));
       await tester.pumpAndSettle();
 
-      // Verify Orange Money Payment sheet appears matching Screenshot 1
+      // Modal 1 : Mode de paiement
+      expect(find.text('Mode de paiement'), findsOneWidget);
+      expect(find.text('Wave'), findsOneWidget);
+      expect(find.text('Orange Money'), findsOneWidget);
+      expect(find.text('Paiement en espèces'), findsOneWidget);
+
+      // Tap on Orange Money
+      await tester.tap(find.text('Orange Money'));
+      await tester.pumpAndSettle();
+
+      // Tap Confirmer et payer
+      await tester.tap(find.text('Confirmer et payer'));
+      await tester.pumpAndSettle();
+
+      // Modal 2 : Orange Money confirmation
       expect(find.text('Confirmer le paiement'), findsOneWidget);
       expect(find.text('Valider'), findsOneWidget);
 

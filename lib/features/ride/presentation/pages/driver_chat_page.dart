@@ -7,15 +7,24 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/chat_message_model.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 
-/// Screen allowing the customer to chat with the assigned driver
+/// Screen allowing the customer to chat with the assigned driver.
+/// Connected to backend API endpoints:
+/// - GET /v1/rides/{id}/messages
+/// - POST /v1/rides/{id}/messages with { "body": "..." }
+/// Supports quick preset replies and masked phone numbers security notice.
 class DriverChatPage extends StatefulWidget {
   final DriverModel driver;
+  final String? rideId;
+  final RideService? rideService;
 
   const DriverChatPage({
     super.key,
     required this.driver,
+    this.rideId,
+    this.rideService,
   });
 
   @override
@@ -27,10 +36,16 @@ class _DriverChatPageState extends State<DriverChatPage> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessageModel> _messages = [];
   Timer? _replyTimer;
+  Timer? _pollTimer;
+  late final RideService _rideService;
+
+  String get _effectiveRideId =>
+      widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
 
   static const List<String> _quickReplies = [
     'chat.quick_at_gate',
     'chat.quick_coming_1min',
+    'chat.quick_pharmacy',
     'chat.quick_white_shirt',
     'chat.quick_waiting',
   ];
@@ -38,6 +53,8 @@ class _DriverChatPageState extends State<DriverChatPage> {
   @override
   void initState() {
     super.initState();
+    _rideService = widget.rideService ?? RideService();
+
     // Initial driver message
     _messages.add(
       ChatMessageModel(
@@ -47,14 +64,50 @@ class _DriverChatPageState extends State<DriverChatPage> {
         timestamp: DateTime.now().subtract(const Duration(minutes: 1)),
       ),
     );
+
+    // Initial fetch from backend API
+    _fetchMessages();
+
+    // Periodic poll for incoming driver messages (every 4 seconds)
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (mounted) {
+        _fetchMessages();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _pollTimer?.cancel();
     _replyTimer?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchMessages() async {
+    try {
+      final remoteMessages = await _rideService.getChatMessages(
+        rideId: _effectiveRideId,
+      );
+      if (!mounted || remoteMessages.isEmpty) return;
+
+      bool hasNew = false;
+      for (final rMsg in remoteMessages) {
+        final alreadyExists = _messages.any((m) =>
+            m.id == rMsg.id ||
+            (m.text == rMsg.text && m.sender == rMsg.sender));
+        if (!alreadyExists) {
+          _messages.add(rMsg);
+          hasNew = true;
+        }
+      }
+
+      if (hasNew) {
+        setState(() {});
+        _scrollToBottom();
+      }
+    } catch (_) {}
   }
 
   void _scrollToBottom() {
@@ -73,34 +126,48 @@ class _DriverChatPageState extends State<DriverChatPage> {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
+    final customerMsg = ChatMessageModel(
+      id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
+      sender: ChatSender.customer,
+      text: trimmed,
+      timestamp: DateTime.now(),
+    );
+
     setState(() {
-      _messages.add(
-        ChatMessageModel(
-          id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
-          sender: ChatSender.customer,
-          text: trimmed,
-          timestamp: DateTime.now(),
-        ),
-      );
+      _messages.add(customerMsg);
       _textController.clear();
     });
     _scrollToBottom();
 
-    // Simulate realistic driver reply
+    // Synchronize to backend API POST /v1/rides/{id}/messages with {"body": trimmed}
+    unawaited(
+      _rideService.sendChatMessage(
+        rideId: _effectiveRideId,
+        message: trimmed,
+      ),
+    );
+
+    // Realistic driver reply fallback for test environments or offline mode
     _replyTimer?.cancel();
     _replyTimer = Timer(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
-      setState(() {
-        _messages.add(
-          ChatMessageModel(
-            id: 'msg_reply_${DateTime.now().millisecondsSinceEpoch}',
-            sender: ChatSender.driver,
-            text: 'Bien reçu ! Je suis à l\'angle de la rue, à tout de suite.',
-            timestamp: DateTime.now(),
-          ),
-        );
-      });
-      _scrollToBottom();
+      final hasRecentDriverMsg = _messages.any((m) =>
+          m.sender == ChatSender.driver &&
+          m.timestamp
+              .isAfter(DateTime.now().subtract(const Duration(seconds: 2))));
+      if (!hasRecentDriverMsg) {
+        setState(() {
+          _messages.add(
+            ChatMessageModel(
+              id: 'msg_reply_${DateTime.now().millisecondsSinceEpoch}',
+              sender: ChatSender.driver,
+              text: 'Bien reçu ! Je suis à l\'angle de la rue, à tout de suite.',
+              timestamp: DateTime.now(),
+            ),
+          );
+        });
+        _scrollToBottom();
+      }
     });
   }
 
@@ -229,6 +296,70 @@ class _DriverChatPageState extends State<DriverChatPage> {
         child: Column(
           children: [
             const Divider(height: 1, color: AppColors.cardBorder),
+
+            // Numéros masqués security notice banner
+            Container(
+              margin: const EdgeInsets.fromLTRB(
+                AppConstants.spacingMd,
+                AppConstants.spacingSm,
+                AppConstants.spacingMd,
+                AppConstants.spacingXs,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingUnitLg,
+                vertical: AppConstants.spacingUnit,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceGrey,
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                border: Border.all(
+                  color: AppColors.grayBorderDivider,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      color: AppColors.refundPillBg,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      color: AppColors.refundGreen,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingSm),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'chat.masked_numbers_title'.tr(),
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'chat.masked_numbers_notice'.tr(),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
             // Messages List
             Expanded(

@@ -4,19 +4,27 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/auth/data/models/user_model.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/insufficient_balance_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_option_card_widget.dart';
+import 'package:seddo/features/ride/presentation/widgets/select_payment_method_sheet.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Screen displaying the active route polyline on Google Maps and the ride options bottom sheet
 /// matching the exact reference UI mockup:
@@ -32,6 +40,7 @@ class RideBookingPage extends StatefulWidget {
   final PlaceSearchResult destination;
   final PlacesService? placesService;
   final RouteService? routeService;
+  final RideService? rideService;
   final bool showHowToFindYouInitially;
   final String? initialPickupLandmark;
 
@@ -41,6 +50,7 @@ class RideBookingPage extends StatefulWidget {
     required this.destination,
     this.placesService,
     this.routeService,
+    this.rideService,
     this.showHowToFindYouInitially = false,
     this.initialPickupLandmark,
   });
@@ -50,10 +60,9 @@ class RideBookingPage extends StatefulWidget {
 }
 
 class _RideBookingPageState extends State<RideBookingPage> {
-  late final RouteService _routeService;
+  late final RideService _rideService;
   GoogleMapController? _mapController;
 
-  BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupBadgeIcon;
   BitmapDescriptor? _destSquareIcon;
 
@@ -61,28 +70,85 @@ class _RideBookingPageState extends State<RideBookingPage> {
   bool _isLoadingRoute = true;
   double _distanceKm = 5.0;
   int _durationMinutes = 15;
+  String? _zoneName;
 
   RideType _selectedRideType = RideType.eco;
   late RideOptionModel _ecoOption;
   late RideOptionModel _confortOption;
   String? _pickupLandmark;
+  String _userPhoneDisplay = '77 ••• 45 12';
+
+  final GlobalKey _bottomSheetKey = GlobalKey();
+  double _bottomSheetHeight = 440.0;
 
   @override
   void initState() {
     super.initState();
     _pickupLandmark = widget.initialPickupLandmark;
-    _routeService = widget.routeService ?? RouteService();
+    _rideService = widget.rideService ?? RideService();
     _computeRideOptions();
     _loadCustomMarkers();
     _fetchRoute();
+    _loadConnectedUserPhone();
 
-    if (widget.showHowToFindYouInitially) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _openHowToFindYouSheet();
-        }
-      });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureBottomSheet();
+      if (widget.showHowToFindYouInitially && mounted) {
+        _openHowToFindYouSheet();
+      }
+    });
+  }
+
+  void _measureBottomSheet() {
+    final renderBox =
+        _bottomSheetKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null && renderBox.hasSize && mounted) {
+      final h = renderBox.size.height;
+      if ((_bottomSheetHeight - h).abs() > 3) {
+        setState(() {
+          _bottomSheetHeight = h;
+        });
+      }
     }
+  }
+
+  Future<void> _loadConnectedUserPhone() async {
+    // 1. From active in-memory currentUser
+    final currentUser = AuthRepository().currentUser;
+    if (currentUser != null && currentUser.maskedPhone.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _userPhoneDisplay = currentUser.maskedPhone;
+        });
+      }
+      return;
+    }
+
+    // 2. From cached user model in storage
+    final cachedUser = await AuthRepository().getCachedUser();
+    if (cachedUser != null && cachedUser.maskedPhone.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _userPhoneDisplay = cachedUser.maskedPhone;
+        });
+      }
+      return;
+    }
+
+    // 3. Fallback from SharedPreferences user_phone or auth_pending_phone
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final phone = prefs.getString('user_phone') ??
+          prefs.getString('auth_pending_phone');
+      if (phone != null && phone.isNotEmpty) {
+        final tempUser = UserModel(id: '', phone: phone);
+        if (mounted) {
+          setState(() {
+            _userPhoneDisplay = tempUser.maskedPhone;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _openHowToFindYouSheet() async {
@@ -139,13 +205,11 @@ class _RideBookingPageState extends State<RideBookingPage> {
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.get3DCarMarker();
     final pickup = await MapMarkerHelper.getDeparturePinMarker();
     final dest = await MapMarkerHelper.getDestinationPinMarker();
 
     if (mounted) {
       setState(() {
-        _carMarkerIcon = car;
         _pickupBadgeIcon = pickup;
         _destSquareIcon = dest;
       });
@@ -153,27 +217,109 @@ class _RideBookingPageState extends State<RideBookingPage> {
   }
 
   Future<void> _fetchRoute() async {
-    final origin = LatLng(
-      widget.departure.latitude,
-      widget.departure.longitude,
-    );
-    final destination = LatLng(
-      widget.destination.latitude,
-      widget.destination.longitude,
-    );
+    setState(() {
+      _isLoadingRoute = true;
+    });
 
-    final details = await _routeService.getRoute(
-      origin: origin,
-      destination: destination,
-    );
+    RideQuoteModel? quote;
+    try {
+      quote = await _rideService.getQuote(
+        departure: widget.departure,
+        destination: widget.destination,
+        pickupNote: _pickupLandmark,
+      );
+    } catch (_) {
+      quote = null;
+    }
 
+    if (!mounted) return;
+
+    if (quote != null) {
+      // 1. Live quote received from API with exact road polyline & official pricing
+      final decodedPoints = quote.decodedPolyline;
+      final distanceKm = quote.distanceKm;
+      final durationMins = quote.durationMinutes;
+
+      final now = DateTime.now();
+      final ecoArrival = now.add(Duration(minutes: durationMins + 4));
+      final confortArrival = now.add(Duration(minutes: durationMins + 7));
+
+      final ecoTimeStr =
+          '${ecoArrival.hour.toString().padLeft(2, '0')}:${ecoArrival.minute.toString().padLeft(2, '0')}';
+      final confortTimeStr =
+          '${confortArrival.hour.toString().padLeft(2, '0')}:${confortArrival.minute.toString().padLeft(2, '0')}';
+
+      // 2. Real price for ECO from API options (e.g. 3850 FCFA)
+      final apiEco = quote.ecoOption;
+      final ecoPrice = apiEco != null
+          ? apiEco.price
+          : (((1500 + (distanceKm * 250)) / 100).round() * 100).clamp(2000, 25000);
+      final ecoQuoteId = apiEco?.quoteId;
+      final ecoSeats = apiEco?.seats ?? 4;
+      final ecoName = (apiEco != null && apiEco.name.isNotEmpty)
+          ? apiEco.name
+          : 'home.seddo_eco'.tr();
+
+      // 3. CONFORT option is kept in code/UI as requested.
+      // If backend returns CONFORT, use its real price & quoteId.
+      // Otherwise calculate from Eco price so user can still see and select it.
+      final apiConfort = quote.confortOption;
+      final confortPrice = apiConfort != null
+          ? apiConfort.price
+          : ((ecoPrice * 1.35) / 100).round() * 100;
+      final confortQuoteId = apiConfort?.quoteId;
+      final confortSeats = apiConfort?.seats ?? 4;
+      final confortName = (apiConfort != null && apiConfort.name.isNotEmpty)
+          ? apiConfort.name
+          : 'Seddo ${'home.confort'.tr()}';
+
+      setState(() {
+        if (decodedPoints.isNotEmpty) {
+          _polylinePoints = decodedPoints;
+        }
+        _distanceKm = distanceKm;
+        _durationMinutes = durationMins;
+        _zoneName = quote?.zone;
+        _ecoOption = RideOptionModel(
+          type: RideType.eco,
+          title: ecoName,
+          subtitle: '$ecoTimeStr · ${'ride.arriving_in'.tr(args: ['4'])}',
+          capacity: ecoSeats,
+          price: ecoPrice,
+          estimatedArrival: ecoTimeStr,
+          pickupDuration: '4 min',
+          quoteId: ecoQuoteId,
+        );
+        _confortOption = RideOptionModel(
+          type: RideType.confort,
+          title: confortName,
+          subtitle: '$confortTimeStr · ${'home.confort_sub'.tr()}',
+          capacity: confortSeats,
+          price: confortPrice,
+          estimatedArrival: confortTimeStr,
+          pickupDuration: '7 min',
+          quoteId: confortQuoteId,
+        );
+        _isLoadingRoute = false;
+      });
+
+      debugPrint(
+          '[RideBookingPage] 💰 VRAI PRIX API APPLIQUÉ pour Seddo Eco: $ecoPrice FCFA (quoteId: $ecoQuoteId)');
+      debugPrint(
+          '[RideBookingPage] 💰 VRAI PRIX API APPLIQUÉ pour Seddo Confort: $confortPrice FCFA (quoteId: $confortQuoteId, depuis API: ${apiConfort != null})');
+
+      _fitCameraToBounds();
+      return;
+    }
+
+    debugPrint(
+        '[RideBookingPage] ⚠️ Devis API non disponible (hors-ligne ou non authentifié)');
+
+    // Pas de tracé simulé par défaut ! Tout doit venir de l'API.
     if (mounted) {
       setState(() {
-        _polylinePoints = details.polylinePoints;
-        _distanceKm = details.distanceKm;
-        _durationMinutes = details.durationMinutes;
+        _polylinePoints = [];
         _isLoadingRoute = false;
-        _computeRideOptions();
       });
 
       _fitCameraToBounds();
@@ -181,29 +327,44 @@ class _RideBookingPageState extends State<RideBookingPage> {
   }
 
   void _fitCameraToBounds() {
-    if (_mapController == null || _polylinePoints.isEmpty) return;
+    if (_mapController == null) return;
 
-    double south = widget.departure.latitude;
-    double north = widget.departure.latitude;
-    double west = widget.departure.longitude;
-    double east = widget.departure.longitude;
+    if (_polylinePoints.isNotEmpty) {
+      double south = widget.departure.latitude;
+      double north = widget.departure.latitude;
+      double west = widget.departure.longitude;
+      double east = widget.departure.longitude;
 
-    for (final p in _polylinePoints) {
-      if (p.latitude < south) south = p.latitude;
-      if (p.latitude > north) north = p.latitude;
-      if (p.longitude < west) west = p.longitude;
-      if (p.longitude > east) east = p.longitude;
+      for (final p in _polylinePoints) {
+        if (p.latitude < south) south = p.latitude;
+        if (p.latitude > north) north = p.latitude;
+        if (p.longitude < west) west = p.longitude;
+        if (p.longitude > east) east = p.longitude;
+      }
+
+      final bounds = LatLngBounds(
+        southwest: LatLng(south, west),
+        northeast: LatLng(north, east),
+      );
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 90),
+      );
+    } else {
+      final south = math.min(widget.departure.latitude, widget.destination.latitude);
+      final north = math.max(widget.departure.latitude, widget.destination.latitude);
+      final west = math.min(widget.departure.longitude, widget.destination.longitude);
+      final east = math.max(widget.departure.longitude, widget.destination.longitude);
+
+      final bounds = LatLngBounds(
+        southwest: LatLng(south, west),
+        northeast: LatLng(north, east),
+      );
+
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 90),
+      );
     }
-
-    final bounds = LatLngBounds(
-      southwest: LatLng(south, west),
-      northeast: LatLng(north, east),
-    );
-
-    // Padding ensures top bar and bottom sheet don't obscure route
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 90),
-    );
   }
 
   Set<Marker> _buildMarkers() {
@@ -239,20 +400,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
       );
     }
 
-    // 3. Driver car nearby pickup on the route
-    if (_carMarkerIcon != null && _polylinePoints.length > 2) {
-      // Place driver car slightly ahead of pickup point
-      final carPos = _polylinePoints[math.min(2, _polylinePoints.length - 1)];
-      markers.add(
-        Marker(
-          markerId: const MarkerId('driver_car'),
-          position: carPos,
-          icon: _carMarkerIcon!,
-          anchor: const Offset(0.5, 0.5),
-        ),
-      );
-    }
-
+    // Pas de fausse voiture simulée par défaut sur la carte ! Tout vient de l'API.
     return markers;
   }
 
@@ -276,9 +424,21 @@ class _RideBookingPageState extends State<RideBookingPage> {
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
 
+    // 1. Premier modal : Sélection du Mode de paiement (Wave, OM, Espèces)
+    final chosenMethod = await SelectPaymentMethodSheet.show(
+      context,
+      initialMethod: PaymentMethodType.cash,
+    );
+
+    if (!mounted || chosenMethod == null) return;
+
+    // 2. Second modal : Confirmation du paiement connecté à l'API
     final result = await OrangeMoneyPaymentSheet.show(
       context,
       rideOption: selectedOption,
+      phoneDisplay: _userPhoneDisplay,
+      rideService: _rideService,
+      paymentMethod: chosenMethod,
     );
 
     if (!mounted || result == null) return;
@@ -303,6 +463,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
               rideOption: selectedOption,
               polylinePoints: _polylinePoints,
               pickupLandmark: _pickupLandmark,
+              rideId: RideService.lastCreatedRideId,
+              paymentMethod: chosenMethod,
             ),
           ),
         );
@@ -313,10 +475,11 @@ class _RideBookingPageState extends State<RideBookingPage> {
   @override
   Widget build(BuildContext context) {
     final _ = context.locale;
-    _computeRideOptions();
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomSheet());
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -331,6 +494,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
               ),
               zoom: 14.5,
             ),
+            padding: EdgeInsets.only(top: 80, bottom: _bottomSheetHeight + 10),
             onMapCreated: (controller) {
               _mapController = controller;
               if (_polylinePoints.isNotEmpty) {
@@ -439,33 +603,6 @@ class _RideBookingPageState extends State<RideBookingPage> {
                           ),
                         ),
                       ),
-
-                      const SizedBox(width: AppConstants.spacingSm),
-
-                      // Circular GPS / Recenter Button matching the user's reference mockup
-                      Container(
-                        width: AppConstants.circularButtonSize,
-                        height: AppConstants.circularButtonSize,
-                        decoration: const BoxDecoration(
-                          color: AppColors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.shadowMarker,
-                              blurRadius: 10,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.near_me_rounded,
-                            color: AppColors.textPrimary,
-                            size: 20,
-                          ),
-                          onPressed: _fitCameraToBounds,
-                        ),
-                      ),
                     ],
                   ),
                   if (_isLoadingRoute)
@@ -482,12 +619,32 @@ class _RideBookingPageState extends State<RideBookingPage> {
             ),
           ),
 
-          // 3. Bottom Sheet Modal: "Choisissez une course"
+          // 3. Bouton flottant de caméra cyclique (Départ / Arrivée / Trajet complet)
+          Positioned(
+            right: 16,
+            bottom: _bottomSheetHeight + 14,
+            child: RideMapCameraToggleButton(
+              mapControllerGetter: () => _mapController,
+              departureLocation: LatLng(
+                widget.departure.latitude,
+                widget.departure.longitude,
+              ),
+              destinationLocation: LatLng(
+                widget.destination.latitude,
+                widget.destination.longitude,
+              ),
+              polylinePoints: _polylinePoints,
+              initialMode: RideMapCameraMode.tripOverview,
+            ),
+          ),
+
+          // 4. Modal Sheet avec options de course et prix
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
+              key: _bottomSheetKey,
               decoration: const BoxDecoration(
                 color: AppColors.white,
                 borderRadius: BorderRadius.vertical(
@@ -511,7 +668,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Drag Handle
+                  // Barre de glissement
                   Container(
                     width: AppConstants.circularIconContainerSize,
                     height: 4,
@@ -524,17 +681,135 @@ class _RideBookingPageState extends State<RideBookingPage> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Header: "Choisissez une course"
-                  Text(
-                    'ride.choose_ride'.tr(),
-                    style: GoogleFonts.inter(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                      letterSpacing: -0.3,
-                    ),
+                  // 1. En-tête tout en haut du modal (centré) : "Choisissez une course" & "Dakar et banlieue"
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        'ride.choose_ride'.tr(),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _zoneName != null && _zoneName!.isNotEmpty
+                            ? _zoneName!
+                            : 'ride.dakar_and_suburbs'.tr(),
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
+
+                  // 2. Bloc Départ & Arrivée (sans texte Arrêts)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ligne 1 : Point de départ avec l'icône de silhouette passager
+                        Row(
+                          children: [
+                            Container(
+                              width: 26,
+                              height: 26,
+                              alignment: Alignment.center,
+                              child: const Icon(
+                                Icons.hail_rounded,
+                                size: 20,
+                                color: AppColors.markerIconBlack,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                widget.departure.mainText,
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const Padding(
+                          padding: EdgeInsets.only(left: 38, top: 8, bottom: 8),
+                          child: Divider(height: 1, color: AppColors.neutralDivider),
+                        ),
+
+                        // Ligne 2 : Point d'arrivée avec l'icône drapeau flag-svgrepo-com.svg
+                        Row(
+                          children: [
+                            Container(
+                              width: 26,
+                              height: 26,
+                              alignment: Alignment.center,
+                              child: SvgPicture.asset(
+                                'assets/icons/flag-svgrepo-com.svg',
+                                width: 18,
+                                height: 18,
+                                colorFilter: const ColorFilter.mode(
+                                  AppColors.markerIconBlack,
+                                  BlendMode.srcIn,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      widget.destination.mainText,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                        letterSpacing: -0.2,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (_durationMinutes > 0)
+                                    Text(
+                                      ' · $_durationMinutes min.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const Padding(
+                    padding: EdgeInsets.only(top: 10, bottom: 12),
+                    child: Divider(height: 1, color: AppColors.grayBorderDivider),
+                  ),
+                  const SizedBox(height: 4),
 
                   // Pickup Landmark / "Comment vous trouver ?" Banner
                   GestureDetector(
@@ -546,14 +821,12 @@ class _RideBookingPageState extends State<RideBookingPage> {
                         vertical: 9,
                       ),
                       decoration: BoxDecoration(
-                        color: _pickupLandmark != null && _pickupLandmark!.isNotEmpty
-                            ? AppColors.peachContainer
-                            : AppColors.pickupSuggestionBg,
+                        color: AppColors.neutralInputBg,
                         borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
                         border: Border.all(
                           color: _pickupLandmark != null && _pickupLandmark!.isNotEmpty
-                              ? AppColors.pickupLandmarkBorder
-                              : AppColors.pickupSuggestionBorder,
+                              ? AppColors.primary.withValues(alpha: 0.35)
+                              : AppColors.neutralInputBorder,
                           width: 1.0,
                         ),
                       ),
@@ -563,14 +836,14 @@ class _RideBookingPageState extends State<RideBookingPage> {
                             width: 28,
                             height: 28,
                             decoration: BoxDecoration(
-                              color: AppColors.pickupIconBg,
+                              color: AppColors.slateLightBg,
                               borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                             ),
                             alignment: Alignment.center,
                             child: const Icon(
-                              Icons.near_me_rounded,
-                              color: AppColors.primary,
-                              size: 15,
+                              Icons.location_on_outlined,
+                              color: AppColors.neutralIconGrey,
+                              size: 16,
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -630,72 +903,6 @@ class _RideBookingPageState extends State<RideBookingPage> {
                     imagePath: 'assets/images/seddo_confort_3d.png',
                     onTap: () =>
                         setState(() => _selectedRideType = RideType.confort),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Payment Method Row: Orange Money
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: Row(
-                      children: [
-                        // Orange Money "OM" badge
-                        Container(
-                          width: 36,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: AppColors.buttonBlack,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'OM',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.primary,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-
-                        // Title & Subtitle
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Orange Money · 77 ••• 45 12',
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                'ride.fixed_price_om'.tr(),
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // Lock / fixed icon
-                        const Icon(
-                           Icons.lock_outline_rounded,
-                          size: 18,
-                          color: AppColors.textSecondary,
-                        ),
-                      ],
-                    ),
                   ),
 
                   const SizedBox(height: 16),

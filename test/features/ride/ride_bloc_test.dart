@@ -113,6 +113,11 @@ class MockRideRepository implements RideRepository {
   }
 
   @override
+  Future<List<ChatMessageModel>> getChatMessages(String rideId) async {
+    return [];
+  }
+
+  @override
   Stream<ChatMessageModel> watchChatMessages(String rideId) {
     return _chatMessagesController.stream;
   }

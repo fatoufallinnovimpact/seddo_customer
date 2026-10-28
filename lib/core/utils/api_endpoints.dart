@@ -20,4 +20,23 @@ abstract class ApiEndpoints {
   // Transit v2 endpoints (bus itineraries)
   static String get transitBaseUrl => BaseUrl.transitApi;
   static String get transitFindBus => '$transitBaseUrl/api/v2/transit/find-bus';
+
+  // Rides endpoints (POST /v1/rides/quote, /v1/rides, GET /v1/rides/current)
+  static String get ridesQuote => '$baseUrl/v1/rides/quote';
+  static String get rides => '$baseUrl/v1/rides';
+  static String get ridesCurrent => '$baseUrl/v1/rides/current';
+  static String rideDetails(String id) => '$baseUrl/v1/rides/$id';
+  static String rideCancel(String id) => '$baseUrl/v1/rides/$id/cancel';
+  static String rideMessages(String id) => '$baseUrl/v1/rides/$id/messages';
+  static String rideRating(String id) => '$baseUrl/v1/rides/$id/rating';
+
+  // Drivers nearby endpoint (GET /v1/drivers/nearby?lat={lat}&lng={lng})
+  static String get driversNearby => '$baseUrl/v1/drivers/nearby';
+
+  // User saved places endpoints (GET /v1/users/me/places, POST /v1/users/me/places, DELETE /v1/users/me/places/{id})
+  static String get userPlaces => '$baseUrl/v1/users/me/places';
+  static String userPlaceById(String id) => '$baseUrl/v1/users/me/places/$id';
+
+  // User home suggestions endpoint (GET /v1/users/me/suggestions)
+  static String get userSuggestions => '$baseUrl/v1/users/me/suggestions';
 }

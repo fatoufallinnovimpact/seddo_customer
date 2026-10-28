@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/home/data/models/home_suggestions_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
@@ -412,6 +413,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       );
       return;
     }
+
+    await RecentTripStorage.saveLastRecentTrip(arrival);
+    if (!mounted) return;
 
     final bookingResult = await Navigator.of(context).push(
       SlideRightToLeftRoute(

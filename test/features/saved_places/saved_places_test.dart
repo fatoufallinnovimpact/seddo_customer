@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:seddo/core/utils/api_endpoints.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
@@ -112,6 +114,143 @@ void main() {
       // Delete place
       final withDeleted = await service.deleteSavedPlace('gym_001');
       expect(withDeleted.any((p) => p.id == 'gym_001'), isFalse);
+    });
+  });
+
+  group('SavedPlacesService Remote API Integration Tests', () {
+    late Dio mockDio;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      mockDio = Dio();
+    });
+
+    test('getSavedPlaces calls GET /v1/users/me/places and parses remote items', () async {
+      mockDio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == ApiEndpoints.userPlaces && options.method == 'GET') {
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: [
+                    {
+                      'id': 'api_home_1',
+                      'kind': 'HOME',
+                      'label': 'Maison',
+                      'address': 'Sacré-Cœur 3, villa 12',
+                      'lat': 14.7167,
+                      'lng': -17.4677,
+                    },
+                    {
+                      'id': 'api_work_1',
+                      'kind': 'WORK',
+                      'label': 'Travail',
+                      'address': 'Plateau, rue Carnot',
+                      'lat': 14.6720,
+                      'lng': -17.4330,
+                    },
+                  ],
+                ),
+              );
+            }
+            return handler.next(options);
+          },
+        ),
+      );
+
+      final service = SavedPlacesService(null, null, mockDio);
+      final places = await service.getSavedPlaces();
+
+      expect(places.length, 2);
+      expect(places[0].id, 'api_home_1');
+      expect(places[0].name, 'Maison');
+      expect(places[0].kind, 'HOME');
+      expect(places[0].iconType, 'home');
+      expect(places[0].latitude, 14.7167);
+      expect(places[0].longitude, -17.4677);
+
+      expect(places[1].id, 'api_work_1');
+      expect(places[1].name, 'Travail');
+      expect(places[1].kind, 'WORK');
+      expect(places[1].iconType, 'work');
+    });
+
+    test('addSavedPlace calls POST /v1/users/me/places with kind and coordinates', () async {
+      Map<String, dynamic>? capturedPayload;
+
+      mockDio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path == ApiEndpoints.userPlaces && options.method == 'POST') {
+              capturedPayload = options.data as Map<String, dynamic>;
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: {
+                    'id': 'server_created_id',
+                    'kind': capturedPayload!['kind'],
+                    'label': capturedPayload!['label'],
+                    'address': capturedPayload!['address'],
+                    'lat': capturedPayload!['lat'],
+                    'lng': capturedPayload!['lng'],
+                  },
+                ),
+              );
+            }
+            return handler.next(options);
+          },
+        ),
+      );
+
+      final service = SavedPlacesService(null, null, mockDio);
+      final newPlace = const SavedPlaceModel(
+        id: 'temp_id',
+        name: 'Maison',
+        address: 'Sacré-Cœur 3, villa 12',
+        latitude: 14.7167,
+        longitude: -17.4677,
+        iconType: 'home',
+      );
+
+      final result = await service.addSavedPlace(newPlace);
+
+      expect(capturedPayload, isNotNull);
+      expect(capturedPayload!['kind'], 'HOME');
+      expect(capturedPayload!['label'], 'Maison');
+      expect(capturedPayload!['address'], 'Sacré-Cœur 3, villa 12');
+      expect(capturedPayload!['lat'], 14.7167);
+      expect(capturedPayload!['lng'], -17.4677);
+
+      expect(result.any((p) => p.id == 'server_created_id'), isTrue);
+    });
+
+    test('deleteSavedPlace calls DELETE /v1/users/me/places/{id}', () async {
+      String? deletedPath;
+
+      mockDio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.method == 'DELETE') {
+              deletedPath = options.path;
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 204,
+                ),
+              );
+            }
+            return handler.next(options);
+          },
+        ),
+      );
+
+      final service = SavedPlacesService(null, null, mockDio);
+      await service.deleteSavedPlace('place_to_delete_123');
+
+      expect(deletedPath, ApiEndpoints.userPlaceById('place_to_delete_123'));
     });
   });
 

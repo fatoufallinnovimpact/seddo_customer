@@ -20,6 +20,7 @@ import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_driver_card_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/driver_action_buttons_widget.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/offline_emergency_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_action_tile_widget.dart';
@@ -43,6 +44,7 @@ class ActiveRidePage extends StatefulWidget {
   final List<LatLng> polylinePoints;
   final bool autoStartSimulation;
   final bool isOffline;
+  final String? rideId;
 
   const ActiveRidePage({
     super.key,
@@ -51,8 +53,9 @@ class ActiveRidePage extends StatefulWidget {
     required this.rideOption,
     required this.driver,
     this.polylinePoints = const [],
-    this.autoStartSimulation = true,
+    this.autoStartSimulation = false,
     this.isOffline = false,
+    this.rideId,
   });
 
   @override
@@ -489,7 +492,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   void _openChat() {
     Navigator.of(context).push(
       SlideRightToLeftRoute(
-        page: DriverChatPage(driver: widget.driver),
+        page: DriverChatPage(
+          driver: widget.driver,
+          rideId: widget.rideId,
+        ),
       ),
     );
   }
@@ -1045,43 +1051,27 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               ),
             ),
 
-          // 3. Floating Recenter & Auto-Follow Button
+          // 3. Floating Camera Mode Toggle Button (Ma position / Destination / Vue Trajet)
           Positioned(
             right: 16,
             bottom: MediaQuery.of(context).size.height * _currentSheetExtent +
                 12,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _followCar ? AppColors.primary : AppColors.white,
-                shape: BoxShape.circle,
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadowMarker,
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
-                  ),
-                ],
+            child: RideMapCameraToggleButton(
+              mapControllerGetter: () => _mapController,
+              departureLocation: _currentCarPosition,
+              destinationLocation: LatLng(
+                widget.destination.latitude,
+                widget.destination.longitude,
               ),
-              child: IconButton(
-                icon: Icon(
-                  Icons.my_location_rounded,
-                  color:
-                      _followCar ? AppColors.white : AppColors.textPrimary,
-                  size: 20,
-                ),
-                tooltip: 'Centrer sur la voiture',
-                onPressed: () {
-                  setState(() {
-                    _followCar = true;
-                  });
-                  _isProgrammaticCameraMove = true;
-                  _mapController?.animateCamera(
-                    CameraUpdate.newLatLngZoom(_currentCarPosition, 16.5),
-                  );
-                },
-              ),
+              polylinePoints: widget.polylinePoints,
+              initialMode: RideMapCameraMode.tripOverview,
+              onModeChanged: (mode) {
+                if (mode == RideMapCameraMode.departure) {
+                  setState(() => _followCar = true);
+                } else {
+                  setState(() => _followCar = false);
+                }
+              },
             ),
           ),
 

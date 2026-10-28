@@ -129,4 +129,113 @@ class DriverModel {
       distanceKm: 0.8,
     );
   }
+
+  /// Extrait et instancie un [DriverModel] depuis la réponse de l'API :
+  /// GET /v1/rides/{id} ou GET /v1/rides/current
+  factory DriverModel.fromRideJson(
+    Map<String, dynamic> rawJson, {
+    RideType? defaultRideType,
+  }) {
+    final json = rawJson['ride'] is Map<String, dynamic>
+        ? rawJson['ride'] as Map<String, dynamic>
+        : rawJson;
+
+    final driverRaw = json['driver'] is Map<String, dynamic>
+        ? json['driver'] as Map<String, dynamic>
+        : json;
+
+    final vehicleRaw = driverRaw['vehicle'] is Map<String, dynamic>
+        ? driverRaw['vehicle'] as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    final firstName = driverRaw['firstName'] as String? ?? '';
+    final lastName = driverRaw['lastName'] as String? ?? '';
+    String resolvedName = driverRaw['name'] as String? ?? '';
+    if (resolvedName.isEmpty && (firstName.isNotEmpty || lastName.isNotEmpty)) {
+      resolvedName = '$firstName $lastName'.trim();
+    }
+    if (resolvedName.isEmpty) resolvedName = 'Chauffeur Seddo';
+
+    final vehicleMake = vehicleRaw['make'] as String? ?? '';
+    final vehicleModel = vehicleRaw['model'] as String? ??
+        (driverRaw['carModel'] as String? ?? 'Toyota Corolla');
+    final resolvedCarModel =
+        vehicleMake.isNotEmpty && !vehicleModel.startsWith(vehicleMake)
+            ? '$vehicleMake $vehicleModel'
+            : vehicleModel;
+
+    final resolvedCarColor = vehicleRaw['color'] as String? ??
+        (driverRaw['carColor'] as String? ?? 'Gris');
+    final resolvedPlate = vehicleRaw['plate'] as String? ??
+        (driverRaw['licensePlate'] as String? ?? 'DK-4582-AB');
+
+    // Location
+    final locRaw = driverRaw['location'] is Map<String, dynamic>
+        ? driverRaw['location'] as Map<String, dynamic>
+        : null;
+    final lat = (locRaw?['lat'] as num?)?.toDouble() ??
+        (driverRaw['lat'] as num?)?.toDouble() ??
+        14.6937;
+    final lng = (locRaw?['lng'] as num?)?.toDouble() ??
+        (driverRaw['lng'] as num?)?.toDouble() ??
+        -17.4647;
+
+    final eta = (json['etaMinutes'] as num?)?.toInt() ??
+        (json['eta'] as num?)?.toInt() ??
+        (driverRaw['etaMinutes'] as num?)?.toInt() ??
+        3;
+
+    final category =
+        (json['category'] as String? ?? driverRaw['rideType'] as String? ?? '')
+            .toUpperCase();
+    final rType = category == 'CONFORT'
+        ? RideType.confort
+        : (defaultRideType ?? RideType.eco);
+
+    return DriverModel(
+      id: driverRaw['id']?.toString() ?? '',
+      name: resolvedName,
+      phone: driverRaw['phone'] as String? ??
+          (driverRaw['phoneNumber'] as String? ?? '+221 77 123 45 67'),
+      photoUrl: driverRaw['photoUrl'] as String? ??
+          (driverRaw['photo'] as String? ?? driverRaw['avatar'] as String?),
+      rating: (driverRaw['rating'] as num?)?.toDouble() ?? 4.9,
+      totalRides: (driverRaw['totalRides'] as num?)?.toInt() ?? 1250,
+      carModel: resolvedCarModel,
+      carColor: resolvedCarColor,
+      licensePlate: resolvedPlate,
+      rideType: rType,
+      currentLocation: LatLng(lat, lng),
+      etaMinutes: eta,
+      distanceKm: (driverRaw['distanceKm'] as num?)?.toDouble() ??
+          (json['distanceKm'] as num?)?.toDouble() ??
+          1.2,
+    );
+  }
+
+  /// Extrait le code de départ à 4 chiffres depuis la réponse de l'API :
+  /// Supporte 'code', 'startCode', 'departureCode', 'pin'
+  static String extractDepartureCode(
+    Map<String, dynamic> rawJson, {
+    String fallback = '4821',
+  }) {
+    final rideMap = rawJson['ride'] is Map<String, dynamic>
+        ? rawJson['ride'] as Map<String, dynamic>
+        : rawJson;
+
+    final raw = rideMap['code'] ??
+        rideMap['startCode'] ??
+        rideMap['departureCode'] ??
+        rideMap['pin'] ??
+        rawJson['code'] ??
+        rawJson['startCode'] ??
+        rawJson['departureCode'] ??
+        rawJson['pin'];
+
+    if (raw != null) {
+      final str = raw.toString().trim();
+      if (str.isNotEmpty) return str;
+    }
+    return fallback;
+  }
 }

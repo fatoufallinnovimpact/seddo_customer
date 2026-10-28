@@ -74,10 +74,18 @@ class RideRepository {
           createdAt: DateTime.now(),
         );
 
-    final cancelled = await _service.cancelRide(
+    final cancelResult = await _service.cancelRide(
       rideId: rideId,
       reason: reason,
       currentRide: current,
+      originalPrice: current.rideOption.price,
+    );
+    final cancelled = current.copyWith(
+      status: RideStatus.cancelled,
+      completedAt: DateTime.now(),
+      cancellationFee: cancelResult.fee,
+      refundAmount: cancelResult.refundAmount,
+      cancellationReason: cancelResult.reason,
     );
     _currentRide = cancelled;
     _rideStatusController.add(cancelled);
@@ -90,6 +98,10 @@ class RideRepository {
 
   Stream<RideModel> watchRideStatus(String rideId) {
     return _rideStatusController.stream;
+  }
+
+  Future<List<ChatMessageModel>> getChatMessages(String rideId) {
+    return _service.getChatMessages(rideId: rideId);
   }
 
   Future<void> sendChatMessage({

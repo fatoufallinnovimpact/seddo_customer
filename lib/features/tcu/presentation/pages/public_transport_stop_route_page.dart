@@ -10,6 +10,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/tcu/data/models/tcu_route_model.dart';
+import 'package:seddo/services/route_service.dart';
 
 /// Screen displaying walking navigation towards the nearest transit stop on the map (Yango style).
 /// Displays Google Maps with:
@@ -40,6 +41,7 @@ class _PublicTransportStopRoutePageState
   Timer? _navigationTimer;
   StreamSubscription<Position>? _positionStreamSub;
   final List<LatLng> _realTraveledPoints = [];
+  List<LatLng> _roadWalkingPath = [];
 
   late final LatLng _userPos;
   late final LatLng _stopPos;
@@ -70,6 +72,27 @@ class _PublicTransportStopRoutePageState
 
     _initTts();
     _initRealGpsLocation();
+    _fetchRoadWalkingPath();
+  }
+
+  Future<void> _fetchRoadWalkingPath() async {
+    if (_isTestEnvironment) return;
+    try {
+      final routeDetails = await RouteService().getWalkingRoute(
+        origin: _currentUserPos,
+        destination: _stopPos,
+      );
+      if (mounted && routeDetails.polylinePoints.length >= 2) {
+        setState(() {
+          _roadWalkingPath = routeDetails.polylinePoints;
+          _remainingDistanceMeters = (routeDetails.distanceKm * 1000).round();
+          _remainingDurationMinutes = routeDetails.durationMinutes.clamp(1, 120);
+        });
+        _fitMapBounds();
+      }
+    } catch (e) {
+      debugPrint('Error fetching walking road route: $e');
+    }
   }
 
   Future<void> _initRealGpsLocation() async {
@@ -113,6 +136,7 @@ class _PublicTransportStopRoutePageState
           _realTraveledPoints.add(current);
         });
 
+        _fetchRoadWalkingPath();
         _fitMapBounds();
       }
     } catch (e) {
@@ -309,54 +333,43 @@ class _PublicTransportStopRoutePageState
   }
 
   List<LatLng> _getRemainingWalkingPath() {
-    final fullPath = widget.routeOption.walkingPathToStop;
-    if (fullPath.isEmpty) {
-      return [_currentUserPos, _stopPos];
-    }
     if (_isArrived || _progress >= 1.0) {
       return [];
     }
-    if (_progress <= 0.0) {
+    final fullPath = _roadWalkingPath.isNotEmpty
+        ? _roadWalkingPath
+        : (widget.routeOption.walkingPathToStop.isNotEmpty
+            ? widget.routeOption.walkingPathToStop
+            : <LatLng>[]);
+
+    if (fullPath.isEmpty) {
+      return [_currentUserPos, _stopPos];
+    }
+    if (_progress <= 0.0 && _realTraveledPoints.isEmpty) {
       return fullPath;
     }
-    return _calculateRemainingPath(fullPath, _currentUserPos, _progress);
-  }
 
-  List<LatLng> _calculateRemainingPath(
-    List<LatLng> path,
-    LatLng currentPos,
-    double t,
-  ) {
-    if (path.length <= 1) return [currentPos];
-
-    final segmentLengths = <double>[];
-    double totalDistance = 0.0;
-    for (int i = 0; i < path.length - 1; i++) {
-      final d = _distanceBetween(path[i], path[i + 1]);
-      segmentLengths.add(d);
-      totalDistance += d;
-    }
-
-    if (totalDistance == 0.0) return [currentPos];
-
-    final targetDistance = t * totalDistance;
-    double accumulated = 0.0;
-    int currentSegIndex = 0;
-
-    for (int i = 0; i < segmentLengths.length; i++) {
-      if (accumulated + segmentLengths[i] >= targetDistance) {
-        currentSegIndex = i;
-        break;
+    // Find closest index on the real road path to user's real position
+    int closestIndex = 0;
+    double minDistance = double.infinity;
+    for (int i = 0; i < fullPath.length; i++) {
+      final d = _distanceBetween(_currentUserPos, fullPath[i]);
+      if (d < minDistance) {
+        minDistance = d;
+        closestIndex = i;
       }
-      accumulated += segmentLengths[i];
     }
 
-    final remaining = <LatLng>[currentPos];
-    for (int i = currentSegIndex + 1; i < path.length; i++) {
-      remaining.add(path[i]);
+    final remaining = <LatLng>[_currentUserPos];
+    for (int i = closestIndex; i < fullPath.length; i++) {
+      remaining.add(fullPath[i]);
+    }
+    if (remaining.length == 1 && fullPath.isNotEmpty) {
+      remaining.add(fullPath.last);
     }
     return remaining;
   }
+
 
   List<LatLng> _calculateTraveledPath(
     List<LatLng> path,
@@ -402,7 +415,10 @@ class _PublicTransportStopRoutePageState
     final allPoints = [
       _currentUserPos,
       _stopPos,
-      ...widget.routeOption.walkingPathToStop,
+      if (_roadWalkingPath.isNotEmpty)
+        ..._roadWalkingPath
+      else
+        ...widget.routeOption.walkingPathToStop,
     ];
 
     double south = allPoints.first.latitude;
@@ -572,6 +588,23 @@ class _PublicTransportStopRoutePageState
           _progress = progress;
           _realTraveledPoints.add(newPos);
         });
+
+        // If user took another street and deviated > 35m, re-calculate route along real roads
+        if (_roadWalkingPath.isNotEmpty) {
+          double minDevDist = double.infinity;
+          for (final pt in _roadWalkingPath) {
+            final d = Geolocator.distanceBetween(
+              newPos.latitude,
+              newPos.longitude,
+              pt.latitude,
+              pt.longitude,
+            );
+            if (d < minDevDist) minDevDist = d;
+          }
+          if (minDevDist > 35) {
+            _fetchRoadWalkingPath();
+          }
+        }
 
         // Smooth camera follow as user walks in real life
         _mapController?.animateCamera(

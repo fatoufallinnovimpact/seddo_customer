@@ -1,29 +1,34 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
+import 'package:seddo/features/home/data/models/home_suggestions_model.dart';
 import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/home/domain/bloc/home_event.dart';
 import 'package:seddo/features/home/domain/bloc/home_state.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
-import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
-import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
+import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
+import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
+import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
+import 'package:seddo/services/places_service.dart';
 
 /// Main Home Screen of Seddo:
-/// - Full-screen interactive Google Map with top-down cars from assets/images/car.png
-///   and smooth pulsatile orange radar circles around user location.
-/// - Butter-smooth gestures (uninterrupted pinch-to-zoom and pan).
-/// - Floating Top Bar: Circular Menu button, white SEDDO pill, Circular Notification button.
-/// - Floating Bottom Map Controls: Vehicle indicator pill and GPS recenter button.
-/// - Bottom Sheet: Rounded container with search bar and offer cards with transparent background images.
+/// - Top Bar: SEDDO logo on left + real user street address beneath it (tapping opens "VOTRE POSITION" modal),
+///   and circular hamburger menu on right.
+/// - Search Card: "Où allez-vous ?"
+/// - Suggestions Section: "Suggestions" with last recent trip and real saved place.
+/// - Offer Cards Carousel: Seddo Eco, Seddo Confort, BRT / TCU transit card.
+/// - La carte en bas a été supprimée au profit du modal plein écran avec sélecteur animé.
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -45,107 +50,186 @@ class _HomePageContent extends StatefulWidget {
 
 class _HomePageContentState extends State<_HomePageContent> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final RideService _rideService = RideService();
+  final PlacesService _placesService = PlacesService();
   late final PageController _pageController;
 
-  GoogleMapController? _mapController;
   int _selectedCardIndex = 0;
+  Timer? _nearbyDriversPollTimer;
 
-  Timer? _pulseTimer;
-  int _pulseStep = 0;
-  bool _isCameraMoving = false;
+  NearbyDriversResponseModel? _nearbyDrivers;
+  LatLng? _lastNearbyFetchPos;
+  HomeSuggestionsModel? _suggestions;
+  List<RecentSuggestionModel> _localRecentTrips = [];
 
-  BitmapDescriptor? _userLocationIcon;
-  BitmapDescriptor? _userHaloIcon;
-  BitmapDescriptor? _ecoCarIcon;
-  BitmapDescriptor? _confortCarIcon;
-  BitmapDescriptor? _destPinIcon;
-  final Map<String, BitmapDescriptor> _transitIcons = {};
+  String _currentAddressShort = 'Rue YF-557, 20';
+  String _currentAddressDetails = 'Yoff, Almadies, Département de Dakar';
+  LatLng? _currentUserLocation;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(viewportFraction: 0.88);
 
-    // Gentle pulsating radar effect: updates only ~1.3 times per second
-    // and automatically pauses while user is zooming/panning to ensure 120 FPS buttery smoothness
-    _pulseTimer = Timer.periodic(const Duration(milliseconds: 750), (_) {
-      if (mounted && !_isCameraMoving) {
-        setState(() {
-          _pulseStep = (_pulseStep + 1) % 3;
-        });
+    // Initialisation après le montage du widget
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final bloc = context.read<HomeBloc>();
+        _currentUserLocation = bloc.state.userLocation;
+        _resolveUserLocationAddress(bloc.state.userLocation);
+        _fetchNearbyDrivers(bloc.state.userLocation);
+        _fetchSuggestions();
+        _initRealUserLocation();
       }
     });
 
-    _loadCustomMarkers();
-  }
-
-  Future<void> _loadCustomMarkers() async {
-    // 1. User location marker
-    BitmapDescriptor? userLoc;
-    try {
-      userLoc = await MapMarkerHelper.getUserLocationMarker();
-    } catch (_) {}
-    final userHalo = await MapMarkerHelper.getUserLocationHaloMarker();
-
-    // 2. Real car.png asset from assets/images/car.png
-    BitmapDescriptor? ecoCar;
-    BitmapDescriptor? confortCar;
-
-    try {
-      final byteData = await rootBundle.load('assets/images/car.png');
-      ecoCar = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
-    } catch (_) {
-      ecoCar = await MapMarkerHelper.getEcoCarMarker();
-    }
-
-    try {
-      final byteData =
-          await rootBundle.load('assets/images/confort_car_marker.png');
-      confortCar = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
-    } catch (_) {
-      confortCar = ecoCar;
-    }
-
-    final dest = await MapMarkerHelper.getDestinationPinMarker();
-
-    final stopD = await MapMarkerHelper.getTransitStopLetterMarker(
-      letter: 'D',
-      color: AppColors.transitDakarDemDikk,
+    // Rafraîchissement périodique des chauffeurs à proximité (toutes les 10s)
+    _nearbyDriversPollTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) {
+        if (mounted) {
+          final bloc = context.read<HomeBloc>();
+          _fetchNearbyDrivers(_lastNearbyFetchPos ?? bloc.state.userLocation);
+        }
+      },
     );
-    final stopA = await MapMarkerHelper.getTransitStopLetterMarker(
-      letter: 'A',
-      color: AppColors.transitAftu,
-    );
-    final stopB = await MapMarkerHelper.getTransitStopLetterMarker(
-      letter: 'B',
-      color: AppColors.transitBrt,
-    );
-    final stopT = await MapMarkerHelper.getTransitStopLetterMarker(
-      letter: 'T',
-      color: AppColors.transitTer,
-    );
-
-    if (mounted) {
-      setState(() {
-        _userLocationIcon = userLoc ?? userHalo;
-        _userHaloIcon = userHalo;
-        _ecoCarIcon = ecoCar;
-        _confortCarIcon = confortCar;
-        _destPinIcon = dest;
-        _transitIcons['D'] = stopD;
-        _transitIcons['A'] = stopA;
-        _transitIcons['B'] = stopB;
-        _transitIcons['T'] = stopT;
-      });
-    }
   }
 
   @override
   void dispose() {
-    _pulseTimer?.cancel();
+    _nearbyDriversPollTimer?.cancel();
     _pageController.dispose();
-    _mapController?.dispose();
     super.dispose();
+  }
+
+  /// Initialise la vraie localisation GPS de l'appareil et résout son adresse réelle
+  Future<void> _initRealUserLocation() async {
+    try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null && mounted) {
+        final loc = LatLng(lastKnown.latitude, lastKnown.longitude);
+        _currentUserLocation = loc;
+        await _resolveUserLocationAddress(loc);
+      }
+    } catch (_) {}
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      if (mounted) {
+        final loc = LatLng(position.latitude, position.longitude);
+        _currentUserLocation = loc;
+        await _resolveUserLocationAddress(loc);
+        if (mounted) {
+          context.read<HomeBloc>().add(HomeUserLocationUpdatedEvent(loc));
+          _fetchNearbyDrivers(loc);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Résout le vrai nom de rue et le quartier pour la position actuelle
+  Future<void> _resolveUserLocationAddress(LatLng location) async {
+    try {
+      final res = await _placesService.reverseGeocode(
+        location.latitude,
+        location.longitude,
+      );
+      if (mounted) {
+        setState(() {
+          if (res.mainText.isNotEmpty) {
+            _currentAddressShort = res.mainText;
+          }
+          if (res.secondaryText.isNotEmpty) {
+            _currentAddressDetails = res.secondaryText;
+          }
+          _currentUserLocation = location;
+        });
+      }
+    } catch (_) {}
+  }
+
+  /// Ouvre le modal "VOTRE POSITION" au clic sur le logo Seddo ou l'adresse
+  Future<void> _openUserPositionModal(BuildContext context) async {
+    final state = context.read<HomeBloc>().state;
+    final loc = _currentUserLocation ?? state.userLocation;
+
+    final result = await UserPositionBottomSheet.show(
+      context,
+      userLocation: loc,
+      mainAddress: _currentAddressShort,
+      secondaryAddress: _currentAddressDetails,
+      placesService: _placesService,
+    );
+
+    if (result != null && mounted) {
+      _applyNewUserPosition(result);
+    }
+  }
+
+  /// Applique la nouvelle position sélectionnée depuis la carte plein écran ou la recherche
+  void _applyNewUserPosition(PlaceSearchResult place) {
+    final newLoc = LatLng(place.latitude, place.longitude);
+    final short = place.mainText.isNotEmpty
+        ? place.mainText
+        : (place.fullAddress.isNotEmpty ? place.fullAddress : 'Position sélectionnée');
+    final details = place.secondaryText.isNotEmpty
+        ? place.secondaryText
+        : 'Dakar, Sénégal';
+
+    setState(() {
+      _currentAddressShort = short;
+      _currentAddressDetails = details;
+      _currentUserLocation = newLoc;
+    });
+
+    final bloc = context.read<HomeBloc>();
+    bloc.add(HomeUserLocationUpdatedEvent(newLoc));
+    _fetchNearbyDrivers(newLoc);
+  }
+
+  Future<void> _fetchSuggestions() async {
+    try {
+      final res = await _rideService.getSuggestions();
+      final localRecents = await RecentTripStorage.getRecentTrips();
+      if (mounted) {
+        setState(() {
+          if (res != null) {
+            _suggestions = res;
+          }
+          _localRecentTrips = localRecents;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchNearbyDrivers(LatLng location) async {
+    try {
+      final res = await _rideService.getNearbyDrivers(
+        lat: location.latitude,
+        lng: location.longitude,
+      );
+      if (res != null && mounted) {
+        setState(() {
+          _nearbyDrivers = res;
+          _lastNearbyFetchPos = location;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _openDestinationSearch(BuildContext context) async {
@@ -154,12 +238,14 @@ class _HomePageContentState extends State<_HomePageContent> {
         await Navigator.of(context).push<PlaceSearchResult>(
       SlideRightToLeftRoute(
         page: PlaceSearchPage(
-          currentUserLocation: homeBloc.state.userLocation,
+          currentUserLocation: _currentUserLocation ?? homeBloc.state.userLocation,
+          initialPickup: _currentAddressShort,
         ),
       ),
     );
 
     if (selectedPlace != null && mounted) {
+      await RecentTripStorage.saveLastRecentTrip(selectedPlace);
       homeBloc.add(
         HomeSelectDestinationEvent(
           destinationLocation: LatLng(
@@ -170,6 +256,39 @@ class _HomePageContentState extends State<_HomePageContent> {
         ),
       );
     }
+
+    if (mounted) {
+      _fetchSuggestions();
+    }
+  }
+
+  Future<void> _onSelectSuggestion(PlaceSearchResult place) async {
+    final homeBloc = context.read<HomeBloc>();
+    await RecentTripStorage.saveLastRecentTrip(place);
+    if (!mounted) return;
+
+    final pickupLocation = _currentUserLocation ?? homeBloc.state.userLocation;
+    final PlaceSearchResult departureResult = PlaceSearchResult(
+      id: 'pickup_current',
+      mainText: _currentAddressShort,
+      secondaryText: _currentAddressDetails,
+      fullAddress: '$_currentAddressShort, $_currentAddressDetails',
+      latitude: pickupLocation.latitude,
+      longitude: pickupLocation.longitude,
+      category: 'pickup',
+    );
+
+    Navigator.of(context).push(
+      SlideRightToLeftRoute(
+        page: PlaceSearchPage(
+          initialDepartureResult: departureResult,
+          initialDestinationResult: place,
+          initialPickup: _currentAddressShort,
+          initialDestination: place.mainText,
+          currentUserLocation: pickupLocation,
+        ),
+      ),
+    );
   }
 
   void _openPublicTransport(BuildContext context) {
@@ -178,154 +297,6 @@ class _HomePageContentState extends State<_HomePageContent> {
         page: const PublicTransportPage(),
       ),
     );
-  }
-
-  /// Generates the pulsating radar halo circles around user location
-  Set<Circle> _buildCircles(HomeState state) {
-    final double pulseRadius;
-    final double pulseAlpha;
-
-    switch (_pulseStep) {
-      case 0:
-        pulseRadius = 26.0;
-        pulseAlpha = 0.35;
-        break;
-      case 1:
-        pulseRadius = 45.0;
-        pulseAlpha = 0.22;
-        break;
-      case 2:
-      default:
-        pulseRadius = 64.0;
-        pulseAlpha = 0.10;
-        break;
-    }
-
-    return {
-      // Expanding pulsating radar wave
-      Circle(
-        circleId: const CircleId('user_radar_pulse'),
-        center: state.userLocation,
-        radius: pulseRadius,
-        fillColor: const Color(0xFFFF6B00).withValues(alpha: pulseAlpha),
-        strokeColor:
-            const Color(0xFFFF6B00).withValues(alpha: pulseAlpha * 1.8),
-        strokeWidth: 2,
-        zIndex: 1,
-      ),
-      // Solid inner core halo
-      Circle(
-        circleId: const CircleId('user_radar_core'),
-        center: state.userLocation,
-        radius: 16.0,
-        fillColor: const Color(0xFFFF6B00).withValues(alpha: 0.25),
-        strokeColor: const Color(0xFFFF6B00).withValues(alpha: 0.55),
-        strokeWidth: 2,
-        zIndex: 2,
-      ),
-    };
-  }
-
-  Set<Marker> _buildMarkers(HomeState state) {
-    final Set<Marker> markers = {};
-
-    // 1. User Position Marker
-    if (_userLocationIcon != null || _userHaloIcon != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('user_location'),
-          position: state.userLocation,
-          icon: _userLocationIcon ?? _userHaloIcon!,
-          anchor: const Offset(0.5, 0.5),
-          zIndexInt: 10,
-        ),
-      );
-    }
-
-    // 2. Dynamic vehicle or transit markers based on active card
-    if (_selectedCardIndex == 0) {
-      // Seddo Eco: 5 dark Eco cars from assets/images/car.png
-      if (_ecoCarIcon != null) {
-        for (final driver in state.drivers.take(5)) {
-          markers.add(
-            Marker(
-              markerId: MarkerId('eco_car_${driver.id}'),
-              position: LatLng(driver.latitude, driver.longitude),
-              icon: _ecoCarIcon!,
-              rotation: driver.heading,
-              anchor: const Offset(0.5, 0.5),
-              flat: true,
-              zIndexInt: 5,
-            ),
-          );
-        }
-      }
-    } else if (_selectedCardIndex == 1) {
-      // Seddo Confort: 3 orange Confort cars
-      if (_confortCarIcon != null) {
-        final confortDrivers = [
-          if (state.drivers.isNotEmpty) state.drivers[0],
-          if (state.drivers.length > 1) state.drivers[1],
-          if (state.drivers.length > 3) state.drivers[3],
-        ];
-        for (final driver in confortDrivers) {
-          markers.add(
-            Marker(
-              markerId: MarkerId('confort_car_${driver.id}'),
-              position: LatLng(driver.latitude, driver.longitude),
-              icon: _confortCarIcon!,
-              rotation: driver.heading,
-              anchor: const Offset(0.5, 0.5),
-              flat: true,
-              zIndexInt: 5,
-            ),
-          );
-        }
-      }
-    } else if (_selectedCardIndex == 2) {
-      // TCU: 5 transit stop markers (D, A, A, B, T) around user
-      final uLat = state.userLocation.latitude;
-      final uLng = state.userLocation.longitude;
-
-      final transitStops = [
-        {'id': 'stop_D', 'letter': 'D', 'lat': uLat + 0.0018, 'lng': uLng - 0.0016},
-        {'id': 'stop_A1', 'letter': 'A', 'lat': uLat + 0.0022, 'lng': uLng + 0.0007},
-        {'id': 'stop_A2', 'letter': 'A', 'lat': uLat + 0.0013, 'lng': uLng + 0.0020},
-        {'id': 'stop_B', 'letter': 'B', 'lat': uLat - 0.0014, 'lng': uLng - 0.0019},
-        {'id': 'stop_T', 'letter': 'T', 'lat': uLat - 0.0015, 'lng': uLng + 0.0022},
-      ];
-
-      for (final stop in transitStops) {
-        final letter = stop['letter'] as String;
-        final icon = _transitIcons[letter];
-        if (icon != null) {
-          markers.add(
-            Marker(
-              markerId: MarkerId(stop['id'] as String),
-              position: LatLng(stop['lat'] as double, stop['lng'] as double),
-              icon: icon,
-              anchor: const Offset(0.5, 0.5),
-              zIndexInt: 5,
-            ),
-          );
-        }
-      }
-    }
-
-    // 3. Destination Pin (if selected)
-    if (state.destinationLocation != null && _destPinIcon != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('destination_location'),
-          position: state.destinationLocation!,
-          icon: _destPinIcon!,
-          anchor: const Offset(0.5, 1.0),
-          zIndexInt: 12,
-        ),
-      );
-    }
-
-    return markers;
   }
 
   @override
@@ -338,135 +309,141 @@ class _HomePageContentState extends State<_HomePageContent> {
       endDrawerEnableOpenDragGesture: true,
       backgroundColor: Colors.white,
       body: BlocConsumer<HomeBloc, HomeState>(
-        listenWhen: (prev, curr) =>
-            prev.userLocation != curr.userLocation ||
-            prev.destinationLocation != curr.destinationLocation,
+        listenWhen: (prev, curr) => prev.userLocation != curr.userLocation,
         listener: (context, state) {
-          if (state.destinationLocation != null) {
-            final south = math.min(
-              state.userLocation.latitude,
-              state.destinationLocation!.latitude,
-            );
-            final north = math.max(
-              state.userLocation.latitude,
-              state.destinationLocation!.latitude,
-            );
-            final west = math.min(
-              state.userLocation.longitude,
-              state.destinationLocation!.longitude,
-            );
-            final east = math.max(
-              state.userLocation.longitude,
-              state.destinationLocation!.longitude,
-            );
-
-            final bounds = LatLngBounds(
-              southwest: LatLng(south, west),
-              northeast: LatLng(north, east),
-            );
-
-            _mapController?.animateCamera(
-              CameraUpdate.newLatLngBounds(bounds, 70),
-            );
+          _resolveUserLocationAddress(state.userLocation);
+          if (_lastNearbyFetchPos == null ||
+              _lastNearbyFetchPos != state.userLocation) {
+            _fetchNearbyDrivers(state.userLocation);
           }
         },
         builder: (context, state) {
-          final markers = _buildMarkers(state);
-          final circles = _buildCircles(state);
-
-          return Stack(
-            children: [
-              // 1. Full-screen Google Map with smooth native gestures (pinch-to-zoom, pan, tilt, rotate)
-              Positioned.fill(
-                child: GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: state.userLocation,
-                    zoom: 15.6,
-                  ),
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                  },
-                  onCameraMoveStarted: () {
-                    _isCameraMoving = true;
-                  },
-                  onCameraIdle: () {
-                    _isCameraMoving = false;
-                  },
-                  markers: markers,
-                  circles: circles,
-                  zoomGesturesEnabled: true,
-                  scrollGesturesEnabled: true,
-                  tiltGesturesEnabled: true,
-                  rotateGesturesEnabled: true,
-                  myLocationEnabled: false,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  mapToolbarEnabled: false,
-                  compassEnabled: false,
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).padding.top + 60,
-                    bottom: 275,
-                  ),
-                ),
-              ),
-
-              // 2. Floating Top Bar
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildSeddoPill(),
-                        _buildTopCircleButton(
-                          icon: Icons.menu_rounded,
-                          onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
-                        ),
-                      ],
+          return SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
                     ),
-                  ),
-                ),
-              ),
-
-              // 3. Floating Bottom Controls + Bottom Sheet
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Floating controls row just above bottom sheet
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(child: _buildVehicleIndicatorPill()),
-                          const SizedBox(width: 8),
-                          _buildGpsRecenterButton(state.userLocation),
+                          // 1. Top bar aérée : Logo SEDDO à gauche + vraie adresse en dessous, menu burger à droite
+                          _buildTopBar(context),
+                          const SizedBox(height: 12),
+
+                          // 2. Search card aérée : "Où allez-vous ?"
+                          _buildSearchBar(context),
+                          const SizedBox(height: 20),
+
+                          // 3. Suggestions section : 2 cartes de trajets récents en base
+                          _buildSuggestionsSection(context),
+
+                          // 4. Espace dynamique : pousse les cartes d'offres tout en bas de la page
+                          const Spacer(),
+                          const SizedBox(height: 16),
+
+                          // 5. Offer cards carousel : Seddo Eco, Seddo Confort, BRT / TCU
+                          _buildOfferCardsSection(context),
+                          const SizedBox(height: 18),
                         ],
                       ),
                     ),
-
-                    // Rounded Bottom Sheet
-                    _buildBottomSheet(context, state),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
     );
   }
 
-  // Top Bar Helpers
+  // Top Bar aérée : SEDDO Logo + Adresse de la rue (cliquables) + Burger Menu
+  Widget _buildTopBar(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Logo SEDDO + Vraie adresse cliquable (ouvre le modal Votre position)
+          GestureDetector(
+            key: const ValueKey('seddo_logo_and_location_header'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openUserPositionModal(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Logo SEDDO (style affirmé inspiré de Yango aux couleurs Seddo)
+                Text(
+                  'SEDDO',
+                  style: GoogleFonts.inter(
+                    fontSize: 27,
+                    fontWeight: FontWeight.w900,
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.primary,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: 5),
+
+                // Vraie localisation de la personne : "Rue YF-557, 20 ›"
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.65,
+                      ),
+                      child: Text(
+                        _currentAddressShort,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Container(
+                      width: 17,
+                      height: 17,
+                      decoration: const BoxDecoration(
+                        color: AppColors.textPrimary,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.white,
+                        size: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Menu burger à droite
+          _buildTopCircleButton(
+            icon: Icons.menu_rounded,
+            onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopCircleButton({
     required IconData icon,
     required VoidCallback onTap,
@@ -496,189 +473,7 @@ class _HomePageContentState extends State<_HomePageContent> {
     );
   }
 
-  Widget _buildSeddoPill() {
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x18000000),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Text(
-        'SEDDO',
-        style: GoogleFonts.inter(
-          fontSize: 18,
-          fontWeight: FontWeight.w900,
-          color: const Color(0xFFFF5700),
-          letterSpacing: 1.0,
-        ),
-      ),
-    );
-  }
-
-  // Floating Map Controls
-  Widget _buildVehicleIndicatorPill() {
-    Color dotColor;
-    String text;
-
-    switch (_selectedCardIndex) {
-      case 1:
-        dotColor = const Color(0xFFFF6B00);
-        text = '3 Confort autour · 4 min';
-        break;
-      case 2:
-        dotColor = const Color(0xFF3B82F6);
-        text = '5 arrêts à moins de 500 m';
-        break;
-      case 0:
-      default:
-        dotColor = const Color(0xFF22C55E);
-        text = '5 Eco autour · 2 min';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x18000000),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: dotColor,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF18181A),
-                letterSpacing: -0.2,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGpsRecenterButton(LatLng userLocation) {
-    return GestureDetector(
-      onTap: () {
-        _mapController?.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(target: userLocation, zoom: 15.6),
-          ),
-        );
-      },
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x18000000),
-              blurRadius: 10,
-              offset: Offset(0, 3),
-            ),
-          ],
-        ),
-        child: const Icon(
-          Icons.my_location_rounded,
-          color: Color(0xFFFF5700),
-          size: 22,
-        ),
-      ),
-    );
-  }
-
-  // Bottom Sheet
-  Widget _buildBottomSheet(BuildContext context, HomeState state) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x18000000),
-            blurRadius: 18,
-            offset: Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Drag handle
-          Center(
-            child: Container(
-              width: 44,
-              height: 4.5,
-              margin: const EdgeInsets.only(top: 10, bottom: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-          ),
-
-          // Search bar
-          _buildSearchBar(context),
-          const SizedBox(height: 14),
-
-          // Carousel of offer cards
-          SizedBox(
-            height: 156,
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: 3,
-              onPageChanged: (index) {
-                setState(() {
-                  _selectedCardIndex = index;
-                });
-              },
-              itemBuilder: (context, index) => _buildCard(index, context),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 3-dot Pagination indicator
-          _buildPaginationDots(),
-          SizedBox(height: 12 + MediaQuery.of(context).padding.bottom),
-        ],
-      ),
-    );
-  }
-
+  // Barre de recherche aérée "Où allez-vous ?"
   Widget _buildSearchBar(BuildContext context) {
     final bool isTcu = _selectedCardIndex == 2;
     final String placeholder =
@@ -695,11 +490,15 @@ class _HomePageContentState extends State<_HomePageContent> {
         }
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.fromLTRB(16, 7, 7, 7),
         decoration: BoxDecoration(
           color: const Color(0xFFF3F4F6),
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFFE5E7EB),
+            width: 1.2,
+          ),
         ),
         child: Row(
           children: [
@@ -713,26 +512,29 @@ class _HomePageContentState extends State<_HomePageContent> {
               child: Text(
                 placeholder,
                 style: GoogleFonts.inter(
-                  fontSize: isTcu ? 16 : 16.5,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF18181A),
-                  letterSpacing: -0.3,
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF9CA3AF),
+                  letterSpacing: -0.2,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ),
             Container(
-              width: 44,
-              height: 44,
+              height: 42,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 color: buttonColor,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(
-                Icons.arrow_forward_rounded,
-                color: Colors.white,
-                size: 22,
+              alignment: Alignment.center,
+              child: Text(
+                'Aller',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
           ],
@@ -741,12 +543,338 @@ class _HomePageContentState extends State<_HomePageContent> {
     );
   }
 
+  // Section Suggestions avec 2 cartes de trajets récents depuis la base
+  Widget _buildSuggestionsSection(BuildContext context) {
+    final List<RecentSuggestionModel> recents = [];
+
+    if (_suggestions?.recent != null) {
+      recents.addAll(_suggestions!.recent);
+    }
+
+    for (final local in _localRecentTrips) {
+      if (!recents.any((r) =>
+          r.label == local.label ||
+          (r.lat == local.lat && r.lng == local.lng))) {
+        recents.add(local);
+      }
+    }
+
+    // Assurer au moins 2 cartes de trajets récents (Dakar)
+    final defaultRecents = [
+      const RecentSuggestionModel(
+        id: 'rec_sea_plaza',
+        label: 'Sea Plaza',
+        address: 'Corniche Ouest, Dakar',
+        lat: 14.6934,
+        lng: -17.4729,
+      ),
+      const RecentSuggestionModel(
+        id: 'rec_plateau',
+        label: "Place de l'Indépendance",
+        address: 'Dakar-Plateau, Dakar',
+        lat: 14.6713,
+        lng: -17.4326,
+      ),
+      const RecentSuggestionModel(
+        id: 'rec_almadies',
+        label: 'Route des Almadies',
+        address: 'Almadies, Dakar',
+        lat: 14.7450,
+        lng: -17.5180,
+      ),
+    ];
+
+    for (final def in defaultRecents) {
+      if (recents.length >= 2) break;
+      if (!recents.any((r) => r.label == def.label || r.address == def.address)) {
+        recents.add(def);
+      }
+    }
+
+    final displayRecents = recents.take(2).toList();
+    final placesList = _suggestions?.places ?? [];
+    final SavedPlaceModel? savedItem =
+        placesList.isNotEmpty ? placesList.first : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  'home.suggestions'.tr(),
+                  style: GoogleFonts.inter(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF18181A),
+                    letterSpacing: -0.3,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (savedItem != null)
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      SlideRightToLeftRoute(
+                        page: const SavedPlacesPage(),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    'Voir tout',
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // 2 cartes pour les trajets récents
+          ...displayRecents.map((item) => _buildRecentTripCard(
+                context: context,
+                item: item,
+              )),
+
+          // Lieu enregistré si disponible
+          if (savedItem != null) ...[
+            _buildSavedPlaceCard(
+              context: context,
+              item: savedItem,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentTripCard({
+    required BuildContext context,
+    required RecentSuggestionModel item,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        final place = PlaceSearchResult(
+          id: 'recent_${item.id}',
+          mainText: item.label,
+          secondaryText: item.address,
+          fullAddress: item.address.isNotEmpty ? item.address : item.label,
+          latitude: item.lat,
+          longitude: item.lng,
+          category: 'recent',
+        );
+        _onSelectSuggestion(place);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3F4F6),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.history_rounded,
+                color: Color(0xFF6B7280),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.label,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF18181A),
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (item.address.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      item.address,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF6B7280),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF9CA3AF),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSavedPlaceCard({
+    required BuildContext context,
+    required SavedPlaceModel item,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        final place = PlaceSearchResult(
+          id: 'saved_${item.id}',
+          mainText: item.name,
+          secondaryText: item.address,
+          fullAddress: item.address,
+          latitude: item.latitude,
+          longitude: item.longitude,
+        );
+        _onSelectSuggestion(place);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFE5E7EB),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withAlpha(25),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _iconForPlaceKind(item.kind),
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF18181A),
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (item.address.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      item.address,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF6B7280),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF9CA3AF),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _iconForPlaceKind(String? kindOrIcon) {
+    final norm = (kindOrIcon ?? '').toUpperCase();
+    if (norm == 'HOME' || norm.contains('MAISON')) {
+      return Icons.home_rounded;
+    }
+    if (norm == 'WORK' || norm.contains('TRAVAIL') || norm.contains('BUREAU')) {
+      return Icons.work_rounded;
+    }
+    if (norm.contains('AIRPORT') || norm.contains('AEROPORT')) {
+      return Icons.flight_takeoff_rounded;
+    }
+    return Icons.star_rounded;
+  }
+
+  // Section Carrousel des cartes d'offres : Eco, Confort, TCU
+  Widget _buildOfferCardsSection(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 168,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: 3,
+            onPageChanged: (index) {
+              setState(() {
+                _selectedCardIndex = index;
+              });
+            },
+            itemBuilder: (context, index) => _buildCard(index, context),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildPaginationDots(),
+      ],
+    );
+  }
+
   Widget _buildCard(int index, BuildContext context) {
     switch (index) {
       case 0:
-        return _buildEcoCard(context);
+        return _buildSeddoEcoCard(context);
       case 1:
-        return _buildConfortCard(context);
+        return _buildSeddoConfortCard(context);
       case 2:
         return _buildTcuCard(context);
       default:
@@ -754,22 +882,28 @@ class _HomePageContentState extends State<_HomePageContent> {
     }
   }
 
-  Widget _buildEcoCard(BuildContext context) {
+  Widget _buildSeddoEcoCard(BuildContext context) {
     return GestureDetector(
       onTap: () => _openDestinationSearch(context),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF1C1C1E),
-          borderRadius: BorderRadius.circular(24),
+          color: const Color(0xFF18181A),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x28000000),
+              blurRadius: 14,
+              offset: Offset(0, 5),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -777,7 +911,7 @@ class _HomePageContentState extends State<_HomePageContent> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2C2C30),
+                        color: const Color(0xFFFF5700),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -785,7 +919,7 @@ class _HomePageContentState extends State<_HomePageContent> {
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white.withAlpha(200),
+                          color: Colors.white,
                           letterSpacing: 0.6,
                         ),
                       ),
@@ -793,6 +927,8 @@ class _HomePageContentState extends State<_HomePageContent> {
                     const SizedBox(height: 6),
                     Text(
                       'Seddo Eco',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -802,22 +938,44 @@ class _HomePageContentState extends State<_HomePageContent> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Le plus abordable,\ntrajets du quotidien',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withAlpha(210),
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Arrive dans 2 min',
+                      'Arrive dans ${_nearbyDrivers?.ecoEtaMinutes ?? 2} min',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Prix bas · À partir de 1 500 F',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withAlpha(200),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.people_alt_rounded, size: 14, color: Color(0xFFFF5700)),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '4 places',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFFF5700),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -826,10 +984,16 @@ class _HomePageContentState extends State<_HomePageContent> {
             const SizedBox(width: 8),
             Image.asset(
               'assets/images/seddo_eco_3d.png',
-              width: 135,
-              height: 95,
+              width: 140,
+              height: 90,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) => Image.asset(
+                'assets/images/car.png',
+                width: 140,
+                height: 90,
+                fit: BoxFit.contain,
+              ),
             ),
           ],
         ),
@@ -837,22 +1001,32 @@ class _HomePageContentState extends State<_HomePageContent> {
     );
   }
 
-  Widget _buildConfortCard(BuildContext context) {
+  Widget _buildSeddoConfortCard(BuildContext context) {
     return GestureDetector(
       onTap: () => _openDestinationSearch(context),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFFDE3D2),
-          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF232526), Color(0xFF414345)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x28000000),
+              blurRadius: 14,
+              offset: Offset(0, 5),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -860,7 +1034,7 @@ class _HomePageContentState extends State<_HomePageContent> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF5CFB8),
+                        color: const Color(0xFFFF8A00),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -868,7 +1042,7 @@ class _HomePageContentState extends State<_HomePageContent> {
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
-                          color: const Color(0xFFB54708),
+                          color: Colors.white,
                           letterSpacing: 0.6,
                         ),
                       ),
@@ -876,31 +1050,55 @@ class _HomePageContentState extends State<_HomePageContent> {
                     const SizedBox(height: 6),
                     Text(
                       'Seddo Confort',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
-                        color: const Color(0xFFB54708),
+                        color: Colors.white,
                         letterSpacing: -0.5,
                       ),
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Climatisation,\nvoitures récentes',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFFB54708),
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Arrive dans 4 min',
+                      '${_nearbyDrivers?.confortCount ?? 3} Confort autour · ${_nearbyDrivers?.confortEtaMinutes ?? 4} min',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFFB54708),
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Berlines récentes & Chauffeurs Pro',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withAlpha(200),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFF8A00)),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'Top chauffeurs',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFFF8A00),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -909,10 +1107,16 @@ class _HomePageContentState extends State<_HomePageContent> {
             const SizedBox(width: 8),
             Image.asset(
               'assets/images/seddo_confort_3d.png',
-              width: 135,
-              height: 95,
+              width: 140,
+              height: 90,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
+              errorBuilder: (context, error, stackTrace) => Image.asset(
+                'assets/images/car.png',
+                width: 140,
+                height: 90,
+                fit: BoxFit.contain,
+              ),
             ),
           ],
         ),
@@ -924,18 +1128,28 @@ class _HomePageContentState extends State<_HomePageContent> {
     return GestureDetector(
       onTap: () => _openPublicTransport(context),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF3257C9),
-          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x301E3A8A),
+              blurRadius: 14,
+              offset: Offset(0, 5),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -959,6 +1173,8 @@ class _HomePageContentState extends State<_HomePageContent> {
                     const SizedBox(height: 6),
                     Text(
                       'Bus, BRT, ...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -968,7 +1184,9 @@ class _HomePageContentState extends State<_HomePageContent> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      'Dem Dikk, AFTU,\nBRT, TER',
+                      'Dem Dikk, AFTU, BRT & TER',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,

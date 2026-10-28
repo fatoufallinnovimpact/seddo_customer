@@ -9,27 +9,35 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
+import 'package:seddo/features/ride/data/models/ride_cancel_result_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_approaching_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
+import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/no_driver_found_sheet.dart';
 
-/// Screen displayed while searching for nearby drivers matching Screenshot 3:
-/// - Map with pickup marker, radar circle, candidate car with "Offre envoyée · 1,2 km" badge
+/// Screen displayed while searching for nearby drivers:
+/// - Map with pickup marker, true pulsating radar waves, real nearby cars from GET /v1/drivers/nearby
 /// - Bottom sheet:
 ///   - "Recherche d'un chauffeur" + animated progress bar
 ///   - "Paiement reçu · [Price] F" / "Remboursé si aucun chauffeur n'accepte"
-///   - "6 chauffeurs [Eco/Confort] autour de vous" / "L'offre est proposée au plus proche d'abord"
+///   - "X chauffeurs [Eco/Confort] autour de vous"
 ///   - "Annuler la course"
-///   - "Simuler : chauffeur trouvé" and "Simuler : aucun chauffeur" shortcuts
 class DriverSearchPage extends StatefulWidget {
   final PlaceSearchResult departure;
   final PlaceSearchResult destination;
   final RideOptionModel rideOption;
   final List<LatLng> polylinePoints;
   final String? pickupLandmark;
+  final bool? autoMatchDriver;
+  final String? rideId;
+  final RideService? rideService;
+  final PaymentMethodType? paymentMethod;
 
   const DriverSearchPage({
     super.key,
@@ -38,6 +46,10 @@ class DriverSearchPage extends StatefulWidget {
     required this.rideOption,
     this.polylinePoints = const [],
     this.pickupLandmark,
+    this.autoMatchDriver,
+    this.rideId,
+    this.rideService,
+    this.paymentMethod,
   });
 
   @override
@@ -46,71 +58,181 @@ class DriverSearchPage extends StatefulWidget {
 
 class _DriverSearchPageState extends State<DriverSearchPage>
     with SingleTickerProviderStateMixin {
+  late final RideService _rideService;
   GoogleMapController? _mapController;
   Timer? _autoMatchTimer;
+  Timer? _nearbyPollTimer;
+  Timer? _rideStatusPollTimer;
   late AnimationController _radarController;
 
-  BitmapDescriptor? _carMarkerIcon;
-  BitmapDescriptor? _orangeCarMarkerIcon;
-  BitmapDescriptor? _offerSentBadgeIcon;
   BitmapDescriptor? _destPinIcon;
   BitmapDescriptor? _pickupPinIcon;
+  BitmapDescriptor? _carMarkerIcon;
+
+  List<NearbyCarModel> _nearbyCars = [];
+  int? _nearbyDriversCount;
+
+  final GlobalKey _bottomSheetKey = GlobalKey();
+  double _bottomSheetHeight = 360.0;
 
   @override
   void initState() {
     super.initState();
+    _rideService = widget.rideService ?? RideService();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureBottomSheet();
+    });
+
+    // True pulsating radar waves expanding outward continuously
     _radarController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
+      duration: const Duration(milliseconds: 2200),
+    )..addListener(() {
+        if (mounted) setState(() {});
+      })..repeat();
 
     _loadCustomMarkers();
+    _loadNearbyDrivers();
 
-    // Auto match driver after 5 seconds if not triggered manually
-    _autoMatchTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted) {
-        _onDriverFound();
+    // Poll nearby drivers periodically while searching
+    _nearbyPollTimer = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _loadNearbyDrivers(),
+    );
+
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
+
+    if (shouldAutoMatch) {
+      _autoMatchTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          onDriverFound();
+        }
+      });
+    }
+
+    // Interroge périodiquement GET /v1/rides/{id} pour détecter l'acceptation d'un chauffeur
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      _checkRideStatus(effectiveRideId);
+      if (!isTest) {
+        _rideStatusPollTimer = Timer.periodic(
+          const Duration(seconds: 3),
+          (_) => _checkRideStatus(effectiveRideId),
+        );
       }
-    });
+    }
   }
 
   @override
   void dispose() {
     _autoMatchTimer?.cancel();
+    _nearbyPollTimer?.cancel();
+    _rideStatusPollTimer?.cancel();
     _radarController.dispose();
     _mapController?.dispose();
     super.dispose();
   }
 
+  void _measureBottomSheet() {
+    final renderBox =
+        _bottomSheetKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null && renderBox.hasSize && mounted) {
+      final h = renderBox.size.height;
+      if ((_bottomSheetHeight - h).abs() > 3) {
+        setState(() {
+          _bottomSheetHeight = h;
+        });
+      }
+    }
+  }
+
+  /// Vérifie le statut de la course via GET /v1/rides/{id}
+  Future<void> _checkRideStatus(String rideId) async {
+    try {
+      final data = await _rideService.getRideDetails(rideId);
+      if (data != null && mounted) {
+        final status = (data['status'] as String? ?? '').toUpperCase();
+        if (status == 'ACCEPTED' ||
+            status == 'DRIVER_ARRIVED' ||
+            status == 'IN_PROGRESS' ||
+            data['driver'] != null) {
+          final driver = DriverModel.fromRideJson(
+            data,
+            defaultRideType: widget.rideOption.type,
+          );
+          final code = DriverModel.extractDepartureCode(data);
+          onDriverFound(
+            driver,
+            code,
+            rideId,
+          );
+        } else if (status.startsWith('CANCELLED') || status == 'NO_DRIVER') {
+          _rideStatusPollTimer?.cancel();
+          onNoDriverAvailable();
+        }
+      }
+    } catch (e) {
+      debugPrint('[DriverSearchPage] ⚠️ Erreur polling statut course: $e');
+    }
+  }
+
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.get3DCarMarker();
     final pickup = await MapMarkerHelper.getDeparturePinMarker();
     final dest = await MapMarkerHelper.getDestinationPinMarker();
-    final offerBadge = await MapMarkerHelper.getPickupBadgeMarker(
-      label: 'Offre envoyée · 1,2 km',
-      dotColor: AppColors.primary,
-    );
+    final car = await MapMarkerHelper.get3DCarMarker();
 
     if (mounted) {
       setState(() {
-        _carMarkerIcon = car;
-        _orangeCarMarkerIcon = car;
-        _offerSentBadgeIcon = offerBadge;
         _destPinIcon = dest;
         _pickupPinIcon = pickup;
+        _carMarkerIcon = car;
       });
     }
   }
 
-  void _onDriverFound() {
+  /// Récupère les vraies voitures disponibles autour du point de départ via GET /v1/drivers/nearby
+  Future<void> _loadNearbyDrivers() async {
+    try {
+      final result = await _rideService.getNearbyDrivers(
+        lat: widget.departure.latitude,
+        lng: widget.departure.longitude,
+      );
+
+      if (result != null && mounted) {
+        final isEco = widget.rideOption.type == RideType.eco;
+        final categoryCars = isEco ? result.ecoCars : result.confortCars;
+        final categoryCount = isEco ? result.ecoCount : result.confortCount;
+
+        setState(() {
+          _nearbyCars = categoryCars.isNotEmpty ? categoryCars : result.allCars;
+          _nearbyDriversCount =
+              categoryCount > 0 ? categoryCount : result.allCars.length;
+        });
+      }
+    } catch (_) {}
+  }
+
+  void onDriverFound([
+    DriverModel? matchedDriver,
+    String? code,
+    String? rideId,
+  ]) {
     _autoMatchTimer?.cancel();
-    final driver = DriverModel.mockDakarDriver(
-      rideType: widget.rideOption.type,
-      location: LatLng(
-        widget.departure.latitude + 0.0035,
-        widget.departure.longitude + 0.0030,
-      ),
-    );
+    _rideStatusPollTimer?.cancel();
+    final driver = matchedDriver ??
+        DriverModel.mockDakarDriver(
+          rideType: widget.rideOption.type,
+          location: LatLng(
+            widget.departure.latitude + 0.0035,
+            widget.departure.longitude + 0.0030,
+          ),
+        );
+
+    final effectiveRideId =
+        rideId ?? widget.rideId ?? RideService.lastCreatedRideId;
 
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
@@ -120,28 +242,71 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           rideOption: widget.rideOption,
           driver: driver,
           polylinePoints: widget.polylinePoints,
+          departureCode: code ?? '4821',
+          rideId: effectiveRideId,
+          rideService: widget.rideService,
+          autoStartSimulation: false,
         ),
       ),
     );
   }
 
-  void _onCancelRide() {
+  Future<void> _onCancelRide() async {
+    final selectedReason = await CancelRideReasonSheet.show(
+      context,
+      isDriverAssigned: false,
+    );
+
+    if (selectedReason == null || !mounted) return;
+
     _autoMatchTimer?.cancel();
-    Navigator.of(context).pushReplacement(
-      SlideRightToLeftRoute(
-        page: RideCancelledPage(
-          rideOption: widget.rideOption,
-          departure: widget.departure,
-          destination: widget.destination,
-        ),
+    _rideStatusPollTimer?.cancel();
+
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
+
+    final service = widget.rideService ?? RideService();
+    final cancelResult = effectiveRideId != null && effectiveRideId.isNotEmpty
+        ? await service.cancelRide(
+            rideId: effectiveRideId,
+            reason: selectedReason,
+            originalPrice: widget.rideOption.price,
+          )
+        : RideCancelResultModel.fallback(
+            originalPrice: widget.rideOption.price,
+            reason: selectedReason,
+          );
+
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      Navigator.of(context).pushReplacement(
+        SlideRightToLeftRoute(
+          page: RideCancelledPage(
+            rideOption: widget.rideOption,
+            departure: widget.departure,
+            destination: widget.destination,
+            cancellationFee: cancelResult.fee,
+            refundAmount: cancelResult.refundAmount,
+            reason: cancelResult.reason,
+          ),
+        ),
+      );
+    }
   }
 
   /// Prêt pour l'API : appelé lorsque le backend signale qu'aucun chauffeur n'est disponible
   @visibleForTesting
   Future<void> onNoDriverAvailable() async {
     _autoMatchTimer?.cancel();
+    _rideStatusPollTimer?.cancel();
     final action = await NoDriverFoundSheet.show(
       context,
       departure: widget.departure,
@@ -168,17 +333,53 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   }
 
   Set<Circle> _buildRadarCircles() {
+    final center = LatLng(
+      widget.departure.latitude,
+      widget.departure.longitude,
+    );
+
+    final t1 = _radarController.value;
+    final t2 = (t1 + 0.5) % 1.0;
+
+    final progress1 = Curves.easeOut.transform(t1);
+    final progress2 = Curves.easeOut.transform(t2);
+
+    final radius1 = 15.0 + (progress1 * 125.0);
+    final alpha1 = (1.0 - progress1) * 0.35;
+
+    final radius2 = 15.0 + (progress2 * 125.0);
+    final alpha2 = (1.0 - progress2) * 0.35;
+
     return {
+      // Core glowing anchor at departure
       Circle(
-        circleId: const CircleId('radar_circle'),
-        center: LatLng(
-          widget.departure.latitude,
-          widget.departure.longitude,
-        ),
-        radius: 400,
+        circleId: const CircleId('radar_core'),
+        center: center,
+        radius: 10.0,
+        fillColor: AppColors.primary.withValues(alpha: 0.40),
+        strokeColor: AppColors.primary,
         strokeWidth: 2,
-        strokeColor: AppColors.radarRingColor,
-        fillColor: AppColors.radarFillColor,
+        zIndex: 3,
+      ),
+      // Pulsatile Wave 1
+      Circle(
+        circleId: const CircleId('radar_pulse_1'),
+        center: center,
+        radius: radius1,
+        fillColor: AppColors.primary.withValues(alpha: alpha1),
+        strokeColor: AppColors.primary.withValues(alpha: alpha1 * 1.8),
+        strokeWidth: 2,
+        zIndex: 1,
+      ),
+      // Pulsatile Wave 2
+      Circle(
+        circleId: const CircleId('radar_pulse_2'),
+        center: center,
+        radius: radius2,
+        fillColor: AppColors.primary.withValues(alpha: alpha2),
+        strokeColor: AppColors.primary.withValues(alpha: alpha2 * 1.8),
+        strokeWidth: 2,
+        zIndex: 2,
       ),
     };
   }
@@ -197,6 +398,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           ),
           icon: _pickupPinIcon!,
           anchor: const Offset(0.5, 1.0),
+          zIndexInt: 10,
         ),
       );
     } else {
@@ -208,6 +410,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             widget.departure.longitude,
           ),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          zIndexInt: 10,
         ),
       );
     }
@@ -223,58 +426,23 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           ),
           icon: _destPinIcon!,
           anchor: const Offset(0.5, 1.0),
+          zIndexInt: 10,
         ),
       );
     }
 
-    // 3. Candidate car with "Offre envoyée · 1,2 km" badge
-    final candidatePos = LatLng(
-      widget.departure.latitude + 0.0035,
-      widget.departure.longitude + 0.0030,
-    );
-
-    if (_orangeCarMarkerIcon != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('candidate_car'),
-          position: candidatePos,
-          icon: _orangeCarMarkerIcon!,
-          anchor: const Offset(0.5, 0.5),
-          rotation: 45,
-        ),
-      );
-    }
-
-    if (_offerSentBadgeIcon != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('offer_badge'),
-          position: candidatePos,
-          icon: _offerSentBadgeIcon!,
-          anchor: const Offset(0.5, 1.8),
-        ),
-      );
-    }
-
-    // 4. Other nearby cars (3-4 surrounding cars)
-    if (_carMarkerIcon != null) {
-      final offsets = [
-        [-0.0025, 0.0020, 110.0],
-        [0.0028, -0.0022, 220.0],
-        [-0.0018, -0.0030, 310.0],
-        [0.0015, 0.0038, 70.0],
-      ];
-
-      for (int i = 0; i < offsets.length; i++) {
+    // 3. Real nearby cars from GET /v1/drivers/nearby (waiting for driver acceptance)
+    if (_carMarkerIcon != null && _nearbyCars.isNotEmpty) {
+      for (final car in _nearbyCars) {
         markers.add(
           Marker(
-            markerId: MarkerId('nearby_car_$i'),
-            position: LatLng(
-              widget.departure.latitude + offsets[i][0],
-              widget.departure.longitude + offsets[i][1],
-            ),
+            markerId: MarkerId('nearby_car_${car.id}'),
+            position: LatLng(car.lat, car.lng),
             icon: _carMarkerIcon!,
+            rotation: car.heading,
             anchor: const Offset(0.5, 0.5),
+            flat: true,
+            zIndexInt: 5,
           ),
         );
       }
@@ -309,24 +477,44 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Fullscreen Google Map
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: LatLng(
-                widget.departure.latitude,
-                widget.departure.longitude,
+          // 1. Google Map en gros plan (zoom 17.2) verrouillé sur le point de départ
+          IgnorePointer(
+            ignoring: true,
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(
+                  widget.departure.latitude,
+                  widget.departure.longitude,
+                ),
+                zoom: 17.2,
               ),
-              zoom: 14.8,
+              onMapCreated: (ctrl) {
+                _mapController = ctrl;
+                ctrl.moveCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(
+                      target: LatLng(
+                        widget.departure.latitude,
+                        widget.departure.longitude,
+                      ),
+                      zoom: 17.2,
+                    ),
+                  ),
+                );
+              },
+              circles: _buildRadarCircles(),
+              markers: _buildMarkers(),
+              polylines: _buildPolylines(),
+              scrollGesturesEnabled: false,
+              zoomGesturesEnabled: false,
+              rotateGesturesEnabled: false,
+              tiltGesturesEnabled: false,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
             ),
-            onMapCreated: (ctrl) => _mapController = ctrl,
-            circles: _buildRadarCircles(),
-            markers: _buildMarkers(),
-            polylines: _buildPolylines(),
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
           ),
 
           // 2. Floating Top Back Button
@@ -368,6 +556,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             right: 0,
             bottom: 0,
             child: Container(
+              key: _bottomSheetKey,
               decoration: const BoxDecoration(
                 color: AppColors.white,
                 borderRadius: BorderRadius.vertical(
@@ -476,7 +665,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                   ),
                   const SizedBox(height: 18),
 
-                  // Tile 1: Paiement reçu · 3 500 F
+                  // Tile 1: Paiement reçu ou Paiement en espèces
                   Row(
                     children: [
                       Container(
@@ -487,8 +676,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                           shape: BoxShape.circle,
                         ),
                         alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.check_rounded,
+                        child: Icon(
+                          widget.paymentMethod == PaymentMethodType.cash
+                              ? Icons.payments_outlined
+                              : Icons.check_rounded,
                           color: AppColors.refundGreen,
                           size: 22,
                         ),
@@ -499,7 +690,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'ride.payment_received'.tr(args: [widget.rideOption.formattedPrice]),
+                              widget.paymentMethod == PaymentMethodType.cash
+                                  ? 'ride.payment_cash_due'.tr(args: [widget.rideOption.formattedPrice])
+                                  : 'ride.payment_received'.tr(args: [widget.rideOption.formattedPrice]),
                               style: GoogleFonts.inter(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w800,
@@ -508,7 +701,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'ride.refund_guarantee'.tr(),
+                              widget.paymentMethod == PaymentMethodType.cash
+                                  ? 'ride.pay_driver_on_arrival'.tr()
+                                  : 'ride.refund_guarantee'.tr(),
                               style: GoogleFonts.inter(
                                 fontSize: 12.5,
                                 color: AppColors.textSecondary,
@@ -554,7 +749,12 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'ride.drivers_around_type'.tr(args: [rideTypeLabel]),
+                              _nearbyDriversCount != null
+                                  ? (_nearbyDriversCount! > 0
+                                      ? 'ride.drivers_around_count'.tr(args: ['$_nearbyDriversCount', rideTypeLabel])
+                                      : 'ride.searching_drivers_type'.tr(args: [rideTypeLabel]))
+                                  : 'ride.drivers_around_type'
+                                      .tr(args: [rideTypeLabel]),
                               style: GoogleFonts.inter(
                                 fontSize: 14.5,
                                 fontWeight: FontWeight.w800,

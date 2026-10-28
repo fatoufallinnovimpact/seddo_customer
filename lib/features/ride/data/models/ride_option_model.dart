@@ -12,6 +12,7 @@ class RideOptionModel {
   final String currency;
   final String estimatedArrival;
   final String pickupDuration;
+  final String? quoteId;
 
   const RideOptionModel({
     required this.type,
@@ -22,6 +23,7 @@ class RideOptionModel {
     this.currency = 'F',
     required this.estimatedArrival,
     required this.pickupDuration,
+    this.quoteId,
   });
 
   /// Formats the integer price into a clean localized string like "3 500 F"
@@ -44,6 +46,7 @@ class RideOptionModel {
     String? currency,
     String? estimatedArrival,
     String? pickupDuration,
+    String? quoteId,
   }) {
     return RideOptionModel(
       type: type ?? this.type,
@@ -54,6 +57,7 @@ class RideOptionModel {
       currency: currency ?? this.currency,
       estimatedArrival: estimatedArrival ?? this.estimatedArrival,
       pickupDuration: pickupDuration ?? this.pickupDuration,
+      quoteId: quoteId ?? this.quoteId,
     );
   }
 }

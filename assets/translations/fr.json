@@ -265,8 +265,13 @@
     "payment_received": "Paiement reçu · {}",
     "refund_guarantee": "Remboursé si aucun chauffeur n'accepte",
     "drivers_around_type": "6 chauffeurs {} autour de vous",
-    "offer_closest_first": "L'offre est proposée au plus proche d'abord",
     "cancel_ride": "Annuler la course",
+    "dakar_and_suburbs": "Dakar et banlieue",
+    "payment_cash_due": "Paiement en espèces · {}",
+    "pay_driver_on_arrival": "À régler au chauffeur à destination",
+    "searching_drivers_type": "Recherche de chauffeurs {}...",
+    "drivers_around_count": "{} chauffeurs {} autour de vous",
+    "offer_closest_first": "Votre course est proposée en priorité aux chauffeurs les plus proches.",
     "offline_title": "Vous êtes hors ligne",
     "offline_desc": "Vérifiez votre connexion internet ou utilisez l'urgence par SMS.",
     "offline_banner": "Pas de réseau. Votre course continue et la position se mettra à jour au retour du réseau.",
@@ -332,8 +337,11 @@
     "photo_soon": "Partage de photo disponible prochainement.",
     "quick_at_gate": "Je suis devant la porte",
     "quick_coming_1min": "J'arrive dans 1 min",
+    "quick_pharmacy": "Je suis devant la pharmacie",
     "quick_white_shirt": "Je porte une chemise blanche",
-    "quick_waiting": "Merci, je vous attends"
+    "quick_waiting": "Merci, je vous attends",
+    "masked_numbers_title": "Numéros masqués",
+    "masked_numbers_notice": "Échanges anonymisés et sécurisés"
   },
   "saved_places": {
     "title": "Lieux enregistrés",
@@ -384,7 +392,19 @@
     "enter_code": "Saisissez votre code secret",
     "validate": "Valider",
     "from_om": "depuis Orange Money {}",
-    "sim_insufficient": "Simuler : solde insuffisant"
+    "from_wave": "depuis Wave {}",
+    "from_cash": "Paiement en espèces à destination",
+    "sim_insufficient": "Simuler : solde insuffisant",
+    "mode_title": "Mode de paiement",
+    "wave_title": "Wave",
+    "wave_sub": "Paiement mobile rapide et sécurisé",
+    "om_title": "Orange Money",
+    "om_sub": "Simple et sécurisé",
+    "cash_title": "Paiement en espèces",
+    "cash_sub": "Payez directement à la fin de la course",
+    "confirm_and_pay": "Confirmer et payer",
+    "secure_100": "Paiement 100% sécurisé",
+    "cash_instructions": "Réglez le montant de la course directement au chauffeur à destination."
   },
   "insufficient_balance": {
     "title": "Solde insuffisant",

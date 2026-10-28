@@ -30,6 +30,9 @@ class RideModel extends Equatable {
   final List<LatLng> polylinePoints;
   final DateTime createdAt;
   final DateTime? completedAt;
+  final num? cancellationFee;
+  final num? refundAmount;
+  final String? cancellationReason;
 
   const RideModel({
     required this.id,
@@ -44,6 +47,9 @@ class RideModel extends Equatable {
     this.polylinePoints = const [],
     required this.createdAt,
     this.completedAt,
+    this.cancellationFee,
+    this.refundAmount,
+    this.cancellationReason,
   });
 
   RideModel copyWith({
@@ -59,6 +65,9 @@ class RideModel extends Equatable {
     List<LatLng>? polylinePoints,
     DateTime? createdAt,
     DateTime? completedAt,
+    num? cancellationFee,
+    num? refundAmount,
+    String? cancellationReason,
   }) {
     return RideModel(
       id: id ?? this.id,
@@ -73,6 +82,9 @@ class RideModel extends Equatable {
       polylinePoints: polylinePoints ?? this.polylinePoints,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
+      cancellationFee: cancellationFee ?? this.cancellationFee,
+      refundAmount: refundAmount ?? this.refundAmount,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
     );
   }
 
@@ -123,5 +135,8 @@ class RideModel extends Equatable {
         polylinePoints,
         createdAt,
         completedAt,
+        cancellationFee,
+        refundAmount,
+        cancellationReason,
       ];
 }

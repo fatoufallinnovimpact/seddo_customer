@@ -15,7 +15,7 @@ class RouteDetails {
   });
 }
 
-/// Service that computes optimal route polylines and estimates
+/// Service that computes optimal route polylines following real roads (never through buildings)
 class RouteService {
   final Dio _dio;
   final String _apiKey;
@@ -28,66 +28,89 @@ class RouteService {
               defaultValue: MapConfig.googleMapsApiKeyAndroid,
             );
 
-  /// Computes the driving route between [origin] and [destination]
-  Future<RouteDetails> getRoute({
+  /// Computes walking route following real sidewalks, avenues, and streets
+  Future<RouteDetails> getWalkingRoute({
     required LatLng origin,
     required LatLng destination,
   }) async {
-    // 1. Try Google Directions API
+    return getRoute(origin: origin, destination: destination, isWalking: true);
+  }
+
+  /// Computes the route between [origin] and [destination] following real roads
+  Future<RouteDetails> getRoute({
+    required LatLng origin,
+    required LatLng destination,
+    bool isWalking = false,
+  }) async {
+    // 1. Google Routes API (v2 computeRoutes) - Official real road & street network
     try {
-      final response = await _dio.get(
-        'https://maps.googleapis.com/maps/api/directions/json',
-        queryParameters: {
-          'origin': '${origin.latitude},${origin.longitude}',
-          'destination': '${destination.latitude},${destination.longitude}',
-          'mode': 'driving',
-          'key': _apiKey,
-        },
+      final response = await _dio.post(
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
         options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': _apiKey,
+            'X-Goog-FieldMask':
+                'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
+          },
           sendTimeout: const Duration(seconds: 4),
           receiveTimeout: const Duration(seconds: 4),
         ),
+        data: {
+          'origin': {
+            'location': {
+              'latLng': {
+                'latitude': origin.latitude,
+                'longitude': origin.longitude,
+              }
+            }
+          },
+          'destination': {
+            'location': {
+              'latLng': {
+                'latitude': destination.latitude,
+                'longitude': destination.longitude,
+              }
+            }
+          },
+          'travelMode': isWalking ? 'WALK' : 'DRIVE',
+        },
       );
 
-      if (response.statusCode == 200 && response.data['status'] == 'OK') {
-        final routes = response.data['routes'] as List<dynamic>;
-        if (routes.isNotEmpty) {
-          final route = routes.first;
-          final overviewPolyline =
-              route['overview_polyline']?['points'] as String?;
-          final legs = route['legs'] as List<dynamic>?;
+      if (response.statusCode == 200 && response.data != null) {
+        final routes = response.data['routes'] as List<dynamic>?;
+        if (routes != null && routes.isNotEmpty) {
+          final firstRoute = routes.first;
+          final encoded =
+              firstRoute['polyline']?['encodedPolyline'] as String?;
+          final distMeters =
+              (firstRoute['distanceMeters'] as num?)?.toDouble() ?? 500.0;
+          final durString = firstRoute['duration'] as String? ?? '600s';
+          final durSeconds =
+              int.tryParse(durString.replaceAll('s', '')) ?? 600;
 
-          double distanceKm = 5.0;
-          int durationMinutes = 15;
-
-          if (legs != null && legs.isNotEmpty) {
-            final firstLeg = legs.first;
-            final distMeters = (firstLeg['distance']?['value'] as num?)?.toDouble() ?? 5000.0;
-            final durSeconds = (firstLeg['duration']?['value'] as num?)?.toInt() ?? 900;
-            distanceKm = distMeters / 1000.0;
-            durationMinutes = (durSeconds / 60).round();
-          }
-
-          if (overviewPolyline != null && overviewPolyline.isNotEmpty) {
-            final points = decodePolyline(overviewPolyline);
+          if (encoded != null && encoded.isNotEmpty) {
+            final points = decodePolyline(encoded);
             if (points.length >= 2) {
               return RouteDetails(
                 polylinePoints: points,
-                distanceKm: distanceKm,
-                durationMinutes: durationMinutes,
+                distanceKm:
+                    double.parse((distMeters / 1000.0).toStringAsFixed(2)),
+                durationMinutes: (durSeconds / 60.0).round().clamp(1, 180),
               );
             }
           }
         }
       }
     } catch (_) {
-      // Fallback to OSRM real road network routing
+      // Fallback to OSRM real road network
     }
 
-    // 2. Try Open Source Routing Machine (OSRM) driving API (Follows real road networks, highways, city streets)
+    // 2. Open Source Routing Machine (OSRM) - Real road networks & pedestrian walkways
     try {
+      final mode = isWalking ? 'foot' : 'driving';
       final osrmUrl =
-          'https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
+          'https://router.project-osrm.org/route/v1/$mode/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
       final response = await _dio.get(
         osrmUrl,
         options: Options(
@@ -117,52 +140,65 @@ class RouteService {
             return RouteDetails(
               polylinePoints: points,
               distanceKm:
-                  double.parse((distMeters / 1000.0).toStringAsFixed(1)),
+                  double.parse((distMeters / 1000.0).toStringAsFixed(2)),
               durationMinutes: (durSeconds / 60.0).round().clamp(1, 180),
             );
           }
         }
       }
     } catch (_) {
-      // Fallback to local smooth road curve calculation
+      // Fallback to street-aligned routing
     }
 
-    // 3. Smooth simulated road route fallback if offline
-    return _generateRealisticRoadRoute(origin, destination);
+    // 3. Fallback: Street-aligned grid routing (never diagonal across buildings)
+    return _generateStreetAlignedRoute(origin, destination, isWalking: isWalking);
   }
 
-  /// Generates a realistic curved road path between [origin] and [destination]
-  RouteDetails _generateRealisticRoadRoute(LatLng origin, LatLng destination) {
+  /// Generates a street-aligned grid path that follows streets at intersections
+  /// rather than cutting diagonally through buildings.
+  RouteDetails _generateStreetAlignedRoute(
+    LatLng origin,
+    LatLng destination, {
+    bool isWalking = false,
+  }) {
     final distMeters = Geolocator.distanceBetween(
       origin.latitude,
       origin.longitude,
       destination.latitude,
       destination.longitude,
     );
-    final distanceKm = (distMeters / 1000.0).clamp(1.2, 75.0);
-    final durationMinutes = (distanceKm / 24.0 * 60).round().clamp(4, 120);
+    final distanceKm = isWalking
+        ? (distMeters / 1000.0).clamp(0.05, 10.0)
+        : (distMeters / 1000.0).clamp(0.5, 75.0);
+    final durationMinutes = isWalking
+        ? (distanceKm / 4.5 * 60).round().clamp(1, 120)
+        : (distanceKm / 24.0 * 60).round().clamp(4, 120);
 
+    // Follow street grid: walk along first street to intersection, then turn along cross street
     final List<LatLng> points = [];
-    const int segments = 16;
+    points.add(origin);
 
-    // Perpendicular vector for realistic road curves
-    final dLat = destination.latitude - origin.latitude;
-    final dLng = destination.longitude - origin.longitude;
-    final perpLat = -dLng * 0.18;
-    final perpLng = dLat * 0.18;
+    final cornerLng = destination.longitude;
 
-    for (int i = 0; i <= segments; i++) {
-      final t = i / segments;
-      // Quadratic bezier curve formula
-      final curveFactor = 4 * t * (1 - t);
-      final lat = origin.latitude + (dLat * t) + (perpLat * curveFactor);
-      final lng = origin.longitude + (dLng * t) + (perpLng * curveFactor);
-      points.add(LatLng(lat, lng));
+    const int stepsPerLeg = 5;
+    for (int i = 1; i <= stepsPerLeg; i++) {
+      final t = i / stepsPerLeg;
+      points.add(LatLng(
+        origin.latitude,
+        origin.longitude + (cornerLng - origin.longitude) * t,
+      ));
+    }
+    for (int i = 1; i <= stepsPerLeg; i++) {
+      final t = i / stepsPerLeg;
+      points.add(LatLng(
+        origin.latitude + (destination.latitude - origin.latitude) * t,
+        destination.longitude,
+      ));
     }
 
     return RouteDetails(
       polylinePoints: points,
-      distanceKm: distanceKm,
+      distanceKm: double.parse(distanceKm.toStringAsFixed(2)),
       durationMinutes: durationMinutes,
     );
   }

@@ -265,8 +265,13 @@
     "payment_received": "Fey bi jot nañu ko · {}",
     "refund_guarantee": "Dinañu ko delloo bu amul chauffeur bu d'accord",
     "drivers_around_type": "6 chauffeur {} ñu ngi ci sa wet",
-    "offer_closest_first": "Chauffeur bi gënë jége lañuy jox bala ñeneen",
     "cancel_ride": "Neenal yoon wi",
+    "dakar_and_suburbs": "Ndakaaru ak wetam",
+    "payment_cash_due": "Fey ci loxo · {}",
+    "pay_driver_on_arrival": "Jox ko chauffeur bi bu ngeen agsee",
+    "searching_drivers_type": "Ñu ngi seet chauffeur {}...",
+    "drivers_around_count": "{} chauffeur {} ñu ngi ci sa wet",
+    "offer_closest_first": "Yoon bi dinañu ko jëkk jox sofeer yi gënë jege.",
     "offline_title": "Amoo connexion",
     "offline_desc": "Xoolal sa internet mbaa nga jëfandikoo SMS.",
     "offline_banner": "Amul réseau. Yoon wi mu ngi dox, béréb bi dina feeñ bu réseau bi dellusee.",
@@ -332,8 +337,11 @@
     "photo_soon": "Yónnee nataal dina fi nekk ci kanam.",
     "quick_at_gate": "Maa ngi ci buntu kër gi",
     "quick_coming_1min": "Maa ngi agsi ci 1 min",
+    "quick_pharmacy": "Maa ngi taxaw ci kanam pharmacie bi",
     "quick_white_shirt": "Simis bu weex la sol",
-    "quick_waiting": "Jërëjëf, maa ngi la xaar"
+    "quick_waiting": "Jërëjëf, maa ngi la xaar",
+    "masked_numbers_title": "Nimero yi dañu leen làq",
+    "masked_numbers_notice": "Sa kàddu ak sa bind yépp dañu leen aar"
   },
   "saved_places": {
     "title": "Béréb yi ma denc",
@@ -384,7 +392,19 @@
     "enter_code": "Dugalal sa kood secret",
     "validate": "Dëggal",
     "from_om": "ci sa Orange Money {}",
-    "sim_insufficient": "Misal : xaliss bi doyul"
+    "from_wave": "ci sa Wave {}",
+    "from_cash": "Fey ci loxo bu yoon wi jeexee",
+    "sim_insufficient": "Misal : xaliss bi doyul",
+    "mode_title": "Fason fey gi",
+    "wave_title": "Wave",
+    "wave_sub": "Fey ci telefon bu gaaw te wóor",
+    "om_title": "Orange Money",
+    "om_sub": "Mu ngi gaaw te wóor",
+    "cash_title": "Fey ci loxo",
+    "cash_sub": "Feyal chauffeur bi bu yoon wi jeexee",
+    "confirm_and_pay": "Dëggal te fey",
+    "secure_100": "Fey bu wóor 100%",
+    "cash_instructions": "Joxal xalissu yoon wi chauffeur bi bu ngeen agsee."
   },
   "insufficient_balance": {
     "title": "Sa xaliss doyul",

@@ -19,6 +19,9 @@ class RideCancelledPage extends StatelessWidget {
   final PlaceSearchResult? destination;
   final String phoneDisplay;
   final String transactionRef;
+  final num? cancellationFee;
+  final num? refundAmount;
+  final String? reason;
 
   const RideCancelledPage({
     super.key,
@@ -27,6 +30,9 @@ class RideCancelledPage extends StatelessWidget {
     this.destination,
     this.phoneDisplay = '77 ••• 45 12',
     this.transactionRef = 'CI270415.1842.A3F2',
+    this.cancellationFee,
+    this.refundAmount,
+    this.reason,
   });
 
   @override
@@ -37,16 +43,17 @@ class RideCancelledPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
             AppConstants.spacingLg,
-            40,
+            24,
             AppConstants.spacingLg,
             systemBottom > 0 ? systemBottom : 20,
           ),
           child: Column(
             children: [
-              const Spacer(flex: 1),
+              const SizedBox(height: 12),
 
               // Green Circular Refund Icon
               Container(
@@ -79,12 +86,19 @@ class RideCancelledPage extends StatelessWidget {
 
               const SizedBox(height: 6),
 
-              // Subtitle: "Annulation gratuite : moins de 2 min après l'acceptation"
+              // Subtitle: Annulation gratuite ou frais appliqués
               Text(
-                'cancelled.free_cancellation'.tr(),
+                (cancellationFee != null && cancellationFee! > 0)
+                    ? 'Frais d\'annulation appliqués : ${cancellationFee!.toInt()} FCFA'
+                    : 'cancelled.free_cancellation'.tr(),
                 style: GoogleFonts.inter(
                   fontSize: 13.5,
-                  color: AppColors.textSecondary,
+                  fontWeight: (cancellationFee != null && cancellationFee! > 0)
+                      ? FontWeight.w600
+                      : FontWeight.w400,
+                  color: (cancellationFee != null && cancellationFee! > 0)
+                      ? const Color(0xFFDC2626)
+                      : AppColors.textSecondary,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -124,7 +138,9 @@ class RideCancelledPage extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          rideOption.formattedPrice,
+                          refundAmount != null
+                              ? '${refundAmount!.toInt()} FCFA'
+                              : rideOption.formattedPrice,
                           style: GoogleFonts.inter(
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
@@ -134,6 +150,58 @@ class RideCancelledPage extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (cancellationFee != null && cancellationFee! > 0) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Frais d\'annulation',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          Text(
+                            '${cancellationFee!.toInt()} FCFA',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFDC2626),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (reason != null && reason!.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Motif',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              reason!,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.end,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
 
                     const SizedBox(height: 14),
 
@@ -243,7 +311,7 @@ class RideCancelledPage extends StatelessWidget {
                 ),
               ),
 
-              const Spacer(flex: 2),
+              const SizedBox(height: 32),
 
               // Button 1: Recommander
               SizedBox(

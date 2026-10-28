@@ -12,12 +12,16 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/ride/data/models/ride_cancel_result_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
+import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
 
@@ -42,6 +46,8 @@ class DriverApproachingPage extends StatefulWidget {
   final List<LatLng> polylinePoints;
   final String departureCode;
   final bool autoStartSimulation;
+  final String? rideId;
+  final RideService? rideService;
 
   const DriverApproachingPage({
     super.key,
@@ -51,7 +57,9 @@ class DriverApproachingPage extends StatefulWidget {
     required this.driver,
     this.polylinePoints = const [],
     this.departureCode = '4821',
-    this.autoStartSimulation = true,
+    this.autoStartSimulation = false,
+    this.rideId,
+    this.rideService,
   });
 
   @override
@@ -76,16 +84,34 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   bool _followCar = true;
   int _lastTickMs = 0;
 
+  // Live Ride & Driver State synchronisés avec GET /v1/rides/{id}
+  late DriverModel _currentDriver;
+  late String _departureCode;
+  late RideService _rideService;
+  Timer? _ridePollTimer;
+
+  final GlobalKey _bottomCardKey = GlobalKey();
+  double _bottomCardHeight = 390.0;
+
   @override
   void initState() {
     super.initState();
 
+    _currentDriver = widget.driver;
+    _departureCode = widget.departureCode;
+    _rideService = widget.rideService ?? RideService();
+    _remainingEtaMinutes = 4;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _measureBottomCard();
+    });
+
     _pickupPosition =
         LatLng(widget.departure.latitude, widget.departure.longitude);
 
-    // Initial position of approaching driver (approx 1 km northeast/east of pickup)
-    _driverInitialPosition = widget.driver.currentLocation.latitude != 0
-        ? widget.driver.currentLocation
+    // Initial position of approaching driver
+    _driverInitialPosition = _currentDriver.currentLocation.latitude != 0
+        ? _currentDriver.currentLocation
         : LatLng(
             _pickupPosition.latitude + 0.0065,
             _pickupPosition.longitude + 0.0055,
@@ -118,14 +144,130 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
     }
+
+    // Interroge l'API GET /v1/rides/{id} pour récupérer immédiatement et en continu
+    // les données réelles (code à 4 chiffres, infos chauffeur, statut course)
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      _fetchRideDetails(effectiveRideId);
+      if (!isTest) {
+        _ridePollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+          _fetchRideDetails(effectiveRideId);
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
+    _ridePollTimer?.cancel();
     _approachController?.stop();
     _approachController?.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  void _measureBottomCard() {
+    final renderBox =
+        _bottomCardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null && renderBox.hasSize && mounted) {
+      final h = renderBox.size.height;
+      if ((_bottomCardHeight - h).abs() > 3) {
+        setState(() {
+          _bottomCardHeight = h;
+        });
+      }
+    }
+  }
+
+  /// Interroge GET /v1/rides/{id} : vue client (chauffeur, code de départ, paiement)
+  Future<void> _fetchRideDetails(String id) async {
+    try {
+      final data = await _rideService.getRideDetails(id);
+      if (data != null && mounted) {
+        _applyRideDetails(data);
+      }
+    } catch (e) {
+      debugPrint('[DriverApproachingPage] ⚠️ Erreur getRideDetails: $e');
+    }
+  }
+
+  /// Applique les données retournées par GET /v1/rides/{id} dans le modal et l'écran
+  void _applyRideDetails(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    final status = (data['status'] as String? ?? '').toUpperCase();
+
+    // 1. Course annulée
+    if (status.startsWith('CANCELLED') ||
+        status == 'NO_DRIVER' ||
+        status == 'NO_SHOW') {
+      _ridePollTimer?.cancel();
+      _approachController?.stop();
+      Navigator.of(context).pushReplacement(
+        SlideRightToLeftRoute(
+          page: RideCancelledPage(
+            rideOption: widget.rideOption,
+            departure: widget.departure,
+            destination: widget.destination,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 2. Chauffeur a validé le code client et démarré la course
+    if (status == 'IN_PROGRESS') {
+      _ridePollTimer?.cancel();
+      _approachController?.stop();
+      startRide();
+      return;
+    }
+
+    // 3. Extraction du vrai code de départ retourné par l'API
+    final newCode =
+        DriverModel.extractDepartureCode(data, fallback: _departureCode);
+
+    // 4. Extraction du vrai chauffeur retourné par l'API
+    final hasDriver = data['driver'] != null || data['carModel'] != null;
+    DriverModel updatedDriver = _currentDriver;
+    if (hasDriver) {
+      updatedDriver = DriverModel.fromRideJson(
+        data,
+        defaultRideType: widget.rideOption.type,
+      );
+    }
+
+    // 5. Statut d'arrivée du chauffeur
+    final isArrived = status == 'DRIVER_ARRIVED' || status == 'ARRIVED';
+
+    // 6. Temps d'approche restant (ETA)
+    final etaFromApi = (data['etaMinutes'] as num?)?.toInt() ??
+        (data['eta'] as num?)?.toInt();
+
+    setState(() {
+      _departureCode = newCode;
+      _currentDriver = updatedDriver;
+      if (isArrived) {
+        _driverArrived = true;
+        _remainingEtaMinutes = 0;
+      } else if (etaFromApi != null && etaFromApi > 0) {
+        _remainingEtaMinutes = etaFromApi;
+      }
+
+      // Synchronisation de la position GPS en temps réel
+      if (updatedDriver.currentLocation.latitude != 0 &&
+          updatedDriver.currentLocation.longitude != 0 &&
+          (updatedDriver.currentLocation.latitude !=
+                  _currentCarPosition.latitude ||
+              updatedDriver.currentLocation.longitude !=
+                  _currentCarPosition.longitude)) {
+        final heading = _calculateBearing(
+            _currentCarPosition, updatedDriver.currentLocation);
+        _currentCarPosition = updatedDriver.currentLocation;
+        _currentCarHeading = heading;
+      }
+    });
   }
 
   Future<void> _loadCustomMarkers() async {
@@ -206,7 +348,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               Expanded(
                 child: Text(
                   'ride.driver_arrived_at_pickup'
-                      .tr(args: [widget.driver.name.split(' ').first]),
+                      .tr(args: [_currentDriver.name.split(' ').first]),
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w700,
                     fontSize: 13.5,
@@ -246,42 +388,86 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   /// Démarre la course vers la destination (transition vers ActiveRidePage)
   void startRide() {
+    _ridePollTimer?.cancel();
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: ActiveRidePage(
           departure: widget.departure,
           destination: widget.destination,
           rideOption: widget.rideOption,
-          driver: widget.driver,
+          driver: _currentDriver,
           polylinePoints: widget.polylinePoints,
+          autoStartSimulation: false,
         ),
       ),
     );
   }
 
-  void _onCancelRide() {
+  Future<void> _onCancelRide() async {
+    final selectedReason = await CancelRideReasonSheet.show(
+      context,
+      isDriverAssigned: true,
+    );
+
+    if (selectedReason == null || !mounted) return;
+
+    _ridePollTimer?.cancel();
     _approachController?.stop();
-    Navigator.of(context).pushReplacement(
-      SlideRightToLeftRoute(
-        page: RideCancelledPage(
-          rideOption: widget.rideOption,
-          departure: widget.departure,
-          destination: widget.destination,
-        ),
+
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
+
+    final service = widget.rideService ?? RideService();
+    final cancelResult = effectiveRideId != null && effectiveRideId.isNotEmpty
+        ? await service.cancelRide(
+            rideId: effectiveRideId,
+            reason: selectedReason,
+            originalPrice: widget.rideOption.price,
+          )
+        : RideCancelResultModel.fallback(
+            originalPrice: widget.rideOption.price,
+            reason: selectedReason,
+          );
+
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      Navigator.of(context).pushReplacement(
+        SlideRightToLeftRoute(
+          page: RideCancelledPage(
+            rideOption: widget.rideOption,
+            departure: widget.departure,
+            destination: widget.destination,
+            cancellationFee: cancelResult.fee,
+            refundAmount: cancelResult.refundAmount,
+            reason: cancelResult.reason,
+          ),
+        ),
+      );
+    }
   }
 
   void _openChat() {
     Navigator.of(context).push(
       SlideRightToLeftRoute(
-        page: DriverChatPage(driver: widget.driver),
+        page: DriverChatPage(
+          driver: _currentDriver,
+          rideId: widget.rideId,
+          rideService: widget.rideService,
+        ),
       ),
     );
   }
 
   Future<void> _callDriver() async {
-    await InAppCallPage.show(context, driver: widget.driver);
+    await InAppCallPage.show(context, driver: _currentDriver);
   }
 
   void _openShare() {
@@ -290,7 +476,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         page: SharedRideTrackingPage(
           departure: widget.departure,
           destination: widget.destination,
-          driver: widget.driver,
+          driver: _currentDriver,
           polylinePoints: widget.polylinePoints,
           etaText: '$_remainingEtaMinutes min',
         ),
@@ -302,7 +488,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     SafetyModalWidget.show(
       context,
       destination: widget.destination,
-      driver: widget.driver,
+      driver: _currentDriver,
     );
   }
 
@@ -456,13 +642,13 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final licensePlateText =
-        widget.driver.licensePlate.replaceAll('-', ' ');
-    final carDescription = widget.driver.carModel.isNotEmpty
-        ? '${widget.driver.carModel} ${widget.driver.carColor.isNotEmpty ? widget.driver.carColor : "grise"}'
+        _currentDriver.licensePlate.replaceAll('-', ' ');
+    final carDescription = _currentDriver.carModel.isNotEmpty
+        ? '${_currentDriver.carModel} ${_currentDriver.carColor.isNotEmpty ? _currentDriver.carColor : "grise"}'
         : 'Toyota Corolla grise';
 
-    final initials = widget.driver.name.isNotEmpty
-        ? widget.driver.name
+    final initials = _currentDriver.name.isNotEmpty
+        ? _currentDriver.name
             .split(' ')
             .map((e) => e.isNotEmpty ? e[0] : '')
             .take(2)
@@ -474,7 +660,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         ? 'ride.arrived'.tr()
         : '$_remainingEtaMinutes min';
 
-    final digits = widget.departureCode.padRight(4, '0').split('');
+    final digits = _departureCode.padRight(4, '0').split('');
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -538,79 +724,62 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             ),
           ),
 
-          // 2. Top Bar: Back button (left) and Target Recenter button (right)
+          // 2. Top Bar: Back button (matching screenshot)
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppConstants.spacingMd,
                 vertical: AppConstants.spacingSm,
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Back button
-                  Container(
-                    width: AppConstants.circularButtonSize,
-                    height: AppConstants.circularButtonSize,
-                    decoration: const BoxDecoration(
-                      color: AppColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.shadowMarker,
-                          blurRadius: 10,
-                          offset: Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: AppColors.textPrimary,
-                        size: 22,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  width: AppConstants.circularButtonSize,
+                  height: AppConstants.circularButtonSize,
+                  decoration: const BoxDecoration(
+                    color: AppColors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.shadowMarker,
+                        blurRadius: 10,
+                        offset: Offset(0, 3),
                       ),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
+                    ],
                   ),
-
-                  // Recenter button
-                  Container(
-                    width: AppConstants.circularButtonSize,
-                    height: AppConstants.circularButtonSize,
-                    decoration: BoxDecoration(
-                      color: _followCar ? AppColors.primary : AppColors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: const [
-                        BoxShadow(
-                          color: AppColors.shadowMarker,
-                          blurRadius: 10,
-                          offset: Offset(0, 3),
-                        ),
-                      ],
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textPrimary,
+                      size: 22,
                     ),
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.my_location_rounded,
-                        color: _followCar
-                            ? AppColors.white
-                            : AppColors.textPrimary,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _followCar = true;
-                        });
-                        _mapController?.animateCamera(
-                          CameraUpdate.newLatLngZoom(
-                            _currentCarPosition,
-                            16.5,
-                          ),
-                        );
-                      },
-                    ),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
-                ],
+                ),
               ),
+            ),
+          ),
+
+          // 2.5 Floating Camera Toggle Button (Ma position / Destination / Vue Trajet)
+          Positioned(
+            right: 16,
+            bottom: _bottomCardHeight + 14,
+            child: RideMapCameraToggleButton(
+              mapControllerGetter: () => _mapController,
+              departureLocation: _pickupPosition,
+              destinationLocation: LatLng(
+                widget.destination.latitude,
+                widget.destination.longitude,
+              ),
+              polylinePoints: widget.polylinePoints,
+              initialMode: RideMapCameraMode.tripOverview,
+              onModeChanged: (mode) {
+                if (mode == RideMapCameraMode.departure) {
+                  setState(() => _followCar = true);
+                } else {
+                  setState(() => _followCar = false);
+                }
+              },
             ),
           ),
 
@@ -618,6 +787,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           Align(
             alignment: Alignment.bottomCenter,
             child: Container(
+              key: _bottomCardKey,
               width: double.infinity,
               decoration: const BoxDecoration(
                 color: AppColors.white,
@@ -816,16 +986,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
                                   // Driver Name & Rating
                                   Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text(
-                                        widget.driver.name.split(' ').first,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.textPrimary,
+                                      Flexible(
+                                        child: Text(
+                                          _currentDriver.name.split(' ').first,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      const SizedBox(width: 6),
+                                      const SizedBox(width: 5),
                                       const Text(
                                         '•',
                                         style: TextStyle(
@@ -833,7 +1007,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                           fontSize: 12,
                                         ),
                                       ),
-                                      const SizedBox(width: 6),
+                                      const SizedBox(width: 5),
                                       const Icon(
                                         Icons.star_rounded,
                                         color: AppColors.amberRating,
@@ -841,7 +1015,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                       ),
                                       const SizedBox(width: 2),
                                       Text(
-                                        widget.driver.rating.toStringAsFixed(1),
+                                        _currentDriver.rating.toStringAsFixed(1),
                                         style: GoogleFonts.inter(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w800,

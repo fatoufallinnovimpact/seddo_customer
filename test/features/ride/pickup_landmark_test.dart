@@ -13,7 +13,7 @@ void main() {
   });
 
   group('PickupLandmarkSheet Tests', () {
-    testWidgets('Renders all UI components matching reference mockup and saves suggestion',
+    testWidgets('Renders simplified UI without suggestions and saves entered landmark',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.0;
@@ -47,28 +47,24 @@ void main() {
       // 1. Header is rendered
       expect(find.text('Comment vous trouver ?'), findsOneWidget);
       expect(find.text('Aide le chauffeur à vous repérer vite.'), findsOneWidget);
-      expect(find.byIcon(Icons.location_on_rounded), findsWidgets);
 
-      // 2. Input textfield is rendered with placeholder
+      // 2. Input textfield is rendered
       expect(find.byType(TextField), findsOneWidget);
 
-      // 3. Suggestions section
-      expect(find.text('Suggestions rapides'), findsOneWidget);
-      expect(find.text("Devant l'entrée"), findsOneWidget);
-      expect(find.text('Au rond-point'), findsOneWidget);
-      expect(find.text('Près de la station'), findsOneWidget);
-      expect(find.text('Près de la pharmacie'), findsOneWidget);
+      // 3. Suggestions are removed completely
+      expect(find.text('Suggestions rapides'), findsNothing);
+      expect(find.text('Au rond-point'), findsNothing);
 
       // 4. Buttons: Enregistrer and Annuler
       expect(find.text('Enregistrer'), findsOneWidget);
       expect(find.text('Annuler'), findsOneWidget);
 
-      // 5. Tap on quick suggestion "Près de la pharmacie"
-      await tester.tap(find.text('Près de la pharmacie'));
+      // 5. Enter custom text
+      await tester.enterText(find.byType(TextField), 'Près de la pharmacie');
       await tester.pump();
 
       // Verify textfield now contains "Près de la pharmacie"
-      expect(find.text('Près de la pharmacie'), findsWidgets);
+      expect(find.text('Près de la pharmacie'), findsOneWidget);
 
       // 6. Tap on "Enregistrer"
       await tester.tap(find.text('Enregistrer'));
@@ -207,8 +203,8 @@ void main() {
       expect(find.text('Comment vous trouver ?'), findsWidgets);
       expect(find.text('Enregistrer'), findsOneWidget);
 
-      // Pick a landmark
-      await tester.tap(find.text('Devant l\'entrée'));
+      // Type landmark
+      await tester.enterText(find.byType(TextField), 'Devant l\'entrée');
       await tester.pump();
 
       await tester.tap(find.text('Enregistrer'));
