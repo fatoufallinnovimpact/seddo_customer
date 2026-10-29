@@ -101,6 +101,16 @@ abstract class AppColors {
   /// Tracé d'itinéraire style Yango - Vert dynamique #00C853
   static const Color yangoRouteGreen = Color(0xFF00C853);
 
+  // Traffic Polyline Colors (Google Maps / Seddo real-time traffic levels)
+  /// Trafic fluide (NORMAL) - Vert dynamique #00C853
+  static const Color trafficNormal = Color(0xFF00C853);
+
+  /// Trafic ralenti (SLOW) - Jaune ambre orangé #F59E0B
+  static const Color trafficSlow = Color(0xFFF59E0B);
+
+  /// Embouteillage / Bouchon dense (TRAFFIC_JAM) - Rouge vif #DC2626
+  static const Color trafficJam = Color(0xFFDC2626);
+
   /// Tracé d'itinéraire déjà parcouru - Gris discret #BDBDBD
   static const Color routeTraveled = Color(0xFFBDBDBD);
 

@@ -6,6 +6,8 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
+import 'package:dio/dio.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
@@ -439,10 +441,37 @@ void main() {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
 
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.method == 'GET') {
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: [],
+                ),
+              );
+            }
+            return handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: {'status': 'created'},
+              ),
+            );
+          },
+        ),
+      );
+      final mockService = RideService(dio: dio);
+
       await tester.pumpWidget(
         wrapWithTestLocalization(
           child: DriverChatPage(
             driver: driver,
+            rideId: 'ride_flow_test_1',
+            rideService: mockService,
           ),
         ),
       );
@@ -451,7 +480,7 @@ void main() {
 
       expect(find.text('Moussa Diop'), findsOneWidget);
       expect(find.textContaining('DK-4821-AB'), findsWidgets);
-      expect(find.textContaining('Bonjour ! Je suis en route'), findsOneWidget);
+      expect(find.text('Aucun message pour le moment'), findsOneWidget);
 
       expect(find.text('Je suis devant la porte'), findsOneWidget);
       await tester.tap(find.text('Je suis devant la porte'));
@@ -461,12 +490,11 @@ void main() {
 
       await tester.enterText(find.byType(TextField), 'Merci beaucoup !');
       await tester.tap(find.byIcon(Icons.send_rounded));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.text('Merci beaucoup !'), findsOneWidget);
 
-      await tester.pump(const Duration(milliseconds: 1600));
-      expect(find.textContaining('Bien reçu !'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
     });
   });
 }

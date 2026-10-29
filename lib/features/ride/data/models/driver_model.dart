@@ -1,5 +1,6 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 
 /// Driver data model representing an assigned Seddo driver.
 /// Follows Innov & Impact Africa guidelines (data/models/).
@@ -17,6 +18,11 @@ class DriverModel {
   final LatLng currentLocation;
   final int etaMinutes;
   final double distanceKm;
+  final double? heading;
+  final String? approachPolyline;
+  final int? approachDurationS;
+  final int? approachDistanceM;
+  final List<TrafficSegmentModel> approachTraffic;
 
   /// Convenience getter for current location
   LatLng get location => currentLocation;
@@ -35,6 +41,11 @@ class DriverModel {
     required this.currentLocation,
     required this.etaMinutes,
     required this.distanceKm,
+    this.heading,
+    this.approachPolyline,
+    this.approachDurationS,
+    this.approachDistanceM,
+    this.approachTraffic = const [],
   });
 
   DriverModel copyWith({
@@ -51,6 +62,11 @@ class DriverModel {
     LatLng? currentLocation,
     int? etaMinutes,
     double? distanceKm,
+    double? heading,
+    String? approachPolyline,
+    int? approachDurationS,
+    int? approachDistanceM,
+    List<TrafficSegmentModel>? approachTraffic,
   }) {
     return DriverModel(
       id: id ?? this.id,
@@ -66,6 +82,11 @@ class DriverModel {
       currentLocation: currentLocation ?? this.currentLocation,
       etaMinutes: etaMinutes ?? this.etaMinutes,
       distanceKm: distanceKm ?? this.distanceKm,
+      heading: heading ?? this.heading,
+      approachPolyline: approachPolyline ?? this.approachPolyline,
+      approachDurationS: approachDurationS ?? this.approachDurationS,
+      approachDistanceM: approachDistanceM ?? this.approachDistanceM,
+      approachTraffic: approachTraffic ?? this.approachTraffic,
     );
   }
 
@@ -84,6 +105,10 @@ class DriverModel {
       'lng': currentLocation.longitude,
       'etaMinutes': etaMinutes,
       'distanceKm': distanceKm,
+      if (heading != null) 'heading': heading,
+      if (approachPolyline != null) 'approachPolyline': approachPolyline,
+      if (approachDurationS != null) 'approachDurationS': approachDurationS,
+      if (approachDistanceM != null) 'approachDistanceM': approachDistanceM,
     };
   }
 
@@ -105,6 +130,10 @@ class DriverModel {
       ),
       etaMinutes: json['etaMinutes'] as int? ?? 3,
       distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 1.2,
+      heading: (json['heading'] as num?)?.toDouble(),
+      approachPolyline: json['approachPolyline'] as String?,
+      approachDurationS: (json['approachDurationS'] as num?)?.toInt(),
+      approachDistanceM: (json['approachDistanceM'] as num?)?.toInt(),
     );
   }
 
@@ -169,21 +198,60 @@ class DriverModel {
     final resolvedPlate = vehicleRaw['plate'] as String? ??
         (driverRaw['licensePlate'] as String? ?? 'DK-4582-AB');
 
-    // Location
-    final locRaw = driverRaw['location'] is Map<String, dynamic>
-        ? driverRaw['location'] as Map<String, dynamic>
-        : null;
-    final lat = (locRaw?['lat'] as num?)?.toDouble() ??
-        (driverRaw['lat'] as num?)?.toDouble() ??
-        14.6937;
-    final lng = (locRaw?['lng'] as num?)?.toDouble() ??
-        (driverRaw['lng'] as num?)?.toDouble() ??
-        -17.4647;
+    // Location / Position support (backend returns "position": {"lat": ..., "lng": ..., "heading": ...})
+    final posRaw = driverRaw['position'] is Map<String, dynamic>
+        ? driverRaw['position'] as Map<String, dynamic>
+        : (driverRaw['location'] is Map<String, dynamic>
+            ? driverRaw['location'] as Map<String, dynamic>
+            : (json['driverPosition'] is Map<String, dynamic>
+                ? json['driverPosition'] as Map<String, dynamic>
+                : (json['position'] is Map<String, dynamic>
+                    ? json['position'] as Map<String, dynamic>
+                    : null)));
 
-    final eta = (json['etaMinutes'] as num?)?.toInt() ??
-        (json['eta'] as num?)?.toInt() ??
-        (driverRaw['etaMinutes'] as num?)?.toInt() ??
-        3;
+    final lat = (posRaw?['lat'] as num?)?.toDouble() ??
+        (posRaw?['latitude'] as num?)?.toDouble() ??
+        (driverRaw['lat'] as num?)?.toDouble() ??
+        (driverRaw['latitude'] as num?)?.toDouble() ??
+        (json['lat'] as num?)?.toDouble() ??
+        14.6937;
+    final lng = (posRaw?['lng'] as num?)?.toDouble() ??
+        (posRaw?['longitude'] as num?)?.toDouble() ??
+        (driverRaw['lng'] as num?)?.toDouble() ??
+        (driverRaw['longitude'] as num?)?.toDouble() ??
+        (json['lng'] as num?)?.toDouble() ??
+        -17.4647;
+    final heading = (posRaw?['heading'] as num?)?.toDouble() ??
+        (driverRaw['heading'] as num?)?.toDouble();
+
+    // Route & Approach route (phase APPROACH with real street polyline and traffic)
+    final routeRaw = json['route'] is Map<String, dynamic>
+        ? json['route'] as Map<String, dynamic>
+        : null;
+    final approachPoly = routeRaw?['polyline'] as String? ??
+        (json['approachPolyline'] as String?);
+    final approachDurS = (routeRaw?['durationS'] as num?)?.toInt() ??
+        (json['pickupEtaS'] as num?)?.toInt();
+    final approachDistM = (routeRaw?['distanceM'] as num?)?.toInt();
+
+    final rawAppTraffic = (routeRaw?['traffic'] as List<dynamic>? ?? []);
+    final appTraffic = rawAppTraffic
+        .whereType<Map<String, dynamic>>()
+        .map((t) => TrafficSegmentModel.fromJson(t))
+        .toList();
+
+    final eta = approachDurS != null && approachDurS > 0
+        ? (approachDurS / 60.0).ceil()
+        : ((json['etaMinutes'] as num?)?.toInt() ??
+            (json['eta'] as num?)?.toInt() ??
+            (driverRaw['etaMinutes'] as num?)?.toInt() ??
+            3);
+
+    final distKm = approachDistM != null && approachDistM > 0
+        ? double.parse((approachDistM / 1000.0).toStringAsFixed(1))
+        : ((driverRaw['distanceKm'] as num?)?.toDouble() ??
+            (json['distanceKm'] as num?)?.toDouble() ??
+            1.2);
 
     final category =
         (json['category'] as String? ?? driverRaw['rideType'] as String? ?? '')
@@ -207,9 +275,12 @@ class DriverModel {
       rideType: rType,
       currentLocation: LatLng(lat, lng),
       etaMinutes: eta,
-      distanceKm: (driverRaw['distanceKm'] as num?)?.toDouble() ??
-          (json['distanceKm'] as num?)?.toDouble() ??
-          1.2,
+      distanceKm: distKm,
+      heading: heading,
+      approachPolyline: approachPoly,
+      approachDurationS: approachDurS,
+      approachDistanceM: approachDistM,
+      approachTraffic: appTraffic,
     );
   }
 

@@ -115,7 +115,7 @@ void main() {
 
       // Verify DriverApproachingPage is displayed matching the reference design
       expect(find.byType(DriverApproachingPage), findsOneWidget);
-      expect(find.textContaining('Rendez-vous'), findsWidgets);
+      expect(find.textContaining('Votre chauffeur arrive dans'), findsWidgets);
       expect(find.textContaining('Moussa'), findsWidgets);
       expect(find.text('Code de départ'), findsOneWidget);
       expect(find.text('Envoyer un message...'), findsOneWidget);

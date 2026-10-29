@@ -10,10 +10,12 @@ import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_approaching_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
+import 'package:seddo/services/route_service.dart';
 
 /// Splash page showing solid Seddo orange background and an animated SEDDO logo reveal.
 /// Checks GET /v1/rides/current at app startup if the user is authenticated.
@@ -158,14 +160,27 @@ class _SplashPageState extends State<SplashPage>
     );
 
     final isConfort = (ride['category'] as String? ?? '').toUpperCase() == 'CONFORT';
+    final rideType = isConfort ? RideType.confort : RideType.eco;
+
+    // Planned traffic segments
+    final plannedTrafficRaw = ride['plannedTraffic'] as List<dynamic>?;
+    final List<TrafficSegmentModel> plannedTraffic = plannedTrafficRaw != null
+        ? plannedTrafficRaw
+            .whereType<Map<String, dynamic>>()
+            .map((item) => TrafficSegmentModel.fromJson(item))
+            .toList()
+        : const [];
+
     final rideOption = RideOptionModel(
-      type: isConfort ? RideType.confort : RideType.eco,
+      type: rideType,
       title: isConfort ? 'Seddo Confort' : 'Seddo Eco',
-      subtitle: 'Course en cours',
+      subtitle: (ride['categoryName'] as String?) ??
+          (isConfort ? 'Seddo Confort' : 'Seddo Eco'),
       price: (ride['finalPrice'] ?? ride['price'] ?? 2000) as int,
       capacity: 4,
       estimatedArrival: 'Dans 15 min',
       pickupDuration: '3 min',
+      traffic: plannedTraffic,
     );
 
     if (status == 'SEARCHING' || status == 'PAYMENT_PENDING') {
@@ -176,53 +191,62 @@ class _SplashPageState extends State<SplashPage>
       );
     }
 
-    // Driver information for approaching or in-progress rides
-    final driverRaw = ride['driver'] as Map<String, dynamic>? ?? {};
-    final vehicleRaw = driverRaw['vehicle'] as Map<String, dynamic>? ?? {};
-    final firstName = driverRaw['firstName'] as String? ?? 'Chauffeur';
-    final lastName = driverRaw['lastName'] as String? ?? '';
-    final driverName = '$firstName $lastName'.trim();
+    final routeRaw = ride['route'] as Map<String, dynamic>?;
+    final phase = (routeRaw?['phase'] as String? ?? '').toUpperCase();
+    final startedAt = ride['startedAt'];
+    final rideId = ride['id']?.toString();
 
-    final driver = DriverModel(
-      id: driverRaw['id']?.toString() ?? 'driver_current',
-      name: driverName.isNotEmpty ? driverName : 'Moussa Sarr',
-      phone: driverRaw['phone'] as String? ?? '+221 77 000 00 00',
-      rating: (driverRaw['rating'] as num?)?.toDouble() ?? 4.9,
-      totalRides: 1200,
-      carModel: '${vehicleRaw['make'] ?? 'Toyota'} ${vehicleRaw['model'] ?? 'Corolla'}',
-      carColor: vehicleRaw['color'] as String? ?? 'Gris',
-      licensePlate: vehicleRaw['plate'] as String? ?? 'DK-0000-XX',
-      rideType: isConfort ? RideType.confort : RideType.eco,
-      currentLocation: LatLng(
-        (driverRaw['location']?['lat'] as num?)?.toDouble() ?? departure.latitude,
-        (driverRaw['location']?['lng'] as num?)?.toDouble() ?? departure.longitude,
-      ),
-      etaMinutes: 3,
-      distanceKm: 0.8,
-    );
-
-    final departureCode = (ride['startCode'] ?? ride['departureCode'] ?? '4821').toString();
-
-    if (status == 'ACCEPTED' || status == 'DRIVER_ARRIVED') {
-      return DriverApproachingPage(
-        departure: departure,
-        destination: destination,
-        rideOption: rideOption,
-        driver: driver,
-        departureCode: departureCode,
-      );
+    // Décodage de la polyline planifiée (du pickup au dropoff)
+    List<LatLng> tripPolyline = [];
+    final plannedPolylineStr = ride['plannedPolyline'] as String?;
+    if (plannedPolylineStr != null && plannedPolylineStr.isNotEmpty) {
+      tripPolyline = RouteService.decodePolyline(plannedPolylineStr);
     }
 
-    if (status == 'IN_PROGRESS') {
+    // Driver information pour approche ou course en cours :
+    // DriverModel.fromRideJson extrait fidèlement driver.position, heading,
+    // route.polyline (phase APPROACH sur vraies routes), durationS et distanceM
+    final driver = DriverModel.fromRideJson(
+      ride,
+      defaultRideType: rideType,
+    );
+
+    final departureCode =
+        DriverModel.extractDepartureCode(ride, fallback: '4821');
+
+    // Vérification stricte de la phase et du statut :
+    // Tant que la phase est 'APPROACH' ou que startedAt est null (code non encore validé par le chauffeur),
+    // l'application DOIT afficher DriverApproachingPage avec le code de départ à 4 chiffres.
+    final isTripUnderway = (status == 'IN_PROGRESS' ||
+            phase == 'TRIP' ||
+            (startedAt != null && startedAt.toString().isNotEmpty)) &&
+        phase != 'APPROACH';
+
+    if (isTripUnderway) {
       return ActiveRidePage(
         departure: departure,
         destination: destination,
         rideOption: rideOption,
         driver: driver,
+        polylinePoints: tripPolyline,
+        autoStartSimulation: false,
+        rideId: rideId,
+        rideService: widget.rideService,
       );
     }
 
-    return null;
+    // Phase APPROACH (chauffeur en route vers le client ou arrivé au point de rendez-vous)
+    return DriverApproachingPage(
+      departure: departure,
+      destination: destination,
+      rideOption: rideOption,
+      driver: driver,
+      departureCode: departureCode,
+      polylinePoints: tripPolyline,
+      autoStartSimulation: false,
+      rideId: rideId,
+      rideService: widget.rideService,
+    );
   }
 
   @override

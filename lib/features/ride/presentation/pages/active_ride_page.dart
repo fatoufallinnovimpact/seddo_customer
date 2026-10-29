@@ -13,11 +13,14 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_driver_card_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/driver_action_buttons_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
@@ -45,6 +48,7 @@ class ActiveRidePage extends StatefulWidget {
   final bool autoStartSimulation;
   final bool isOffline;
   final String? rideId;
+  final RideService? rideService;
 
   const ActiveRidePage({
     super.key,
@@ -56,6 +60,7 @@ class ActiveRidePage extends StatefulWidget {
     this.autoStartSimulation = false,
     this.isOffline = false,
     this.rideId,
+    this.rideService,
   });
 
   @override
@@ -64,6 +69,7 @@ class ActiveRidePage extends StatefulWidget {
 
 class _ActiveRidePageState extends State<ActiveRidePage>
     with SingleTickerProviderStateMixin {
+  late final RideService _rideService;
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupBadgeIcon;
@@ -98,6 +104,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   @override
   void initState() {
     super.initState();
+    _rideService = widget.rideService ?? RideService();
     _isOffline = widget.isOffline;
     _currentSheetExtent = _isOffline ? 0.25 : 0.38;
     _initRoute();
@@ -472,7 +479,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.get3DCarMarker();
+    final carColor = VehicleColorHelper.parseColor(widget.driver.carColor);
+    final car = await MapMarkerHelper.get3DCarMarker(color: carColor);
     final pickup = await MapMarkerHelper.getDeparturePinMarker();
     final dest = await MapMarkerHelper.getDestinationPinMarker();
 
@@ -501,7 +509,19 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Future<void> _shareRide() async {
-    const shareUrl = 'https://suivi.seddo.sn/t/8K02F';
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+    String shareUrl = 'https://suivi.seddo.sn/t/8K02F';
+    String? token;
+
+    try {
+      final result = await _rideService.shareRide(effectiveRideId);
+      if (result != null && result.url.isNotEmpty) {
+        shareUrl = result.url;
+        token = result.token;
+      }
+    } catch (_) {}
+
     final shareText =
         'Suis mon trajet Seddo en direct vers ${widget.destination.mainText} avec ${widget.driver.name} (${widget.driver.carModel} ${widget.driver.licensePlate}) : $shareUrl';
 
@@ -515,11 +535,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     } catch (_) {}
 
     if (mounted) {
-      _showShareOptionsSheet(shareUrl);
+      _showShareOptionsSheet(shareUrl, token: token);
     }
   }
 
-  void _showShareOptionsSheet(String shareUrl) {
+  void _showShareOptionsSheet(String shareUrl, {String? token}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.transparent,
@@ -616,6 +636,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                             driver: widget.driver,
                             polylinePoints: widget.polylinePoints,
                             etaText: widget.rideOption.estimatedArrival,
+                            shareUrl: shareUrl,
+                            token: token,
+                            rideService: _rideService,
                           ),
                         ),
                       );
@@ -682,6 +705,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           driver: widget.driver,
           rideOption: widget.rideOption,
           arrivalTime: widget.rideOption.estimatedArrival,
+          rideId: widget.rideId ?? RideService.lastCreatedRideId,
+          rideService: _rideService,
         ),
       ),
     );
@@ -757,20 +782,16 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       );
     }
 
-    // 2. Distance restante avec couleur verte dynamique Yango (AppColors.yangoRouteGreen)
+    // 2. Distance restante avec couleurs dynamiques de trafic (Vert fluide, ambre ralenti, rouge bouchon)
     final activePts =
         _remainingPoints.length >= 2 ? _remainingPoints : _effectiveRoute;
-    polylines.add(
-      Polyline(
-        polylineId: const PolylineId('active_route'),
-        points: activePts,
-        color: AppColors.yangoRouteGreen,
-        width: 4,
-        jointType: JointType.round,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-      ),
+    final activePolylines = RideEtaCalculator.buildTrafficPolylines(
+      baseId: 'active_route',
+      points: activePts,
+      traffic: widget.rideOption.traffic,
+      width: 4,
     );
+    polylines.addAll(activePolylines);
 
     return polylines;
   }
@@ -782,8 +803,13 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        // La course est en cours : navigation retour désactivée
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.white,
       body: Stack(
         children: [
           // 1. Fullscreen Google Map avec pinch-to-zoom et contrôle gestuel fluide
@@ -902,37 +928,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               ),
             ),
 
-            // Discreet floating back button so navigation is always accessible
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 76,
-              left: 16,
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  color: AppColors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.shadowMarker,
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: AppColors.textPrimary,
-                    size: 20,
-                  ),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-            ),
           ] else
-            // Normal online Floating Top Bar
+            // Normal online Floating Top Bar (Centering Pill with Siren Button on right)
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -941,31 +938,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: AppConstants.circularButtonSize,
-                      height: AppConstants.circularButtonSize,
-                      decoration: const BoxDecoration(
-                        color: AppColors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.shadowMarker,
-                            blurRadius: 10,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: AppColors.textPrimary,
-                          size: 22,
-                        ),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ),
-
-                    const SizedBox(width: AppConstants.spacingSm),
+                    // Symmetry spacer to balance the Siren button on the right
+                    const SizedBox(width: AppConstants.circularButtonSize),
 
                     Expanded(
                       child: Center(
@@ -1510,6 +1484,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       ),
     ],
   ),
+),
 );
 }
 }

@@ -4,23 +4,30 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
+import 'package:seddo/services/receipt_pdf_service.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Screen displayed at the end of the trip to rate the driver matching the design:
 /// - Top bar: Circular back button and centered Seddo logo with decorative organic waves
 /// - Illustrated driver avatar with orange cap & polo, verification shield, and sparkles
 /// - "Comment s'est passée votre course avec Moussa ?"
 /// - Subtitle with destination, time and duration
-/// - 5-star rating selector (4 stars active by default)
+/// - 5-star rating selector (5 stars active by default)
 /// - 4 feedback tag pills (Conduite prudente, Ponctuel, Voiture propre, Sympathique)
+/// - Comment input field (optional message)
 /// - Total payé card with 3D car asset, "Prix fixe" badge, Orange Money details & chevron
 /// - Warm peach appreciation card ("Merci pour votre avis !")
-/// - Primary orange "Envoyer" button with paper plane and energy bursts
-/// - Secondary "Voir le reçu" button
+/// - Primary orange "Envoyer" button with paper plane and energy bursts (submits POST /v1/rides/{id}/rating)
+/// - "Télécharger le reçu" & "Partager le reçu" actions (using GET /v1/rides/{id}/receipt.pdf and /receipt)
+/// - Secondary "Voir le reçu" button opening detailed receipt
 class RideRatingPage extends StatefulWidget {
   final PlaceSearchResult? departure;
   final PlaceSearchResult destination;
@@ -29,6 +36,8 @@ class RideRatingPage extends StatefulWidget {
   final String arrivalTime;
   final String durationText;
   final String paymentPhone;
+  final String? rideId;
+  final RideService? rideService;
 
   const RideRatingPage({
     super.key,
@@ -39,6 +48,8 @@ class RideRatingPage extends StatefulWidget {
     this.arrivalTime = '18:41',
     this.durationText = '22 min',
     this.paymentPhone = '77 ••• 45 12',
+    this.rideId,
+    this.rideService,
   });
 
   @override
@@ -56,8 +67,20 @@ class _FeedbackTag {
 }
 
 class _RideRatingPageState extends State<RideRatingPage> {
-  int _selectedStars = 4;
+  int _selectedStars = 5;
   final Set<String> _selectedTags = {'rating.safe_driving'};
+  late final TextEditingController _commentController;
+  late final RideService _rideService;
+  bool _isSubmitting = false;
+  bool _isDownloadingReceipt = false;
+  bool _isSharingReceipt = false;
+
+  static const Map<String, String> _tagToCompliment = {
+    'rating.safe_driving': 'SAFE_DRIVING',
+    'rating.punctual': 'PUNCTUAL',
+    'rating.clean_car': 'CLEAN_CAR',
+    'rating.friendly': 'POLITE',
+  };
 
   static const List<_FeedbackTag> _tags = [
     _FeedbackTag(
@@ -78,6 +101,19 @@ class _RideRatingPageState extends State<RideRatingPage> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _commentController = TextEditingController();
+    _rideService = widget.rideService ?? RideService();
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
   void _toggleTag(String tagKey) {
     setState(() {
       if (_selectedTags.contains(tagKey)) {
@@ -88,24 +124,275 @@ class _RideRatingPageState extends State<RideRatingPage> {
     });
   }
 
-  void _submitRating() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.slateDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        content: Text(
-          'rating.thanks_notice'.tr(),
-          style: GoogleFonts.inter(
-            color: AppColors.white,
-            fontWeight: FontWeight.w600,
+  Future<void> _submitRating() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    try {
+      final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+      final compliments = _selectedTags
+          .map((tag) => _tagToCompliment[tag] ?? tag)
+          .toList();
+      final comment = _commentController.text.trim();
+
+      if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+        await _rideService.submitRating(
+          rideId: effectiveRideId,
+          stars: _selectedStars,
+          comment: comment.isNotEmpty ? comment : null,
+          compliments: compliments,
+        );
+      }
+    } catch (_) {
+      // Ignorer silencieusement pour toujours afficher la confirmation visuelle
+    } finally {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.slateDark,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+            ),
+            content: Text(
+              'rating.thanks_notice'.tr(),
+              style: GoogleFonts.inter(
+                color: AppColors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
+        );
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    }
+  }
+
+  Future<void> _downloadReceipt() async {
+    if (_isDownloadingReceipt) return;
+    setState(() => _isDownloadingReceipt = true);
+
+    try {
+      final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+      ReceiptSaveResult? saveResult;
+
+      if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+        // 1. Essayer le reçu binaire direct depuis l'API GET /v1/rides/{id}/receipt.pdf
+        final pdfBytes = await _rideService.downloadReceiptPdf(effectiveRideId);
+        if (pdfBytes != null && pdfBytes.isNotEmpty) {
+          saveResult = await ReceiptPdfService.saveBytesToDevice(
+            bytes: pdfBytes,
+            fileName: 'Recu_Seddo_$effectiveRideId.pdf',
+          );
+        } else {
+          // 2. Sinon essayer via le lien signé GET /v1/rides/{id}/receipt
+          final linkData = await _rideService.getReceiptLink(effectiveRideId);
+          if (linkData != null) {
+            final token = linkData['token']?.toString();
+            if (token != null && token.isNotEmpty) {
+              final tokenBytes = await _rideService.downloadReceiptByToken(token);
+              if (tokenBytes != null && tokenBytes.isNotEmpty) {
+                saveResult = await ReceiptPdfService.saveBytesToDevice(
+                  bytes: tokenBytes,
+                  fileName: 'Recu_Seddo_$token.pdf',
+                );
+              }
+            }
+
+            final url = linkData['url']?.toString();
+            if ((saveResult == null || !saveResult.success) && url != null && url.isNotEmpty) {
+              final uri = Uri.tryParse(url);
+              if (uri != null && await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            }
+          }
+        }
+      }
+
+      // 3. Fallback de génération locale haute fidélité
+      if (saveResult == null || !saveResult.success) {
+        saveResult = await ReceiptPdfService.saveReceiptToDevice(
+          departureName: widget.departure?.mainText ?? 'Sacré-Cœur 3',
+          arrivalName: widget.destination.mainText,
+          departureTime: '18:19',
+          arrivalTime: widget.arrivalTime,
+          distanceText: widget.durationText,
+          durationText: widget.durationText,
+          dateText: 'Aujourd\'hui',
+          priceText: widget.rideOption.formattedPrice,
+          rideType: widget.rideOption.title,
+          driverName: widget.driver.name.isNotEmpty ? widget.driver.name : 'Moussa',
+          driverCar: widget.driver.carModel,
+          driverPlate: widget.driver.licensePlate,
+          driverRating: '${widget.driver.rating.toInt()}',
+          paymentPhone: widget.paymentPhone,
+          orangeRef: effectiveRideId ?? 'SEDDO_${DateTime.now().millisecondsSinceEpoch}',
+        );
+      }
+
+      if (!mounted) return;
+
+      final isSuccess = saveResult.success;
+      final message = isSuccess
+          ? 'rating.download_success'.tr()
+          : 'rating.download_error'.tr();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: AppColors.white,
+            ),
+          ),
+          backgroundColor: isSuccess ? AppColors.slateDark : AppColors.errorRed,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+          ),
+          action: isSuccess && saveResult.primaryPath.isNotEmpty
+              ? SnackBarAction(
+                  label: 'rating.share_receipt'.tr(),
+                  textColor: AppColors.orangeAccent,
+                  onPressed: () {
+                    try {
+                      SharePlus.instance.share(
+                        ShareParams(
+                          files: [XFile(saveResult!.primaryPath)],
+                          subject: 'rating.share_subject'.tr(),
+                        ),
+                      );
+                    } catch (_) {}
+                  },
+                )
+              : null,
         ),
-      ),
-    );
-    Navigator.of(context).popUntil((route) => route.isFirst);
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'rating.download_error'.tr(),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+                color: AppColors.white,
+              ),
+            ),
+            backgroundColor: AppColors.errorRed,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloadingReceipt = false);
+      }
+    }
+  }
+
+  Future<void> _shareReceipt() async {
+    if (_isSharingReceipt) return;
+    setState(() => _isSharingReceipt = true);
+
+    try {
+      final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+      String? receiptUrl;
+      String? filePath;
+
+      if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+        // Obtenir le lien de partage signé depuis l'API GET /v1/rides/{id}/receipt
+        final linkData = await _rideService.getReceiptLink(effectiveRideId);
+        if (linkData != null && linkData['url'] != null) {
+          receiptUrl = linkData['url']?.toString();
+        }
+
+        // Obtenir le fichier PDF binaire depuis l'API GET /v1/rides/{id}/receipt.pdf
+        final pdfBytes = await _rideService.downloadReceiptPdf(effectiveRideId);
+        if (pdfBytes != null && pdfBytes.isNotEmpty) {
+          final saveResult = await ReceiptPdfService.saveBytesToDevice(
+            bytes: pdfBytes,
+            fileName: 'Recu_Seddo_$effectiveRideId.pdf',
+          );
+          if (saveResult.success) {
+            filePath = saveResult.primaryPath;
+          }
+        }
+      }
+
+      // Si aucun fichier PDF binaire obtenu, générer le reçu local
+      if (filePath == null || filePath.isEmpty) {
+        final localSave = await ReceiptPdfService.saveReceiptToDevice(
+          departureName: widget.departure?.mainText ?? 'Sacré-Cœur 3',
+          arrivalName: widget.destination.mainText,
+          departureTime: '18:19',
+          arrivalTime: widget.arrivalTime,
+          distanceText: widget.durationText,
+          durationText: widget.durationText,
+          dateText: 'Aujourd\'hui',
+          priceText: widget.rideOption.formattedPrice,
+          rideType: widget.rideOption.title,
+          driverName: widget.driver.name.isNotEmpty ? widget.driver.name : 'Moussa',
+          driverCar: widget.driver.carModel,
+          driverPlate: widget.driver.licensePlate,
+          driverRating: '${widget.driver.rating.toInt()}',
+          paymentPhone: widget.paymentPhone,
+          orangeRef: effectiveRideId ?? 'SEDDO_${DateTime.now().millisecondsSinceEpoch}',
+        );
+        if (localSave.success) {
+          filePath = localSave.primaryPath;
+        }
+      }
+
+      final shareText = receiptUrl != null && receiptUrl.isNotEmpty
+          ? 'rating.share_text'.tr(args: [receiptUrl])
+          : null;
+
+      if (filePath != null && filePath.isNotEmpty) {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(filePath)],
+            subject: 'rating.share_subject'.tr(),
+            text: shareText,
+          ),
+        );
+      } else if (shareText != null) {
+        await SharePlus.instance.share(
+          ShareParams(
+            subject: 'rating.share_subject'.tr(),
+            text: shareText,
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'rating.download_error'.tr(),
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.w600,
+                color: AppColors.white,
+              ),
+            ),
+            backgroundColor: AppColors.errorRed,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSharingReceipt = false);
+      }
+    }
   }
 
   void _redirectToPlaceSearch() {
@@ -128,6 +415,8 @@ class _RideRatingPageState extends State<RideRatingPage> {
           arrivalTime: widget.arrivalTime,
           durationText: widget.durationText,
           paymentPhone: widget.paymentPhone,
+          rideId: widget.rideId ?? RideService.lastCreatedRideId,
+          rideService: _rideService,
         ),
       ),
     );
@@ -294,22 +583,32 @@ class _RideRatingPageState extends State<RideRatingPage> {
 
                         const SizedBox(height: 14),
 
-                        // 7. Total Payé Card
+                        // 7. Comment Field (Optionnel)
+                        _buildCommentField(),
+
+                        const SizedBox(height: 14),
+
+                        // 8. Total Payé Card
                         _buildTotalPaidCard(),
 
                         const SizedBox(height: 12),
 
-                        // 8. "Merci pour votre avis !" Appreciation Card
+                        // 9. "Merci pour votre avis !" Appreciation Card
                         _buildAppreciationCard(),
 
                         const SizedBox(height: 16),
 
-                        // 9. Primary Button: "Envoyer"
+                        // 10. Primary Button: "Envoyer"
                         _buildSendButton(),
+
+                        const SizedBox(height: 12),
+
+                        // 11. Download & Share Receipt Buttons
+                        _buildReceiptActionButtons(),
 
                         const SizedBox(height: 10),
 
-                        // 10. Secondary Button: "Voir le reçu"
+                        // 12. Secondary Button: "Voir le reçu"
                         _buildReceiptButton(),
                       ],
                     ),
@@ -629,46 +928,121 @@ class _RideRatingPageState extends State<RideRatingPage> {
     );
   }
 
+  Widget _buildCommentField() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.grayBgSubtle,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        border: Border.all(
+          color: AppColors.grayBorderDivider,
+          width: AppConstants.strokeWidthBorder,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingMd,
+        vertical: AppConstants.spacingSm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.chat_bubble_outline_rounded,
+                size: AppConstants.iconSizeSm,
+                color: AppColors.slateMuted,
+              ),
+              const SizedBox(width: AppConstants.spacingS),
+              Text(
+                'rating.comment_title'.tr(),
+                style: GoogleFonts.inter(
+                  fontSize: AppConstants.fontSm,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.slateDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppConstants.spacingXs),
+          TextField(
+            controller: _commentController,
+            maxLines: 3,
+            minLines: 2,
+            maxLength: 250,
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.fontSm + 1.5,
+              fontWeight: FontWeight.w500,
+              color: AppColors.slateDark,
+            ),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+              hintText: 'rating.comment_hint'.tr(),
+              hintStyle: GoogleFonts.inter(
+                fontSize: AppConstants.fontSm + 1.0,
+                fontWeight: FontWeight.w400,
+                color: AppColors.slateMuted,
+              ),
+              counterStyle: GoogleFonts.inter(
+                fontSize: AppConstants.fontXs,
+                color: AppColors.slateMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSendButton() {
     return Stack(
       clipBehavior: Clip.none,
       children: [
         SizedBox(
           width: double.infinity,
-          height: 54,
+          height: AppConstants.buttonHeight,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.orangeVibrant,
               foregroundColor: AppColors.white,
-              elevation: 0,
+              elevation: AppConstants.elevationNone,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(27),
+                borderRadius: BorderRadius.circular(AppConstants.radiusSheet),
               ),
               shadowColor: AppColors.orangeVibrantGlow,
             ),
-            onPressed: _submitRating,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Transform.rotate(
-                  angle: -0.2,
-                  child: const Icon(
-                    Icons.send_rounded,
-                    size: 19,
-                    color: AppColors.white,
+            onPressed: _isSubmitting ? null : _submitRating,
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: AppColors.white,
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Transform.rotate(
+                        angle: -0.2,
+                        child: const Icon(
+                          Icons.send_rounded,
+                          size: AppConstants.iconSizeDefault,
+                          color: AppColors.white,
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spacingUnit),
+                      Text(
+                        'rating.submit'.tr(),
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontLg,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'rating.submit'.tr(),
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.white,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
 
@@ -685,20 +1059,138 @@ class _RideRatingPageState extends State<RideRatingPage> {
     );
   }
 
+  Widget _buildReceiptActionButtons() {
+    return Row(
+      children: [
+        // Télécharger le reçu (GET /v1/rides/{id}/receipt.pdf)
+        Expanded(
+          child: SizedBox(
+            height: AppConstants.buttonHeight,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                backgroundColor: AppColors.white,
+                foregroundColor: AppColors.slateDark,
+                side: const BorderSide(
+                  color: AppColors.grayBorderDivider,
+                  width: AppConstants.strokeWidthBorder,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingSm,
+                ),
+              ),
+              onPressed: _isDownloadingReceipt ? null : _downloadReceipt,
+              child: _isDownloadingReceipt
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.orangeAccent,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.file_download_outlined,
+                          size: AppConstants.iconSizeMd,
+                          color: AppColors.orangeAccent,
+                        ),
+                        const SizedBox(width: AppConstants.spacingSm),
+                        Flexible(
+                          child: Text(
+                            'rating.download_receipt'.tr(),
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.fontSm,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.slateDark,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppConstants.spacingUnitLg),
+        // Partager le reçu (GET /v1/rides/{id}/receipt + SharePlus)
+        Expanded(
+          child: SizedBox(
+            height: AppConstants.buttonHeight,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                backgroundColor: AppColors.white,
+                foregroundColor: AppColors.slateDark,
+                side: const BorderSide(
+                  color: AppColors.grayBorderDivider,
+                  width: AppConstants.strokeWidthBorder,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingSm,
+                ),
+              ),
+              onPressed: _isSharingReceipt ? null : _shareReceipt,
+              child: _isSharingReceipt
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.orangeAccent,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.share_outlined,
+                          size: AppConstants.iconSizeMd,
+                          color: AppColors.orangeAccent,
+                        ),
+                        const SizedBox(width: AppConstants.spacingSm),
+                        Flexible(
+                          child: Text(
+                            'rating.share_receipt'.tr(),
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.fontSm,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.slateDark,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildReceiptButton() {
     return SizedBox(
       width: double.infinity,
-      height: 50,
+      height: AppConstants.buttonHeight,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.white,
           foregroundColor: AppColors.slateDark,
-          elevation: 0,
+          elevation: AppConstants.elevationNone,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
             side: const BorderSide(
               color: AppColors.grayBorderDivider,
-              width: 1.2,
+              width: AppConstants.strokeWidthBorder,
             ),
           ),
         ),
@@ -708,14 +1200,14 @@ class _RideRatingPageState extends State<RideRatingPage> {
           children: [
             const Icon(
               Icons.receipt_long_rounded,
-              size: 20,
+              size: AppConstants.iconSizeMd,
               color: AppColors.slateDark,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppConstants.spacingSm),
             Text(
               'rating.view_receipt'.tr(),
               style: GoogleFonts.inter(
-                fontSize: 15,
+                fontSize: AppConstants.fontBase,
                 fontWeight: FontWeight.w700,
                 color: AppColors.slateDark,
               ),

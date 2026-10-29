@@ -13,6 +13,7 @@ import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/insufficient_balance_sheet.dart';
@@ -67,6 +68,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
   BitmapDescriptor? _destSquareIcon;
 
   List<LatLng> _polylinePoints = [];
+  List<TrafficSegmentModel> _traffic = [];
   bool _isLoadingRoute = true;
   double _distanceKm = 5.0;
   int _durationMinutes = 15;
@@ -273,22 +275,36 @@ class _RideBookingPageState extends State<RideBookingPage> {
           ? apiConfort.name
           : 'Seddo ${'home.confort'.tr()}';
 
+      final ecoEtaS = apiEco?.pickupEtaS ?? quote.pickupEtaS ?? 240;
+      final ecoEtaMin = (ecoEtaS / 60.0).ceil();
+      final confortEtaS = apiConfort?.pickupEtaS ?? (ecoEtaS + 180);
+      final confortEtaMin = (confortEtaS / 60.0).ceil();
+      final quoteTraffic = quote.traffic;
+      final quoteDistanceM = quote.distanceM;
+      final quoteDurationS = quote.durationS;
+      final quoteZone = quote.zone;
+
       setState(() {
         if (decodedPoints.isNotEmpty) {
           _polylinePoints = decodedPoints;
         }
+        _traffic = quoteTraffic;
         _distanceKm = distanceKm;
         _durationMinutes = durationMins;
-        _zoneName = quote?.zone;
+        _zoneName = quoteZone;
         _ecoOption = RideOptionModel(
           type: RideType.eco,
           title: ecoName,
-          subtitle: '$ecoTimeStr · ${'ride.arriving_in'.tr(args: ['4'])}',
+          subtitle: '$ecoTimeStr · ${'ride.arriving_in'.tr(args: [ecoEtaMin.toString()])}',
           capacity: ecoSeats,
           price: ecoPrice,
           estimatedArrival: ecoTimeStr,
-          pickupDuration: '4 min',
+          pickupDuration: '$ecoEtaMin min',
           quoteId: ecoQuoteId,
+          pickupEtaS: ecoEtaS,
+          traffic: quoteTraffic,
+          distanceM: quoteDistanceM,
+          durationS: quoteDurationS,
         );
         _confortOption = RideOptionModel(
           type: RideType.confort,
@@ -297,8 +313,12 @@ class _RideBookingPageState extends State<RideBookingPage> {
           capacity: confortSeats,
           price: confortPrice,
           estimatedArrival: confortTimeStr,
-          pickupDuration: '7 min',
+          pickupDuration: '$confortEtaMin min',
           quoteId: confortQuoteId,
+          pickupEtaS: confortEtaS,
+          traffic: quoteTraffic,
+          distanceM: quoteDistanceM,
+          durationS: quoteDurationS,
         );
         _isLoadingRoute = false;
       });
@@ -407,17 +427,12 @@ class _RideBookingPageState extends State<RideBookingPage> {
   Set<Polyline> _buildPolylines() {
     if (_polylinePoints.isEmpty) return {};
 
-    return {
-      Polyline(
-        polylineId: const PolylineId('route_polyline'),
-        points: _polylinePoints,
-        color: AppColors.yangoRouteGreen,
-        width: 4,
-        jointType: JointType.round,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-      ),
-    };
+    return RideEtaCalculator.buildTrafficPolylines(
+      baseId: 'route_polyline',
+      points: _polylinePoints,
+      traffic: _traffic,
+      width: 5,
+    );
   }
 
   Future<void> _onOrderRide() async {

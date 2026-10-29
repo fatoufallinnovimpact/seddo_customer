@@ -14,6 +14,7 @@ import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_cancel_result_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
@@ -21,9 +22,13 @@ import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_sheet.dart';
-import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
+import 'package:seddo/services/route_service.dart';
+import 'package:seddo/features/home/presentation/pages/home_page.dart';
+import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// Screen displayed when the driver is approaching the pickup location:
 /// Matches the user's reference design:
@@ -67,7 +72,7 @@ class DriverApproachingPage extends StatefulWidget {
 }
 
 class _DriverApproachingPageState extends State<DriverApproachingPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _rendezVousIciMarkerIcon;
@@ -84,14 +89,25 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   bool _followCar = true;
   int _lastTickMs = 0;
 
+  // Real road approach route and ETA calculation state (Seddo Note technique)
+  List<LatLng> _approachRoutePoints = [];
+  List<TrafficSegmentModel> _approachTraffic = [];
+  List<LatLng> _tripPolylinePoints = [];
+  List<TrafficSegmentModel> _tripTraffic = [];
+  int _totalApproachM = 0;
+  int _totalApproachS = 0;
+  double _remainingDistanceM = 0.0;
+  int _currentApproachIndex = 0;
+  String _currentEtaLabel = '4 min';
+
   // Live Ride & Driver State synchronisés avec GET /v1/rides/{id}
   late DriverModel _currentDriver;
   late String _departureCode;
   late RideService _rideService;
   Timer? _ridePollTimer;
 
-  final GlobalKey _bottomCardKey = GlobalKey();
-  double _bottomCardHeight = 390.0;
+  late final AnimationController _sheetAnimationController;
+  BitmapDescriptor? _destinationMarkerIcon;
 
   @override
   void initState() {
@@ -100,11 +116,21 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     _currentDriver = widget.driver;
     _departureCode = widget.departureCode;
     _rideService = widget.rideService ?? RideService();
-    _remainingEtaMinutes = 4;
+    _tripPolylinePoints = List.from(widget.polylinePoints);
+    _tripTraffic = List.from(widget.rideOption.traffic);
+    _approachTraffic = List.from(_currentDriver.approachTraffic);
+    _sheetAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: 1.0,
+    );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _measureBottomCard();
-    });
+    final initialEtaS = _currentDriver.approachDurationS ??
+        widget.rideOption.pickupEtaS ??
+        240;
+    _totalApproachS = initialEtaS;
+    _remainingEtaMinutes = (initialEtaS / 60.0).ceil();
+    _currentEtaLabel = '$_remainingEtaMinutes min';
 
     _pickupPosition =
         LatLng(widget.departure.latitude, widget.departure.longitude);
@@ -118,10 +144,29 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           );
 
     _currentCarPosition = _driverInitialPosition;
-    _currentCarHeading =
+    _currentCarHeading = _currentDriver.heading ??
         _calculateBearing(_driverInitialPosition, _pickupPosition);
 
+    // Initialisation immédiate de l'itinéraire routier d'approche s'il est déjà fourni
+    if (_currentDriver.approachPolyline != null &&
+        _currentDriver.approachPolyline!.isNotEmpty) {
+      final decoded =
+          RouteService.decodePolyline(_currentDriver.approachPolyline!);
+      if (decoded.length >= 2) {
+        _approachRoutePoints = decoded;
+        if (_currentDriver.approachDistanceM != null &&
+            _currentDriver.approachDistanceM! > 0) {
+          _totalApproachM = _currentDriver.approachDistanceM!;
+        }
+      }
+    }
+
     _loadCustomMarkers();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadApproachRoute();
+      }
+    });
 
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
@@ -163,21 +208,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     _ridePollTimer?.cancel();
     _approachController?.stop();
     _approachController?.dispose();
+    _sheetAnimationController.dispose();
     _mapController?.dispose();
     super.dispose();
-  }
-
-  void _measureBottomCard() {
-    final renderBox =
-        _bottomCardKey.currentContext?.findRenderObject() as RenderBox?;
-    if (renderBox != null && renderBox.hasSize && mounted) {
-      final h = renderBox.size.height;
-      if ((_bottomCardHeight - h).abs() > 3) {
-        setState(() {
-          _bottomCardHeight = h;
-        });
-      }
-    }
   }
 
   /// Interroge GET /v1/rides/{id} : vue client (chauffeur, code de départ, paiement)
@@ -196,7 +229,17 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   void _applyRideDetails(Map<String, dynamic> data) {
     if (!mounted) return;
 
-    final status = (data['status'] as String? ?? '').toUpperCase();
+    final rideObj = data['ride'] is Map<String, dynamic>
+        ? data['ride'] as Map<String, dynamic>
+        : data;
+
+    final status = (rideObj['status'] as String? ?? '').toUpperCase();
+    final routeObj = rideObj['route'] is Map<String, dynamic>
+        ? rideObj['route'] as Map<String, dynamic>
+        : null;
+    final phase = (routeObj?['phase'] as String? ?? '').toUpperCase();
+    final startedAt = rideObj['startedAt'];
+    final arrivedAt = rideObj['arrivedAt'];
 
     // 1. Course annulée
     if (status.startsWith('CANCELLED') ||
@@ -217,7 +260,13 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     // 2. Chauffeur a validé le code client et démarré la course
-    if (status == 'IN_PROGRESS') {
+    // Uniquement quand status == 'IN_PROGRESS' ou phase == 'TRIP' ou startedAt non nul
+    final isTripStarted = (status == 'IN_PROGRESS' ||
+            phase == 'TRIP' ||
+            (startedAt != null && startedAt.toString().isNotEmpty)) &&
+        phase != 'APPROACH';
+
+    if (isTripStarted) {
       _ridePollTimer?.cancel();
       _approachController?.stop();
       startRide();
@@ -228,8 +277,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final newCode =
         DriverModel.extractDepartureCode(data, fallback: _departureCode);
 
-    // 4. Extraction du vrai chauffeur retourné par l'API
-    final hasDriver = data['driver'] != null || data['carModel'] != null;
+    // 4. Extraction du vrai chauffeur retourné par l'API (avec position, heading et infos véhicule)
+    final hasDriver = rideObj['driver'] != null || rideObj['carModel'] != null;
     DriverModel updatedDriver = _currentDriver;
     if (hasDriver) {
       updatedDriver = DriverModel.fromRideJson(
@@ -239,47 +288,274 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     // 5. Statut d'arrivée du chauffeur
-    final isArrived = status == 'DRIVER_ARRIVED' || status == 'ARRIVED';
+    final isArrived = status == 'DRIVER_ARRIVED' ||
+        status == 'ARRIVED' ||
+        (arrivedAt != null && arrivedAt.toString().isNotEmpty);
+    if (routeObj != null) {
+      final polylineStr = routeObj['polyline'] as String?;
+      if (polylineStr != null && polylineStr.isNotEmpty) {
+        final pts = RouteService.decodePolyline(polylineStr);
+        if (pts.length >= 2) {
+          _approachRoutePoints = pts;
+        }
+      }
+      final durS = (routeObj['durationS'] as num?)?.toInt();
+      if (durS != null && durS > 0) {
+        _totalApproachS = durS;
+      }
+      final distM = (routeObj['distanceM'] as num?)?.toInt();
+      if (distM != null && distM > 0) {
+        _totalApproachM = distM;
+      }
+      final rawTraffic = routeObj['traffic'] as List<dynamic>?;
+      if (rawTraffic != null) {
+        _approachTraffic = rawTraffic
+            .whereType<Map<String, dynamic>>()
+            .map((item) => TrafficSegmentModel.fromJson(item))
+            .toList();
+      }
+    }
 
-    // 6. Temps d'approche restant (ETA)
-    final etaFromApi = (data['etaMinutes'] as num?)?.toInt() ??
-        (data['eta'] as num?)?.toInt();
+    // 7. Polyline et trafic de la course prévus (plannedPolyline & plannedTraffic)
+    final plannedPolyStr = rideObj['plannedPolyline'] as String?;
+    if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
+      final tripPts = RouteService.decodePolyline(plannedPolyStr);
+      if (tripPts.length >= 2) {
+        _tripPolylinePoints = tripPts;
+      }
+    }
+    final rawPlannedTraffic = rideObj['plannedTraffic'] as List<dynamic>?;
+    if (rawPlannedTraffic != null) {
+      _tripTraffic = rawPlannedTraffic
+          .whereType<Map<String, dynamic>>()
+          .map((item) => TrafficSegmentModel.fromJson(item))
+          .toList();
+    }
+
+    // 8. Temps d'approche restant (ETA)
+    final int? etaSecondsFromApi = (routeObj != null && routeObj['durationS'] != null)
+        ? (routeObj['durationS'] as num).toInt()
+        : ((rideObj['etaMinutes'] as num?)?.toInt() != null
+            ? (rideObj['etaMinutes'] as num).toInt() * 60
+            : null);
+
+    final etaFromApi = etaSecondsFromApi != null && etaSecondsFromApi > 0
+        ? (etaSecondsFromApi / 60.0).ceil()
+        : null;
 
     setState(() {
       _departureCode = newCode;
       _currentDriver = updatedDriver;
-      if (isArrived) {
-        _driverArrived = true;
-        _remainingEtaMinutes = 0;
-      } else if (etaFromApi != null && etaFromApi > 0) {
-        _remainingEtaMinutes = etaFromApi;
-      }
+    });
 
-      // Synchronisation de la position GPS en temps réel
-      if (updatedDriver.currentLocation.latitude != 0 &&
-          updatedDriver.currentLocation.longitude != 0 &&
-          (updatedDriver.currentLocation.latitude !=
-                  _currentCarPosition.latitude ||
-              updatedDriver.currentLocation.longitude !=
-                  _currentCarPosition.longitude)) {
-        final heading = _calculateBearing(
-            _currentCarPosition, updatedDriver.currentLocation);
-        _currentCarPosition = updatedDriver.currentLocation;
-        _currentCarHeading = heading;
+    if (isArrived) {
+      _driverArrived = true;
+      _setEtaLabel('ride.arrived'.tr(), 0);
+    } else if (etaFromApi != null && etaFromApi > 0) {
+      _setEtaLabel('$etaFromApi min', etaFromApi);
+    }
+
+    // Synchronisation de la position GPS en temps réel
+    if (updatedDriver.currentLocation.latitude != 0 &&
+        updatedDriver.currentLocation.longitude != 0 &&
+        (updatedDriver.currentLocation.latitude !=
+                _currentCarPosition.latitude ||
+            updatedDriver.currentLocation.longitude !=
+                _currentCarPosition.longitude)) {
+      final heading = updatedDriver.heading ??
+          _calculateBearing(
+              _currentCarPosition, updatedDriver.currentLocation);
+      _currentCarPosition = updatedDriver.currentLocation;
+      _currentCarHeading = heading;
+      _updateEtaAndDistance(
+        updatedDriver.currentLocation,
+        overrideEtaSeconds: etaSecondsFromApi,
+      );
+
+      // Si aucun polyline backend n'est fourni et qu'on n'a pas encore de tracé, charger la route
+      if (_approachRoutePoints.isEmpty) {
+        _loadApproachRoute();
+      }
+    } else if (etaSecondsFromApi != null && _approachRoutePoints.isNotEmpty) {
+      _updateEtaAndDistance(
+        _currentCarPosition,
+        overrideEtaSeconds: etaSecondsFromApi,
+      );
+    }
+  }
+
+  /// Charge l'itinéraire routier réel entre la position du chauffeur et le point de départ
+  Future<void> _loadApproachRoute() async {
+    // Si l'itinéraire routier réel a déjà été initialisé (ex. depuis l'API backend), ne pas l'écraser
+    if (_approachRoutePoints.length >= 2) return;
+
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (isTest) {
+      _setupFallbackApproachRoute();
+      return;
+    }
+    try {
+      final routeDetails = await RouteService().getRoute(
+        origin: _currentCarPosition,
+        destination: _pickupPosition,
+      );
+      if (routeDetails.polylinePoints.length >= 2 && mounted) {
+        final totalMeters = (routeDetails.distanceKm * 1000).round();
+        final calculatedMeters = RideEtaCalculator.remainingMeters(
+          routeDetails.polylinePoints,
+          0,
+          _currentCarPosition,
+        ).round();
+
+        setState(() {
+          _approachRoutePoints = routeDetails.polylinePoints;
+          _totalApproachM = totalMeters > 0 ? totalMeters : calculatedMeters;
+          if (_totalApproachS <= 0) {
+            _totalApproachS = routeDetails.durationMinutes * 60;
+          }
+        });
+        _updateEtaAndDistance(_currentCarPosition);
+        return;
+      }
+    } catch (e) {
+      debugPrint('[DriverApproachingPage] ⚠️ Erreur getRoute approach: $e');
+    }
+
+    if (mounted) {
+      _setupFallbackApproachRoute();
+    }
+  }
+
+  void _setupFallbackApproachRoute() {
+    // Suit impérativement les axes routiers en grille (ne coupe jamais en diagonale à travers les bâtiments)
+    final streetRoute = RouteService().getStreetAlignedRoute(
+      _currentCarPosition,
+      _pickupPosition,
+    );
+    final points = streetRoute.polylinePoints;
+    final calculatedMeters = RideEtaCalculator.remainingMeters(
+      points,
+      0,
+      _currentCarPosition,
+    ).round();
+
+    setState(() {
+      _approachRoutePoints = points;
+      _totalApproachM = calculatedMeters > 0 ? calculatedMeters : 1500;
+      if (_totalApproachS <= 0) {
+        _totalApproachS = streetRoute.durationMinutes * 60;
       }
     });
+    _updateEtaAndDistance(_currentCarPosition);
+  }
+
+  /// Calcule en temps réel la distance restante et l'ETA le long de la ligne
+  /// selon les formules de la note technique Seddo (Pages 2-4)
+  void _updateEtaAndDistance(LatLng carPos, {int? overrideEtaSeconds}) {
+    if (_approachRoutePoints.isEmpty) return;
+
+    final idx = RideEtaCalculator.nearestIndex(
+      _approachRoutePoints,
+      carPos,
+      _currentApproachIndex,
+    );
+    _currentApproachIndex = idx;
+
+    final remM = RideEtaCalculator.remainingMeters(
+      _approachRoutePoints,
+      idx,
+      carPos,
+    );
+    _remainingDistanceM = remM;
+
+    final int remS;
+    if (overrideEtaSeconds != null && overrideEtaSeconds > 0) {
+      remS = overrideEtaSeconds;
+    } else if (_totalApproachS > 0 && _totalApproachM > 0) {
+      final ratio = (remM / _totalApproachM).clamp(0.0, 1.0);
+      remS = (_totalApproachS * ratio).round();
+    } else if (_approachTraffic.isNotEmpty) {
+      remS = RideEtaCalculator.weightedRemainingSeconds(
+        pts: _approachRoutePoints,
+        fromIndex: idx,
+        driver: carPos,
+        traffic: _approachTraffic,
+        totalS: _totalApproachS > 0 ? _totalApproachS : 240,
+        totalM: _totalApproachM > 0 ? _totalApproachM : remM.round(),
+      );
+    } else if (_tripTraffic.isNotEmpty) {
+      remS = RideEtaCalculator.weightedRemainingSeconds(
+        pts: _approachRoutePoints,
+        fromIndex: idx,
+        driver: carPos,
+        traffic: _tripTraffic,
+        totalS: _totalApproachS > 0 ? _totalApproachS : 240,
+        totalM: _totalApproachM > 0 ? _totalApproachM : remM.round(),
+      );
+    } else if (widget.rideOption.traffic.isNotEmpty) {
+      remS = RideEtaCalculator.weightedRemainingSeconds(
+        pts: _approachRoutePoints,
+        fromIndex: idx,
+        driver: carPos,
+        traffic: widget.rideOption.traffic,
+        totalS: _totalApproachS > 0 ? _totalApproachS : 240,
+        totalM: _totalApproachM > 0 ? _totalApproachM : remM.round(),
+      );
+    } else {
+      remS = RideEtaCalculator.remainingSeconds(
+        remainingM: remM,
+        totalM: _totalApproachM > 0 ? _totalApproachM : remM.round(),
+        totalS: _totalApproachS > 0 ? _totalApproachS : 240,
+      );
+    }
+
+    final label = RideEtaCalculator.etaLabel(remS, remM);
+    final remainingMinutes = (remS / 60.0).ceil();
+
+    _setEtaLabel(label, remainingMinutes);
+
+    if (remM < 50 && !_driverArrived) {
+      _onDriverReachedPickup();
+    }
+  }
+
+  /// Met à jour de façon strictement synchrone le libellé ETA du modal et le marqueur visuel sur la carte
+  void _setEtaLabel(String newLabel, int remainingMinutes) {
+    if (!mounted) return;
+    final bool changed = _currentEtaLabel != newLabel ||
+        _remainingEtaMinutes != remainingMinutes ||
+        _etaPillMarkerIcon == null;
+
+    setState(() {
+      _currentEtaLabel = newLabel;
+      _remainingEtaMinutes = remainingMinutes;
+    });
+
+    if (changed) {
+      MapMarkerHelper.getEtaPillMarker(newLabel).then((markerIcon) {
+        if (mounted) {
+          setState(() {
+            _etaPillMarkerIcon = markerIcon;
+          });
+        }
+      });
+    }
   }
 
   Future<void> _loadCustomMarkers() async {
-    final car = await MapMarkerHelper.get3DCarMarker();
+    final carColor = VehicleColorHelper.parseColor(_currentDriver.carColor);
+    final car = await MapMarkerHelper.get3DCarMarker(color: carColor);
     final pickup = await MapMarkerHelper.getRendezVousIciMarker();
-    final eta = await MapMarkerHelper.getEtaPillMarker('4 min');
+    final eta = await MapMarkerHelper.getEtaPillMarker(_currentEtaLabel);
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
 
     if (mounted) {
       setState(() {
         _carMarkerIcon = car;
         _rendezVousIciMarkerIcon = pickup;
         _etaPillMarkerIcon = eta;
+        _destinationMarkerIcon = dest;
       });
     }
   }
@@ -308,68 +584,74 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     if (now - _lastTickMs < 50 && t < 1.0) return;
     _lastTickMs = now;
 
-    // Smooth easeInOut curve towards pickup location
     final progress = Curves.easeInOut.transform(t);
-    final curLat = _driverInitialPosition.latitude +
-        (_pickupPosition.latitude - _driverInitialPosition.latitude) * progress;
-    final curLng = _driverInitialPosition.longitude +
-        (_pickupPosition.longitude - _driverInitialPosition.longitude) *
-            progress;
 
-    final newPos = LatLng(curLat, curLng);
-    final heading = _calculateBearing(newPos, _pickupPosition);
+    final LatLng newPos;
+    final double heading;
 
-    // Calculate remaining ETA (from 4 min down to 0)
-    final remainingMinutes = ((1.0 - progress) * 4).ceil().clamp(0, 4);
+    if (_approachRoutePoints.length >= 2) {
+      final totalSegments = _approachRoutePoints.length - 1;
+      final floatIndex = progress * totalSegments;
+      final lowerIndex = floatIndex.floor().clamp(0, totalSegments - 1);
+      final segT = floatIndex - lowerIndex;
+      final p1 = _approachRoutePoints[lowerIndex];
+      final p2 = _approachRoutePoints[lowerIndex + 1];
+
+      final lat = p1.latitude + (p2.latitude - p1.latitude) * segT;
+      final lng = p1.longitude + (p2.longitude - p1.longitude) * segT;
+      newPos = LatLng(lat, lng);
+      heading = _calculateBearing(p1, p2);
+    } else {
+      newPos = _currentCarPosition;
+      heading = _currentCarHeading;
+    }
 
     setState(() {
       _currentCarPosition = newPos;
       _currentCarHeading = heading;
-      _remainingEtaMinutes = remainingMinutes;
     });
+
+    _updateEtaAndDistance(newPos);
   }
 
   void _onDriverReachedPickup() {
     if (!mounted) return;
+    _setEtaLabel('ride.arrived'.tr(), 0);
     setState(() {
       _driverArrived = true;
-      _remainingEtaMinutes = 0;
+      _totalApproachS = 0;
     });
 
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger != null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle_rounded,
-                  color: AppColors.white, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'ride.driver_arrived_at_pickup'
-                      .tr(args: [_currentDriver.name.split(' ').first]),
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13.5,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded,
+                    color: AppColors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'ride.driver_arrived_at_pickup'
+                        .tr(args: [_currentDriver.name.split(' ').first]),
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-    }
-
-    // Auto-transition to ActiveRidePage (ride underway) after brief pause
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) {
-        startRide();
+        );
       }
     });
   }
@@ -380,24 +662,36 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     if (_approachController != null && _approachController!.isAnimating) {
       _approachController!.stop();
     }
+    final calcHeading =
+        heading ?? _calculateBearing(_currentCarPosition, position);
     setState(() {
       _currentCarPosition = position;
-      if (heading != null) _currentCarHeading = heading;
+      _currentCarHeading = calcHeading;
     });
+    _updateEtaAndDistance(position);
   }
 
   /// Démarre la course vers la destination (transition vers ActiveRidePage)
   void startRide() {
     _ridePollTimer?.cancel();
+    final effectiveTripOption = _tripTraffic.isNotEmpty
+        ? widget.rideOption.copyWith(traffic: _tripTraffic)
+        : widget.rideOption;
+    final effectivePolyline = _tripPolylinePoints.isNotEmpty
+        ? _tripPolylinePoints
+        : widget.polylinePoints;
+
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: ActiveRidePage(
           departure: widget.departure,
           destination: widget.destination,
-          rideOption: widget.rideOption,
+          rideOption: effectiveTripOption,
           driver: _currentDriver,
-          polylinePoints: widget.polylinePoints,
+          polylinePoints: effectivePolyline,
           autoStartSimulation: false,
+          rideId: widget.rideId ?? RideService.lastCreatedRideId,
+          rideService: _rideService,
         ),
       ),
     );
@@ -470,18 +764,44 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     await InAppCallPage.show(context, driver: _currentDriver);
   }
 
-  void _openShare() {
+  Future<void> _openShare() async {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+
+    final effectivePolyline = _tripPolylinePoints.isNotEmpty
+        ? _tripPolylinePoints
+        : widget.polylinePoints;
+
+    // Open SharedRideTrackingPage immediately
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: SharedRideTrackingPage(
           departure: widget.departure,
           destination: widget.destination,
           driver: _currentDriver,
-          polylinePoints: widget.polylinePoints,
+          polylinePoints: effectivePolyline,
           etaText: '$_remainingEtaMinutes min',
+          rideId: effectiveRideId,
+          rideService: _rideService,
         ),
       ),
     );
+
+    // Call POST /v1/rides/{id}/share and trigger native share sheet
+    try {
+      final result = await _rideService.shareRide(effectiveRideId);
+      final shareUrl = (result != null && result.url.isNotEmpty)
+          ? result.url
+          : 'https://suivi.seddo.sn/t/8K02F';
+      final shareText =
+          'Suis mon trajet Seddo en direct vers ${widget.destination.mainText} avec ${_currentDriver.name} (${_currentDriver.carModel} ${_currentDriver.licensePlate}) : $shareUrl';
+      await SharePlus.instance.share(
+        ShareParams(
+          text: shareText,
+          subject: 'Mon trajet Seddo en direct',
+        ),
+      );
+    } catch (_) {}
   }
 
   void _openSafety() {
@@ -495,14 +815,23 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   void _fitMapBounds() {
     if (_mapController == null) return;
     try {
-      final minLat = math.min(
-          _pickupPosition.latitude, _driverInitialPosition.latitude);
-      final maxLat = math.max(
-          _pickupPosition.latitude, _driverInitialPosition.latitude);
-      final minLng = math.min(
-          _pickupPosition.longitude, _driverInitialPosition.longitude);
-      final maxLng = math.max(
-          _pickupPosition.longitude, _driverInitialPosition.longitude);
+      double minLat = math.min(
+          _pickupPosition.latitude, _currentCarPosition.latitude);
+      double maxLat = math.max(
+          _pickupPosition.latitude, _currentCarPosition.latitude);
+      double minLng = math.min(
+          _pickupPosition.longitude, _currentCarPosition.longitude);
+      double maxLng = math.max(
+          _pickupPosition.longitude, _currentCarPosition.longitude);
+
+      if (_approachRoutePoints.length >= 2) {
+        for (final p in _approachRoutePoints) {
+          if (p.latitude < minLat) minLat = p.latitude;
+          if (p.latitude > maxLat) maxLat = p.latitude;
+          if (p.longitude < minLng) minLng = p.longitude;
+          if (p.longitude > maxLng) maxLng = p.longitude;
+        }
+      }
 
       final deltaLat = (maxLat - minLat).abs();
       final deltaLng = (maxLng - minLng).abs();
@@ -563,18 +892,46 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       );
     }
 
-    // 3. Floating "4 min" pill marker along the dashed approach line
+    // 3. Floating "4 min" pill marker along the real road approach line
     if (_etaPillMarkerIcon != null && !_driverArrived) {
-      final midLat = (_currentCarPosition.latitude + _pickupPosition.latitude) / 2;
-      final midLng =
-          (_currentCarPosition.longitude + _pickupPosition.longitude) / 2;
+      final LatLng markerPos;
+      if (_approachRoutePoints.length >= 2) {
+        final midIdx =
+            (_currentApproachIndex + _approachRoutePoints.length) ~/ 2;
+        markerPos = _approachRoutePoints[
+            midIdx.clamp(0, _approachRoutePoints.length - 1)];
+      } else {
+        final midLat =
+            (_currentCarPosition.latitude + _pickupPosition.latitude) / 2;
+        final midLng =
+            (_currentCarPosition.longitude + _pickupPosition.longitude) / 2;
+        markerPos = LatLng(midLat, midLng);
+      }
       markers.add(
         Marker(
           markerId: const MarkerId('approach_eta_pill'),
-          position: LatLng(midLat, midLng),
+          position: markerPos,
           icon: _etaPillMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
           zIndexInt: 6,
+        ),
+      );
+    }
+
+    // 4. Destination Pin Marker (Arrivée)
+    if (_destinationMarkerIcon != null &&
+        widget.destination.latitude != 0 &&
+        widget.destination.longitude != 0) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('trip_destination_pin'),
+          position: LatLng(
+            widget.destination.latitude,
+            widget.destination.longitude,
+          ),
+          icon: _destinationMarkerIcon!,
+          anchor: const Offset(0.5, 1.0),
+          zIndexInt: 4,
         ),
       );
     }
@@ -606,32 +963,27 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   Set<Polyline> _buildPolylines() {
-    final polylines = <Polyline>{
-      // Dashed orange line connecting approaching car to pickup location
-      Polyline(
-        polylineId: const PolylineId('approach_dashed_route'),
-        points: [_currentCarPosition, _pickupPosition],
-        color: AppColors.primary,
-        width: 3,
-        patterns: [
-          PatternItem.dash(16),
-          PatternItem.gap(10),
-        ],
-      ),
-    };
+    final polylines = <Polyline>{};
 
-    if (widget.polylinePoints.isNotEmpty) {
-      polylines.add(
-        Polyline(
-          polylineId: const PolylineId('approaching_trip_route'),
-          points: widget.polylinePoints,
-          color: AppColors.primary.withAlpha(90),
-          width: 4,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
+    // 1. Tracé routier réel de l'approche du chauffeur vers le point de départ
+    // Ligne continue (non en pointillé) aux couleurs du trafic réel (route.traffic) :
+    // - Vert (#00C853) pour trafic fluide NORMAL
+    // - Jaune ambre (#F59E0B) pour trafic ralenti SLOW
+    // - Rouge (#DC2626) pour bouchon JAM
+    // Pendant la phase d'approche, on affiche EXCLUSIVEMENT ce tracé sur les vraies routes.
+    // Le tracé vers la destination finale ne sera affiché que lors du démarrage effectif de la course (ActiveRidePage).
+    if (_approachRoutePoints.length >= 2) {
+      final trafficPolylines = RideEtaCalculator.buildTrafficPolylines(
+        baseId: 'approach_traffic_route',
+        points: _approachRoutePoints,
+        traffic: _approachTraffic,
+        startIndex: _currentApproachIndex,
+        currentCarPosition:
+            _currentApproachIndex > 0 ? _currentCarPosition : null,
+        width: 5,
+        zIndexBase: 4,
       );
+      polylines.addAll(trafficPolylines);
     }
 
     return polylines;
@@ -656,14 +1008,24 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             .toUpperCase()
         : 'MS';
 
-    final etaDisplay = _driverArrived
+    final etaDisplay = _driverArrived ||
+            (_remainingDistanceM > 0 && _remainingDistanceM < 50)
         ? 'ride.arrived'.tr()
-        : '$_remainingEtaMinutes min';
+        : _currentEtaLabel;
 
     final digits = _departureCode.padRight(4, '0').split('');
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
+    final collapsedHeightPx = 180.0 + (systemBottom > 0 ? systemBottom : 12.0);
+    final expandedHeightPx = 430.0 + (systemBottom > 0 ? systemBottom : 16.0);
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.white,
       body: Stack(
         children: [
           // 1. Fullscreen Google Map with multi-touch gestures enabled
@@ -688,7 +1050,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                 zoom: 15.2,
               ),
               padding: const EdgeInsets.only(
-                bottom: 375,
+                bottom: 240,
                 top: 70,
                 left: 16,
                 right: 16,
@@ -753,493 +1115,599 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                       color: AppColors.textPrimary,
                       size: 22,
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _handleBack,
                   ),
                 ),
               ),
             ),
           ),
 
-          // 2.5 Floating Camera Toggle Button (Ma position / Destination / Vue Trajet)
-          Positioned(
-            right: 16,
-            bottom: _bottomCardHeight + 14,
-            child: RideMapCameraToggleButton(
-              mapControllerGetter: () => _mapController,
-              departureLocation: _pickupPosition,
-              destinationLocation: LatLng(
-                widget.destination.latitude,
-                widget.destination.longitude,
-              ),
-              polylinePoints: widget.polylinePoints,
-              initialMode: RideMapCameraMode.tripOverview,
-              onModeChanged: (mode) {
-                if (mode == RideMapCameraMode.departure) {
-                  setState(() => _followCar = true);
-                } else {
-                  setState(() => _followCar = false);
-                }
-              },
-            ),
-          ),
-
-          // 3. Bottom Card matching Screenshot exactly
+          // 3. Bottom Sheet Draggable & Collapsible : glissement direct ultra-fluide
           Align(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              key: _bottomCardKey,
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(32),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.shadowDarkBlack,
-                    blurRadius: 28,
-                    offset: Offset(0, -6),
-                  ),
-                ],
-              ),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    AppConstants.spacingLg,
-                    12,
-                    AppConstants.spacingLg,
-                    systemBottom > 0 ? 12 : 20,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Centered Grey Drag Handle
-                      Container(
-                        width: 44,
-                        height: 4.5,
-                        decoration: BoxDecoration(
-                          color: AppColors.dragHandle,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+            child: AnimatedBuilder(
+              animation: _sheetAnimationController,
+              builder: (context, _) {
+                final t = _sheetAnimationController.value;
+                final isCollapsed = t < 0.45;
+                final currentHeight = collapsedHeightPx +
+                    (expandedHeightPx - collapsedHeightPx) * t;
+
+                final titleText = _driverArrived
+                    ? 'ride.arrived'.tr()
+                    : (isCollapsed
+                        ? 'Arrive dans $etaDisplay'
+                        : 'Votre chauffeur arrive dans');
+
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (details) {
+                    final totalDelta = expandedHeightPx - collapsedHeightPx;
+                    if (totalDelta > 0) {
+                      final delta = details.primaryDelta ?? 0.0;
+                      _sheetAnimationController.value =
+                          (_sheetAnimationController.value -
+                                  (delta / totalDelta))
+                              .clamp(0.0, 1.0);
+                    }
+                  },
+                  onVerticalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0.0;
+                    if (velocity > 250) {
+                      // Glissement rapide vers le bas -> replier
+                      _sheetAnimationController.animateTo(
+                        0.0,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOutCubic,
+                      );
+                    } else if (velocity < -250) {
+                      // Glissement rapide vers le haut -> déplier
+                      _sheetAnimationController.animateTo(
+                        1.0,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeOutCubic,
+                      );
+                    } else {
+                      // Rapprochement automatique vers l'état le plus proche
+                      if (_sheetAnimationController.value < 0.5) {
+                        _sheetAnimationController.animateTo(
+                          0.0,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutCubic,
+                        );
+                      } else {
+                        _sheetAnimationController.animateTo(
+                          1.0,
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutCubic,
+                        );
+                      }
+                    }
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    height: currentHeight,
+                    clipBehavior: Clip.hardEdge,
+                    decoration: const BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(32),
                       ),
-                      const SizedBox(height: 14),
-
-                      // Header: Icon + "Rendez-vous au point de départ" + "4 min" pill
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          // Orange car icon in peach circle
-                          Container(
-                            width: 50,
-                            height: 50,
-                            decoration: const BoxDecoration(
-                              color: AppColors.peachLight,
-                              shape: BoxShape.circle,
-                            ),
-                            alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.directions_car_rounded,
-                              color: AppColors.primary,
-                              size: 26,
-                            ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.shadowDarkBlack,
+                          blurRadius: 28,
+                          offset: Offset(0, -6),
+                        ),
+                      ],
+                    ),
+                    child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            AppConstants.spacingLg,
+                            12,
+                            AppConstants.spacingLg,
+                            systemBottom > 0 ? 8 : 16,
                           ),
-                          const SizedBox(width: 14),
-
-                          // Title: Rendez-vous au point de départ
-                          Expanded(
-                            child: Text(
-                              'ride.pickup_point'.tr(),
-                              style: GoogleFonts.inter(
-                                fontSize: 18.5,
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.textPrimary,
-                                height: 1.18,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                          ),
-
-                          // Pill: 4 min with clock icon
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 7.5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.access_time_rounded,
-                                  color: AppColors.white,
-                                  size: 15,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  etaDisplay,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Card 1: Vehicle & Driver Card
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.grayBgSubtle,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppColors.grayBorderLight,
-                            width: 1.0,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            // 3D Car Image
-                            Image.asset(
-                              widget.rideOption.type == RideType.confort
-                                  ? 'assets/images/seddo_confort_3d.png'
-                                  : 'assets/images/seddo_eco_3d.png',
-                              width: 74,
-                              height: 46,
-                              fit: BoxFit.contain,
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Initials Avatar Circle (MS)
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: const BoxDecoration(
-                                color: AppColors.peachMedium,
-                                shape: BoxShape.circle,
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                initials,
-                                style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.orangeDarkAccent,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Vehicle & Driver Details
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // License Plate Badge [ DK 4521 AB ]
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.white,
-                                      borderRadius: BorderRadius.circular(5),
-                                      border: Border.all(
-                                        color: AppColors.pureBlack,
-                                        width: 1.4,
-                                      ),
-                                    ),
-                                    child: Text(
-                                      licensePlateText,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w900,
-                                        color: AppColors.pureBlack,
-                                        letterSpacing: 0.8,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-
-                                  // Car model & color
-                                  Text(
-                                    carDescription,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12.5,
-                                      color: AppColors.textSecondary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 2),
-
-                                  // Driver Name & Rating
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          _currentDriver.name.split(' ').first,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w800,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                      const Text(
-                                        '•',
-                                        style: TextStyle(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                      const Icon(
-                                        Icons.star_rounded,
-                                        color: AppColors.amberRating,
-                                        size: 15,
-                                      ),
-                                      const SizedBox(width: 2),
-                                      Text(
-                                        _currentDriver.rating.toStringAsFixed(1),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Right Chevron
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              color: AppColors.textSecondary,
-                              size: 22,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Card 2: Code de départ (PIN Code)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.orangeLightBg,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppColors.peachMedium,
-                            width: 1.0,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            // Orange Location Pin Icon
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: const BoxDecoration(
-                                color: AppColors.peachMedium,
-                                shape: BoxShape.circle,
-                              ),
-                              alignment: Alignment.center,
-                              child: const Icon(
-                                Icons.location_on_rounded,
-                                color: AppColors.primary,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-
-                            // Code de départ label
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'ride.departure_code'.tr(),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'ride.give_to_driver'.tr(),
-                                    style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // 4 Dark digit boxes [ 4 ] [ 8 ] [ 2 ] [ 1 ]
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: digits.map((digit) {
-                                return Container(
-                                  width: 32,
-                                  height: 38,
-                                  margin: const EdgeInsets.only(left: 5),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.licensePlateBg,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    digit,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 16.5,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppColors.white,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Card 3: Quick message input bar + Circular call button
-                      Row(
-                        children: [
-                          // Expanded message input placeholder
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _openChat,
-                              child: Container(
-                                height: 46,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 14),
-                                decoration: BoxDecoration(
-                                  color: AppColors.grayBgLight,
-                                  borderRadius: BorderRadius.circular(23),
-                                ),
-                                child: Row(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // 1. Drag Handle + En-tête : Clic pour basculer replié/déplié
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  if (_sheetAnimationController.value > 0.5) {
+                                    _sheetAnimationController.animateTo(
+                                      0.0,
+                                      duration: const Duration(milliseconds: 280),
+                                      curve: Curves.easeOutCubic,
+                                    );
+                                  } else {
+                                    _sheetAnimationController.animateTo(
+                                      1.0,
+                                      duration: const Duration(milliseconds: 280),
+                                      curve: Curves.easeOutCubic,
+                                    );
+                                  }
+                                },
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    SvgPicture.asset(
-                                      'assets/icons/message-square-lines-svgrepo-com.svg',
-                                      width: 20,
-                                      height: 20,
-                                      colorFilter: const ColorFilter.mode(
-                                        AppColors.primary,
-                                        BlendMode.srcIn,
+                                    Center(
+                                      child: Container(
+                                        width: 44,
+                                        height: 4.5,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.dragHandle,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
                                       ),
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        'ride.send_message_hint'.tr(),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13.5,
-                                          color: AppColors.textSecondary,
-                                          fontWeight: FontWeight.w500,
+                                    const SizedBox(height: 12),
+
+                                    // Header: Title & Remaining Time Pill
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                titleText,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 16.0,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppColors.textPrimary,
+                                                  letterSpacing: -0.2,
+                                                ),
+                                              ),
+                                              if (_remainingDistanceM > 0 &&
+                                                  !_driverArrived) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${'ride.approaching'.tr()} · ${RideEtaCalculator.formatRemainingDistance(_remainingDistanceM)}',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 12.0,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: AppColors.textSecondary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
                                         ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+
+                                        // Pill: 4 min avec icône horloge
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 7.5,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary,
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.access_time_rounded,
+                                                color: AppColors.white,
+                                                size: 15,
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                etaDisplay,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppColors.white,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
+                              const SizedBox(height: 10),
 
-                          // Circular Phone Call Button
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: const BoxDecoration(
-                              color: AppColors.peachLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              icon: SvgPicture.asset(
-                                'assets/icons/call-svgrepo-com.svg',
-                                width: 20,
-                                height: 20,
-                                colorFilter: const ColorFilter.mode(
-                                  AppColors.primary,
-                                  BlendMode.srcIn,
+                              // 2. Card 1: Véhicule & Chauffeur (Toujours visible en position descendue et montée)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.grayBgSubtle,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppColors.grayBorderLight,
+                                    width: 1.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    // 3D Car Image avec teinte dynamique selon l'API
+                                    Builder(
+                                      builder: (context) {
+                                        final colorFilter = VehicleColorHelper.getColorFilter(_currentDriver.carColor);
+                                        final carImg = Image.asset(
+                                          widget.rideOption.type == RideType.confort
+                                              ? 'assets/images/seddo_confort_3d.png'
+                                              : 'assets/images/seddo_eco_3d.png',
+                                          width: 74,
+                                          height: 46,
+                                          fit: BoxFit.contain,
+                                        );
+                                        if (colorFilter != null) {
+                                          return ColorFiltered(
+                                            colorFilter: colorFilter,
+                                            child: carImg,
+                                          );
+                                        }
+                                        return carImg;
+                                      },
+                                    ),
+                                    const SizedBox(width: 10),
+
+                                    // Initials Avatar Circle (MS)
+                                    Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.peachMedium,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        initials,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                          color: AppColors.orangeDarkAccent,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+
+                                    // Vehicle & Driver Details
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // License Plate Badge [ DK 4521 AB ]
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 7,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(5),
+                                              border: Border.all(
+                                                color: AppColors.pureBlack,
+                                                width: 1.4,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              licensePlateText,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w900,
+                                                color: AppColors.pureBlack,
+                                                letterSpacing: 0.8,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+
+                                          // Car model & color
+                                          Text(
+                                            carDescription,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12.5,
+                                              color: AppColors.textSecondary,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+
+                                          // Driver Name & Rating
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  _currentDriver.name
+                                                      .split(' ')
+                                                      .first,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: AppColors.textPrimary,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 5),
+                                              const Text(
+                                                '•',
+                                                style: TextStyle(
+                                                  color: AppColors.textSecondary,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 5),
+                                              const Icon(
+                                                Icons.star_rounded,
+                                                color: AppColors.amberRating,
+                                                size: 15,
+                                              ),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                _currentDriver.rating
+                                                    .toStringAsFixed(1),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    // Right Chevron
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: AppColors.textSecondary,
+                                      size: 22,
+                                    ),
+                                  ],
                                 ),
                               ),
-                              tooltip: 'ride.call_driver'.tr(),
-                              onPressed: _callDriver,
-                            ),
+
+                              // 3. Cards 2, 3, 4 : affichées et animées en opacité
+                              if (t > 0.05) ...[
+                                Opacity(
+                                  opacity: t,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const SizedBox(height: 10),
+
+                                      // Card 2: Code de départ (PIN Code)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.orangeLightBg,
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                          border: Border.all(
+                                            color: AppColors.peachMedium,
+                                            width: 1.0,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: const BoxDecoration(
+                                                color: AppColors.peachMedium,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: const Icon(
+                                                Icons.location_on_rounded,
+                                                color: AppColors.primary,
+                                                size: 22,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    'ride.departure_code'.tr(),
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 14.5,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color:
+                                                          AppColors.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'ride.give_to_driver'.tr(),
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 12,
+                                                      color:
+                                                          AppColors.textSecondary,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: digits.map((digit) {
+                                                return Container(
+                                                  width: 32,
+                                                  height: 38,
+                                                  margin: const EdgeInsets.only(
+                                                      left: 5),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        AppColors.licensePlateBg,
+                                                    borderRadius:
+                                                        BorderRadius.circular(8),
+                                                  ),
+                                                  alignment: Alignment.center,
+                                                  child: Text(
+                                                    digit,
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 16.5,
+                                                      fontWeight:
+                                                          FontWeight.w900,
+                                                      color: AppColors.white,
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+
+                                      // Card 3: Quick message + Circular call button
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: GestureDetector(
+                                              onTap: _openChat,
+                                              child: Container(
+                                                height: 46,
+                                                padding: const EdgeInsets
+                                                    .symmetric(horizontal: 14),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.grayBgLight,
+                                                  borderRadius:
+                                                      BorderRadius.circular(23),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    SvgPicture.asset(
+                                                      'assets/icons/message-square-lines-svgrepo-com.svg',
+                                                      width: 20,
+                                                      height: 20,
+                                                      colorFilter:
+                                                          const ColorFilter.mode(
+                                                        AppColors.primary,
+                                                        BlendMode.srcIn,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'ride.send_message_hint'
+                                                            .tr(),
+                                                        style:
+                                                            GoogleFonts.inter(
+                                                          fontSize: 13.5,
+                                                          color: AppColors
+                                                              .textSecondary,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Container(
+                                            width: 46,
+                                            height: 46,
+                                            decoration: const BoxDecoration(
+                                              color: AppColors.peachLight,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: IconButton(
+                                              icon: SvgPicture.asset(
+                                                'assets/icons/call-svgrepo-com.svg',
+                                                width: 20,
+                                                height: 20,
+                                                colorFilter:
+                                                    const ColorFilter.mode(
+                                                  AppColors.primary,
+                                                  BlendMode.srcIn,
+                                                ),
+                                              ),
+                                              tooltip: 'ride.call_driver'.tr(),
+                                              onPressed: _callDriver,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+
+                                      // Card 4: Action buttons row [ Partager ] [ Sécurité ] [ Annuler ]
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: _buildActionButton(
+                                              icon: Icons.share_outlined,
+                                              label: 'common.share'.tr(),
+                                              onTap: _openShare,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: _buildActionButton(
+                                              svgPath:
+                                                  'assets/icons/security-svgrepo-com.svg',
+                                              label: 'drawer.safety'.tr(),
+                                              onTap: _openSafety,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: _buildActionButton(
+                                              icon: Icons.close_rounded,
+                                              label: 'common.cancel'.tr(),
+                                              onTap: _onCancelRide,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 12),
-
-                      // Card 4: Action buttons row [ Partager ] [ Sécurité ] [ Annuler ]
-                      Row(
-                        children: [
-                          // Partager Button
-                          Expanded(
-                            child: _buildActionButton(
-                              icon: Icons.share_outlined,
-                              label: 'common.share'.tr(),
-                              onTap: _openShare,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-
-                          // Sécurité Button
-                          Expanded(
-                            child: _buildActionButton(
-                              svgPath: 'assets/icons/security-svgrepo-com.svg',
-                              label: 'drawer.safety'.tr(),
-                              onTap: _openSafety,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-
-                          // Annuler Button (Allowed before ride start!)
-                          Expanded(
-                            child: _buildActionButton(
-                              icon: Icons.close_rounded,
-                              label: 'common.cancel'.tr(),
-                              onTap: _onCancelRide,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildActionButton({
@@ -1300,5 +1768,15 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         ),
       ),
     );
+  }
+
+  void _handleBack() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomePage()),
+      );
+    }
   }
 }

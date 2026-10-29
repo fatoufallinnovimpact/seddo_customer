@@ -35,9 +35,9 @@ class _DriverChatPageState extends State<DriverChatPage> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessageModel> _messages = [];
-  Timer? _replyTimer;
   Timer? _pollTimer;
   late final RideService _rideService;
+  bool _isLoading = true;
 
   String get _effectiveRideId =>
       widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
@@ -55,17 +55,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
     super.initState();
     _rideService = widget.rideService ?? RideService();
 
-    // Initial driver message
-    _messages.add(
-      ChatMessageModel(
-        id: 'msg_0',
-        sender: ChatSender.driver,
-        text: 'Bonjour ! Je suis en route vers votre point de prise en charge.',
-        timestamp: DateTime.now().subtract(const Duration(minutes: 1)),
-      ),
-    );
-
-    // Initial fetch from backend API
+    // Initial fetch of real messages from backend API GET /v1/rides/{id}/messages
     _fetchMessages();
 
     // Periodic poll for incoming driver messages (every 4 seconds)
@@ -79,7 +69,6 @@ class _DriverChatPageState extends State<DriverChatPage> {
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _replyTimer?.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -90,28 +79,43 @@ class _DriverChatPageState extends State<DriverChatPage> {
       final remoteMessages = await _rideService.getChatMessages(
         rideId: _effectiveRideId,
       );
-      if (!mounted || remoteMessages.isEmpty) return;
+      if (!mounted) return;
 
-      bool hasNew = false;
-      for (final rMsg in remoteMessages) {
-        final alreadyExists = _messages.any((m) =>
-            m.id == rMsg.id ||
-            (m.text == rMsg.text && m.sender == rMsg.sender));
-        if (!alreadyExists) {
-          _messages.add(rMsg);
-          hasNew = true;
+      if (remoteMessages.isNotEmpty) {
+        final existingIds = _messages.map((m) => m.id).toSet();
+        bool hasNew = false;
+        for (final rMsg in remoteMessages) {
+          if (!existingIds.contains(rMsg.id)) {
+            final localIdx = _messages.indexWhere((m) =>
+                m.text == rMsg.text &&
+                m.id.startsWith('msg_'));
+            if (localIdx != -1) {
+              _messages[localIdx] = rMsg.copyWith(
+                sender: _messages[localIdx].sender,
+              );
+            } else {
+              _messages.add(rMsg);
+            }
+            hasNew = true;
+          }
+        }
+        if (hasNew || _messages.isEmpty) {
+          _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          setState(() {});
+          _scrollToBottom();
         }
       }
-
-      if (hasNew) {
-        setState(() {});
-        _scrollToBottom();
+    } catch (_) {
+    } finally {
+      if (mounted && _isLoading) {
+        setState(() => _isLoading = false);
       }
-    } catch (_) {}
+    }
   }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -122,7 +126,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
     });
   }
 
-  void _sendMessage(String text) {
+  Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
@@ -140,35 +144,15 @@ class _DriverChatPageState extends State<DriverChatPage> {
     _scrollToBottom();
 
     // Synchronize to backend API POST /v1/rides/{id}/messages with {"body": trimmed}
-    unawaited(
-      _rideService.sendChatMessage(
-        rideId: _effectiveRideId,
-        message: trimmed,
-      ),
+    await _rideService.sendChatMessage(
+      rideId: _effectiveRideId,
+      message: trimmed,
     );
 
-    // Realistic driver reply fallback for test environments or offline mode
-    _replyTimer?.cancel();
-    _replyTimer = Timer(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      final hasRecentDriverMsg = _messages.any((m) =>
-          m.sender == ChatSender.driver &&
-          m.timestamp
-              .isAfter(DateTime.now().subtract(const Duration(seconds: 2))));
-      if (!hasRecentDriverMsg) {
-        setState(() {
-          _messages.add(
-            ChatMessageModel(
-              id: 'msg_reply_${DateTime.now().millisecondsSinceEpoch}',
-              sender: ChatSender.driver,
-              text: 'Bien reçu ! Je suis à l\'angle de la rue, à tout de suite.',
-              timestamp: DateTime.now(),
-            ),
-          );
-        });
-        _scrollToBottom();
-      }
-    });
+    // Refresh immediately to confirm server state and any driver response
+    if (mounted) {
+      await _fetchMessages();
+    }
   }
 
   Future<void> _makePhoneCall() async {
@@ -363,14 +347,65 @@ class _DriverChatPageState extends State<DriverChatPage> {
 
             // Messages List
             Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingMd,
-                  vertical: 16,
-                ),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : _messages.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppConstants.spacingLg,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.surfaceGrey,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    color: AppColors.textSecondary,
+                                    size: 28,
+                                  ),
+                                ),
+                                const SizedBox(height: AppConstants.spacingSm),
+                                Text(
+                                  'chat.empty_title'.tr(),
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: AppConstants.spacingXs),
+                                Text(
+                                  'chat.empty_subtitle'.tr(),
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppConstants.spacingMd,
+                            vertical: 16,
+                          ),
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
                   final msg = _messages[index];
                   final isCustomer = msg.sender == ChatSender.customer;
 

@@ -151,12 +151,12 @@ class RouteService {
     }
 
     // 3. Fallback: Street-aligned grid routing (never diagonal across buildings)
-    return _generateStreetAlignedRoute(origin, destination, isWalking: isWalking);
+    return getStreetAlignedRoute(origin, destination, isWalking: isWalking);
   }
 
   /// Generates a street-aligned grid path that follows streets at intersections
   /// rather than cutting diagonally through buildings.
-  RouteDetails _generateStreetAlignedRoute(
+  RouteDetails getStreetAlignedRoute(
     LatLng origin,
     LatLng destination, {
     bool isWalking = false,
@@ -203,34 +203,42 @@ class RouteService {
     );
   }
 
-  /// Decodes Google encoded polyline string
+  /// Decodes Google encoded polyline string safely
   static List<LatLng> decodePolyline(String encoded) {
-    List<LatLng> points = [];
-    int index = 0, len = encoded.length;
-    int lat = 0, lng = 0;
+    if (encoded.isEmpty) return const [];
+    try {
+      final List<LatLng> points = [];
+      int index = 0;
+      final int len = encoded.length;
+      int lat = 0, lng = 0;
 
-    while (index < len) {
-      int b, shift = 0, result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
+      while (index < len) {
+        int b = 0, shift = 0, result = 0;
+        do {
+          if (index >= len) break;
+          b = encoded.codeUnitAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        final int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
 
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
+        shift = 0;
+        result = 0;
+        do {
+          if (index >= len) break;
+          b = encoded.codeUnitAt(index++) - 63;
+          result |= (b & 0x1f) << shift;
+          shift += 5;
+        } while (b >= 0x20);
+        final int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
 
-      points.add(LatLng(lat / 1E5, lng / 1E5));
+        points.add(LatLng(lat / 1E5, lng / 1E5));
+      }
+      return points;
+    } catch (_) {
+      return const [];
     }
-    return points;
   }
 }

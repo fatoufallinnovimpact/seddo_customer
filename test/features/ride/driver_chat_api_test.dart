@@ -140,10 +140,98 @@ void main() {
 
       expect(success, isTrue);
     });
+
+    test('POST /v1/rides/{id}/share generates public tracking link and token', () async {
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            expect(options.path, contains('/v1/rides/38d1ae69-f5fb-4895-bca5-542cb2747408/share'));
+            expect(options.method, 'POST');
+            return handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'url': 'https://seddo-api.innovimpactdev.cloud/v1/share/kBUhKQHwIIfNczTSvB-5f5Nn',
+                  'token': 'kBUhKQHwIIfNczTSvB-5f5Nn',
+                },
+              ),
+            );
+          },
+        ),
+      );
+
+      final service = RideService(dio: dio);
+      final result = await service.shareRide('38d1ae69-f5fb-4895-bca5-542cb2747408');
+
+      expect(result, isNotNull);
+      expect(result!.url, 'https://seddo-api.innovimpactdev.cloud/v1/share/kBUhKQHwIIfNczTSvB-5f5Nn');
+      expect(result.token, 'kBUhKQHwIIfNczTSvB-5f5Nn');
+    });
+
+    test('GET /v1/share/{token} fetches public shared ride tracking data', () async {
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            expect(options.path, contains('/v1/share/kBUhKQHwIIfNczTSvB-5f5Nn'));
+            expect(options.method, 'GET');
+            return handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'ref': 'SD-1071',
+                  'status': 'ACCEPTED',
+                  'live': true,
+                  'driver': {
+                    'firstName': 'sidy',
+                    'vehicle': {
+                      'make': 'Toyota',
+                      'model': 'Corolla',
+                      'color': 'Rouge',
+                      'plate': 'DK 3453 BC',
+                    },
+                    'position': {
+                      'lat': 14.6789179,
+                      'lng': -17.4630931,
+                    },
+                  },
+                  'pickupAddress': 'Fann-Point E-Amitié',
+                  'dropoff': {
+                    'address': 'Hlm grand yoff, Dakar, Senegal',
+                    'lat': 14.7422502,
+                    'lng': -17.4551161,
+                  },
+                  'startedAt': null,
+                  'completedAt': null,
+                },
+              ),
+            );
+          },
+        ),
+      );
+
+      final service = RideService(dio: dio);
+      final details = await service.getSharedRideDetails('kBUhKQHwIIfNczTSvB-5f5Nn');
+
+      expect(details, isNotNull);
+      expect(details!.ref, 'SD-1071');
+      expect(details.status, 'ACCEPTED');
+      expect(details.live, isTrue);
+      expect(details.driverFirstName, 'sidy');
+      expect(details.vehicleMake, 'Toyota');
+      expect(details.vehicleModel, 'Corolla');
+      expect(details.vehicleColor, 'Rouge');
+      expect(details.vehiclePlate, 'DK 3453 BC');
+      expect(details.driverPosition?.latitude, 14.6789179);
+      expect(details.pickupAddress, 'Fann-Point E-Amitié');
+    });
   });
 
   group('DriverChatPage UI & Interaction Tests', () {
-    testWidgets('renders "Numéros masqués" security notice and quick preset replies',
+    testWidgets('renders "Numéros masqués" security notice, empty state, and handles quick preset replies',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -207,9 +295,65 @@ void main() {
 
       expect(find.text('Je suis devant la pharmacie'), findsOneWidget);
 
-      await tester.pump(const Duration(milliseconds: 1600));
+      await tester.pumpAndSettle();
 
       // Dispose widget to cancel periodic timer
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('DriverChatPage loads and renders real database messages from GET /v1/rides/{id}/messages',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.method == 'GET') {
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: [
+                    {
+                      'id': 'msg_remote_1',
+                      'sender': 'driver',
+                      'body': 'Je suis garé en face de la banque.',
+                      'createdAt': '2026-10-29T10:15:00Z',
+                    },
+                  ],
+                ),
+              );
+            }
+            return handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 201,
+                data: {'status': 'created'},
+              ),
+            );
+          },
+        ),
+      );
+
+      final service = RideService(dio: dio);
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: DriverChatPage(
+            driver: testDriver,
+            rideId: 'ride_test_99',
+            rideService: service,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(find.text('Je suis garé en face de la banque.'), findsOneWidget);
+
+      // Dispose
       await tester.pumpWidget(const SizedBox());
     });
   });

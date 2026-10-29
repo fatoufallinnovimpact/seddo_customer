@@ -29,6 +29,11 @@ abstract class ApiEndpoints {
   static String rideCancel(String id) => '$baseUrl/v1/rides/$id/cancel';
   static String rideMessages(String id) => '$baseUrl/v1/rides/$id/messages';
   static String rideRating(String id) => '$baseUrl/v1/rides/$id/rating';
+  static String rideReceiptLink(String id) => '$baseUrl/v1/rides/$id/receipt';
+  static String rideReceiptPdf(String id) => '$baseUrl/v1/rides/$id/receipt.pdf';
+  static String receiptDownload(String token) => '$baseUrl/v1/receipts/$token';
+  static String rideShare(String id) => '$baseUrl/v1/rides/$id/share';
+  static String shareView(String token) => '$baseUrl/v1/share/$token';
 
   // Drivers nearby endpoint (GET /v1/drivers/nearby?lat={lat}&lng={lng})
   static String get driversNearby => '$baseUrl/v1/drivers/nearby';

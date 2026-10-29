@@ -93,8 +93,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      // Header verification
-      expect(find.textContaining('Rendez-vous au point'), findsOneWidget);
+      // Header verification (déplié par défaut)
+      expect(find.textContaining('Votre chauffeur arrive dans'), findsOneWidget);
       expect(find.text('4 min'), findsWidgets);
 
       // Card 1: Driver & Vehicle verification
@@ -119,6 +119,36 @@ void main() {
       expect(find.text('Partager'), findsOneWidget);
       expect(find.text('Sécurité'), findsOneWidget);
       expect(find.text('Annuler'), findsOneWidget);
+    });
+
+    testWidgets('dragging sheet down collapses it and displays Arrive dans X min',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: DriverApproachingPage(
+            departure: departure,
+            destination: destination,
+            rideOption: rideOption,
+            driver: driver,
+            departureCode: '4821',
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Glisser vers le bas pour replier le modal
+      await tester.drag(find.text('DK 4821 AB'), const Offset(0, 400));
+      await tester.pumpAndSettle();
+
+      // En mode replié, le texte affiche "Arrive dans 4 min" et la Card 1 est visible
+      expect(find.textContaining('Arrive dans 4 min'), findsOneWidget);
+      expect(find.text('DK 4821 AB'), findsOneWidget);
+      expect(find.text('Moussa'), findsOneWidget);
     });
 
     testWidgets('tapping message opens DriverChatPage',

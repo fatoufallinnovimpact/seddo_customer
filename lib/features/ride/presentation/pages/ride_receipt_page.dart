@@ -8,6 +8,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_help_page.dart';
 import 'package:seddo/services/receipt_pdf_service.dart';
@@ -43,6 +44,8 @@ class RideReceiptPage extends StatefulWidget {
   final String? priceText;
   final String statusText;
   final bool isRefunded;
+  final String? rideId;
+  final RideService? rideService;
 
   const RideReceiptPage({
     super.key,
@@ -60,6 +63,8 @@ class RideReceiptPage extends StatefulWidget {
     this.dateText = 'Jeudi 15 avril',
     this.paymentPhone = '77 ••• 45 12',
     this.orangeRef = 'CI270415.1819.A3F2',
+    this.rideId,
+    this.rideService,
   });
 
   @override
@@ -67,6 +72,7 @@ class RideReceiptPage extends StatefulWidget {
 }
 
 class _RideReceiptPageState extends State<RideReceiptPage> {
+  late final RideService _rideService;
   GoogleMapController? _mapController;
   List<LatLng> _polylinePoints = [];
 
@@ -76,6 +82,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   @override
   void initState() {
     super.initState();
+    _rideService = widget.rideService ?? RideService();
     _loadRoute();
   }
 
@@ -215,23 +222,38 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
     final rating = '${widget.driver?.rating.toInt() ?? 4}';
     final rideType = widget.rideOption?.title ?? 'Seddo Eco';
 
-    final saveResult = await ReceiptPdfService.saveReceiptToDevice(
-      departureName: departureName,
-      arrivalName: arrivalName,
-      departureTime: widget.departureTime,
-      arrivalTime: widget.arrivalTime,
-      distanceText: widget.distanceText,
-      durationText: widget.durationText,
-      dateText: widget.dateText,
-      priceText: price,
-      rideType: rideType,
-      driverName: driverName,
-      driverCar: carModel,
-      driverPlate: plate,
-      driverRating: rating,
-      paymentPhone: widget.paymentPhone,
-      orangeRef: widget.orangeRef,
-    );
+    final effectiveRideId = widget.rideId;
+    ReceiptSaveResult? saveResult;
+
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      final pdfBytes = await _rideService.downloadReceiptPdf(effectiveRideId);
+      if (pdfBytes != null && pdfBytes.isNotEmpty) {
+        saveResult = await ReceiptPdfService.saveBytesToDevice(
+          bytes: pdfBytes,
+          fileName: 'Recu_Seddo_$effectiveRideId.pdf',
+        );
+      }
+    }
+
+    if (saveResult == null || !saveResult.success) {
+      saveResult = await ReceiptPdfService.saveReceiptToDevice(
+        departureName: departureName,
+        arrivalName: arrivalName,
+        departureTime: widget.departureTime,
+        arrivalTime: widget.arrivalTime,
+        distanceText: widget.distanceText,
+        durationText: widget.durationText,
+        dateText: widget.dateText,
+        priceText: price,
+        rideType: rideType,
+        driverName: driverName,
+        driverCar: carModel,
+        driverPlate: plate,
+        driverRating: rating,
+        paymentPhone: widget.paymentPhone,
+        orangeRef: widget.orangeRef,
+      );
+    }
 
     if (!mounted) return;
 
@@ -256,12 +278,14 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
             textColor: AppColors.orangeAccent,
             onPressed: () {
               try {
-                SharePlus.instance.share(
-                  ShareParams(
-                    files: [XFile(saveResult.primaryPath)],
-                    subject: 'Reçu Seddo - ${widget.orangeRef}',
-                  ),
-                );
+                if (saveResult?.primaryPath.isNotEmpty == true) {
+                  SharePlus.instance.share(
+                    ShareParams(
+                      files: [XFile(saveResult!.primaryPath)],
+                      subject: 'Reçu Seddo - ${widget.orangeRef}',
+                    ),
+                  );
+                }
               } catch (_) {}
             },
           ),

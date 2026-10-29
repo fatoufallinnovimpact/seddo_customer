@@ -60,14 +60,57 @@ class RideQuoteOptionModel {
   };
 }
 
+enum TrafficSpeed { normal, slow, jam }
+
+/// Model representing a traffic condition segment on the route polyline.
+/// Returned by POST /v1/rides/quote: { "from": 0, "to": 4, "speed": "NORMAL|SLOW|TRAFFIC_JAM" }
+class TrafficSegmentModel {
+  final int from;
+  final int to;
+  final TrafficSpeed speed;
+
+  const TrafficSegmentModel({
+    required this.from,
+    required this.to,
+    required this.speed,
+  });
+
+  factory TrafficSegmentModel.fromJson(Map<String, dynamic> json) {
+    final speedStr = (json['speed'] ?? 'NORMAL').toString().toUpperCase();
+    TrafficSpeed parsedSpeed = TrafficSpeed.normal;
+    if (speedStr == 'SLOW') {
+      parsedSpeed = TrafficSpeed.slow;
+    } else if (speedStr == 'TRAFFIC_JAM' || speedStr == 'JAM') {
+      parsedSpeed = TrafficSpeed.jam;
+    }
+
+    return TrafficSegmentModel(
+      from: (json['from'] as num?)?.toInt() ?? 0,
+      to: (json['to'] as num?)?.toInt() ?? 0,
+      speed: parsedSpeed,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'from': from,
+    'to': to,
+    'speed': switch (speed) {
+      TrafficSpeed.slow => 'SLOW',
+      TrafficSpeed.jam => 'TRAFFIC_JAM',
+      TrafficSpeed.normal => 'NORMAL',
+    },
+  };
+}
+
 /// Data model representing the guaranteed quote response from POST /v1/rides/quote.
-/// Contains road distance, duration, encoded polyline for Dakar road network, and options.
+/// Contains road distance, duration, encoded polyline for Dakar road network, traffic conditions, and options.
 class RideQuoteModel {
   final int distanceM;
   final int durationS;
   final String? routeSource;
   final int? trafficDelayS;
   final String polyline;
+  final List<TrafficSegmentModel> traffic;
   final String? zone;
   final DateTime? expiresAt;
   final int? pickupEtaS;
@@ -80,6 +123,7 @@ class RideQuoteModel {
     this.routeSource,
     this.trafficDelayS,
     required this.polyline,
+    this.traffic = const [],
     this.zone,
     this.expiresAt,
     this.pickupEtaS,
@@ -130,12 +174,17 @@ class RideQuoteModel {
 
   factory RideQuoteModel.fromJson(Map<String, dynamic> json) {
     final rawOptions = json['options'] as List<dynamic>? ?? [];
+    final rawTraffic = json['traffic'] as List<dynamic>? ?? [];
     return RideQuoteModel(
       distanceM: (json['distanceM'] as num?)?.toInt() ?? 0,
       durationS: (json['durationS'] as num?)?.toInt() ?? 0,
       routeSource: json['routeSource'] as String?,
       trafficDelayS: (json['trafficDelayS'] as num?)?.toInt(),
       polyline: json['polyline'] as String? ?? '',
+      traffic: rawTraffic
+          .whereType<Map<String, dynamic>>()
+          .map((item) => TrafficSegmentModel.fromJson(item))
+          .toList(),
       zone: json['zone'] as String?,
       expiresAt: json['expiresAt'] != null
           ? DateTime.tryParse(json['expiresAt'] as String)
@@ -155,6 +204,7 @@ class RideQuoteModel {
     'routeSource': routeSource,
     'trafficDelayS': trafficDelayS,
     'polyline': polyline,
+    'traffic': traffic.map((e) => e.toJson()).toList(),
     'zone': zone,
     'expiresAt': expiresAt?.toIso8601String(),
     'pickupEtaS': pickupEtaS,

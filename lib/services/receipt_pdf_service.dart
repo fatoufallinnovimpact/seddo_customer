@@ -572,7 +572,23 @@ class ReceiptPdfService {
 
       final safeRef = orangeRef.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
       final fileName = 'Recu_Seddo_$safeRef.pdf';
+      return await saveBytesToDevice(bytes: bytes, fileName: fileName);
+    } catch (e) {
+      return ReceiptSaveResult(
+        success: false,
+        fileName: 'Recu_Seddo.pdf',
+        primaryPath: '',
+        errorMessage: e.toString(),
+      );
+    }
+  }
 
+  /// Saves any raw PDF bytes to the device's public Download/Documents directories.
+  static Future<ReceiptSaveResult> saveBytesToDevice({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    try {
       final List<String> savedPaths = [];
       String primaryPath = '';
 
@@ -664,7 +680,7 @@ class ReceiptPdfService {
     } catch (e) {
       return ReceiptSaveResult(
         success: false,
-        fileName: 'Recu_Seddo.pdf',
+        fileName: fileName,
         primaryPath: '',
         errorMessage: e.toString(),
       );

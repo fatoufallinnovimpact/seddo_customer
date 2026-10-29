@@ -28,26 +28,79 @@ abstract class MapMarkerHelper {
     _transitMarkerIcons.clear();
   }
 
-  /// Generate high-fidelity compact top-view car marker (Yango-style):
-  /// Sleek aerodynamic vehicle facing North/UP, with transparent alpha and soft shadow.
-  /// Scaled compactly (26x32) to match road widths and location pins.
-  static Future<BitmapDescriptor> get3DCarMarker() async {
-    if (_carMarkerIcon != null) return _carMarkerIcon!;
+  static final Map<int, BitmapDescriptor> _coloredCarMarkerCache = {};
 
-    try {
-      final byteData = await rootBundle.load('assets/images/car.png');
-      _carMarkerIcon = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
-      return _carMarkerIcon!;
-    } catch (_) {
+  /// Default car marker on the map using assets/images/car.png (white top-down car).
+  /// If [color] is provided and not white, dynamically tints the white chassis of
+  /// `assets/images/car.png` using canvas modulation while preserving transparent background and details.
+  static Future<BitmapDescriptor> get3DCarMarker({Color? color}) async {
+    final isWhiteOrDefault = color == null ||
+        (color.r > 0.94 && color.g > 0.94 && color.b > 0.94);
+
+    // 1. White or default: directly load and return the pristine white car asset
+    if (isWhiteOrDefault) {
+      if (_carMarkerIcon != null) return _carMarkerIcon!;
+
       try {
-        final byteData =
-            await rootBundle.load('assets/images/confort_car_marker.png');
+        final byteData = await rootBundle.load('assets/images/car.png');
         _carMarkerIcon = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
         return _carMarkerIcon!;
       } catch (_) {
-        // Fallback for headless tests without asset bundle
+        try {
+          final byteData =
+              await rootBundle.load('assets/images/confort_car_marker.png');
+          _carMarkerIcon = BitmapDescriptor.bytes(byteData.buffer.asUint8List());
+          return _carMarkerIcon!;
+        } catch (_) {
+          // Fallback for headless tests without asset bundle
+        }
       }
+
+      _carMarkerIcon = await _generateCanvasCarMarker(null);
+      return _carMarkerIcon!;
     }
+
+    // 2. Specific color (e.g., Red, Blue, Grey, Black):
+    // Dynamically tint the default white car asset (assets/images/car.png)
+    final key = color.toARGB32();
+    if (_coloredCarMarkerCache.containsKey(key)) {
+      return _coloredCarMarkerCache[key]!;
+    }
+
+    try {
+      final byteData = await rootBundle.load('assets/images/car.png');
+      final codec =
+          await ui.instantiateImageCodec(byteData.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+
+      final pictureRecorder = ui.PictureRecorder();
+      final canvas = Canvas(pictureRecorder);
+      final paint = Paint()
+        ..colorFilter = ColorFilter.mode(color, BlendMode.modulate);
+
+      canvas.drawImage(image, Offset.zero, paint);
+      final picture = pictureRecorder.endRecording();
+      final tintedImage = await picture.toImage(image.width, image.height);
+      final outByteData =
+          await tintedImage.toByteData(format: ui.ImageByteFormat.png);
+
+      if (outByteData != null) {
+        final marker =
+            BitmapDescriptor.bytes(outByteData.buffer.asUint8List());
+        _coloredCarMarkerCache[key] = marker;
+        return marker;
+      }
+    } catch (_) {
+      // Fallback for headless tests without asset bundle
+    }
+
+    final fallback = await _generateCanvasCarMarker(color);
+    _coloredCarMarkerCache[key] = fallback;
+    return fallback;
+  }
+
+  static Future<BitmapDescriptor> _generateCanvasCarMarker(Color? color) async {
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
@@ -111,13 +164,21 @@ abstract class MapMarkerHelper {
     bodyPath.lineTo(13, 22); // Front left fender
     bodyPath.close();
 
+    final Color startColor = color != null
+        ? color.withAlpha(240)
+        : AppColors.carRoofGradientStart;
+    final Color midColor = color ?? AppColors.carRoofGradientMid;
+    final Color endColor = color != null
+        ? Color.lerp(color, Colors.black, 0.35)!
+        : AppColors.carRoofGradientEnd;
+
     final bodyGradient = ui.Gradient.linear(
       const Offset(32, 12),
       const Offset(32, 53),
       [
-        AppColors.carRoofGradientStart,
-        AppColors.carRoofGradientMid,
-        AppColors.carRoofGradientEnd,
+        startColor,
+        midColor,
+        endColor,
       ],
       [0.0, 0.5, 1.0],
     );

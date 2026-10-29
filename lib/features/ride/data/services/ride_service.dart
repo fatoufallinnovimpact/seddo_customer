@@ -15,6 +15,8 @@ import 'package:seddo/features/ride/data/models/ride_cancel_result_model.dart';
 import 'package:seddo/features/ride/data/models/ride_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/models/ride_share_result_model.dart';
+import 'package:seddo/features/ride/data/models/shared_ride_details_model.dart';
 import 'package:uuid/uuid.dart';
 
 /// Remote Service handling HTTP communication with the Seddo backend for Rides.
@@ -384,27 +386,71 @@ class RideService {
     }
   }
 
-  /// POST /rides/:id/rate
-  Future<bool> submitRating({
-    required String rideId,
-    required int rating,
-    required List<String> tags,
-    String? comment,
-  }) async {
+  /// POST /v1/rides/{id}/share
+  /// « Partager mon trajet » : lien public de suivi, sans connexion requise.
+  /// Response: { "url": "https://...", "token": "..." }
+  Future<RideShareResultModel?> shareRide(String rideId) async {
     try {
+      final url = ApiEndpoints.rideShare(rideId);
+      debugPrint('[RideService] 🚀 POST $url (shareRide)');
       final response = await _dio.post(
-        '$_endpoint/$rideId/rate',
-        data: {
-          'rating': rating,
-          'tags': tags,
-          'comment': ?comment,
-        },
+        url,
+        data: const {},
       );
-      return response.statusCode == 200;
-    } catch (_) {
-      return true;
+
+      if (response.statusCode == 200 && response.data != null) {
+        final dynamic raw = response.data is String
+            ? jsonDecode(response.data as String)
+            : response.data;
+        if (raw is Map<String, dynamic>) {
+          final result = RideShareResultModel.fromJson(raw);
+          debugPrint(
+              '[RideService] ✅ POST $url -> token: ${result.token}, url: ${result.url}');
+          return result;
+        }
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur POST share [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue POST share: $e');
+      }
     }
+    return null;
   }
+
+  /// GET /v1/share/{token}
+  /// Page de suivi d’un trajet partagé (vu par un proche sans connexion ni application) :
+  /// Statut, chauffeur, véhicule, position.
+  Future<SharedRideDetailsModel?> getSharedRideDetails(String token) async {
+    try {
+      final url = ApiEndpoints.shareView(token);
+      debugPrint('[RideService] 🚀 GET $url (getSharedRideDetails)');
+      final response = await _dio.get(url);
+
+      if (response.statusCode == 200 && response.data != null) {
+        final dynamic raw = response.data is String
+            ? jsonDecode(response.data as String)
+            : response.data;
+        if (raw is Map<String, dynamic>) {
+          final result = SharedRideDetailsModel.fromJson(raw);
+          debugPrint(
+              '[RideService] ✅ GET $url -> ref: ${result.ref}, status: ${result.status}');
+          return result;
+        }
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur GET share view [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue GET share view: $e');
+      }
+    }
+    return null;
+  }
+
 
   /// Fallback demo driver
   DriverModel getDemoDriver(RideOptionModel rideOption) {
@@ -563,5 +609,140 @@ class RideService {
     }
     return null;
   }
+
+  /// POST /v1/rides/{id}/rating
+  /// Notation mutuelle (1 à 5 étoiles) après une course terminée.
+  /// Request body: { "stars": 5, "comment": "...", "compliments": [ "PUNCTUAL", "CLEAN_CAR" ] }
+  Future<bool> submitRating({
+    required String rideId,
+    int? stars,
+    String? comment,
+    List<String> compliments = const [],
+    int? rating, // Alias pour compatibilité
+    List<String>? tags, // Alias pour compatibilité
+  }) async {
+    try {
+      final effectiveStars = (stars != null && stars > 0)
+          ? stars
+          : ((rating != null && rating > 0) ? rating : 5);
+      final effectiveCompliments =
+          compliments.isNotEmpty ? compliments : (tags ?? const []);
+
+      final url = ApiEndpoints.rideRating(rideId);
+      final body = <String, dynamic>{
+        'stars': effectiveStars,
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
+        'compliments': effectiveCompliments,
+      };
+
+      debugPrint('[RideService] 🚀 POST $url avec body: $body');
+      final response = await _dio.post(url, data: body);
+      final success = response.statusCode == 200 || response.statusCode == 201;
+      debugPrint(
+          '[RideService] ${success ? "✅" : "⚠️"} POST $url -> code ${response.statusCode}');
+      return success;
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur POST /v1/rides/$rideId/rating [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue POST rating: $e');
+      }
+      return false;
+    }
+  }
+
+  /// GET /v1/rides/{id}/receipt
+  /// Lien de téléchargement du reçu PDF (url valable 15 min, à ouvrir dans le navigateur ou l’app).
+  Future<Map<String, dynamic>?> getReceiptLink(String rideId) async {
+    try {
+      final url = ApiEndpoints.rideReceiptLink(rideId);
+      debugPrint('[RideService] 🚀 GET $url');
+      final response = await _dio.get(url);
+
+      if (response.statusCode == 200 && response.data != null) {
+        final dynamic raw = response.data is String
+            ? jsonDecode(response.data as String)
+            : response.data;
+        if (raw is Map<String, dynamic>) {
+          debugPrint(
+              '[RideService] ✅ GET $url -> url: ${raw['url']}, token: ${raw['token']}');
+          return raw;
+        }
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur GET receipt link [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue GET receipt link: $e');
+      }
+    }
+    return null;
+  }
+
+  /// GET /v1/rides/{id}/receipt.pdf
+  /// Reçu PDF de la course (client ou chauffeur de la course) : fichier à télécharger.
+  Future<Uint8List?> downloadReceiptPdf(String rideId) async {
+    try {
+      final url = ApiEndpoints.rideReceiptPdf(rideId);
+      debugPrint('[RideService] 🚀 GET $url (PDF bytes)');
+      final response = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        debugPrint(
+            '[RideService] ✅ PDF reçu téléchargé: ${response.data!.length} octets');
+        return Uint8List.fromList(response.data!);
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur GET receipt.pdf [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue GET receipt.pdf: $e');
+      }
+    }
+    return null;
+  }
+
+  /// GET /v1/receipts/{token}
+  /// Télécharge le reçu PDF depuis le lien signé renvoyé par GET /v1/rides/{id}/receipt (sans connexion).
+  Future<Uint8List?> downloadReceiptByToken(String token) async {
+    try {
+      final url = ApiEndpoints.receiptDownload(token);
+      debugPrint('[RideService] 🚀 GET $url (PDF token bytes)');
+      final response = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        debugPrint(
+            '[RideService] ✅ PDF token téléchargé: ${response.data!.length} octets');
+        return Uint8List.fromList(response.data!);
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur GET /v1/receipts/$token [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue GET receipts token: $e');
+      }
+    }
+    return null;
+  }
 }
+
 

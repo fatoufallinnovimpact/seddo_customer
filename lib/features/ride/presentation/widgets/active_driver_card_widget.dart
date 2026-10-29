@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 
 /// Reusable driver summary card widget displaying driver initials, rating, vehicle, and "✓ Payé" badge
 class ActiveDriverCardWidget extends StatelessWidget {
@@ -150,11 +151,24 @@ class ActiveDriverCardWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (vehicleImagePath != null)
-                Image.asset(
-                  vehicleImagePath!,
-                  height: 32,
-                  width: 52,
-                  fit: BoxFit.contain,
+                Builder(
+                  builder: (context) {
+                    final colorFilter =
+                        VehicleColorHelper.getColorFilter(driver.carColor);
+                    final img = Image.asset(
+                      vehicleImagePath!,
+                      height: 32,
+                      width: 52,
+                      fit: BoxFit.contain,
+                    );
+                    if (colorFilter != null) {
+                      return ColorFiltered(
+                        colorFilter: colorFilter,
+                        child: img,
+                      );
+                    }
+                    return img;
+                  },
                 ),
               if (isPaid) ...[
                 if (vehicleImagePath != null) const SizedBox(height: 4),

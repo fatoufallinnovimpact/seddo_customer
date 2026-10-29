@@ -1,3 +1,5 @@
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+
 /// Type of ride option
 enum RideType { eco, confort }
 
@@ -13,6 +15,10 @@ class RideOptionModel {
   final String estimatedArrival;
   final String pickupDuration;
   final String? quoteId;
+  final int? pickupEtaS;
+  final List<TrafficSegmentModel> traffic;
+  final int? distanceM;
+  final int? durationS;
 
   const RideOptionModel({
     required this.type,
@@ -24,6 +30,10 @@ class RideOptionModel {
     required this.estimatedArrival,
     required this.pickupDuration,
     this.quoteId,
+    this.pickupEtaS,
+    this.traffic = const [],
+    this.distanceM,
+    this.durationS,
   });
 
   /// Formats the integer price into a clean localized string like "3 500 F"
@@ -47,6 +57,10 @@ class RideOptionModel {
     String? estimatedArrival,
     String? pickupDuration,
     String? quoteId,
+    int? pickupEtaS,
+    List<TrafficSegmentModel>? traffic,
+    int? distanceM,
+    int? durationS,
   }) {
     return RideOptionModel(
       type: type ?? this.type,
@@ -58,6 +72,10 @@ class RideOptionModel {
       estimatedArrival: estimatedArrival ?? this.estimatedArrival,
       pickupDuration: pickupDuration ?? this.pickupDuration,
       quoteId: quoteId ?? this.quoteId,
+      pickupEtaS: pickupEtaS ?? this.pickupEtaS,
+      traffic: traffic ?? this.traffic,
+      distanceM: distanceM ?? this.distanceM,
+      durationS: durationS ?? this.durationS,
     );
   }
 }

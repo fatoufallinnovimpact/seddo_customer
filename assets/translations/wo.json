@@ -310,6 +310,15 @@
     "receipt_driver": "Chauffeur",
     "receipt_trip": "Yoon wi",
     "receipt_payment_method": "Ni ngay feye",
+    "download_receipt": "Yebbi reçu bi",
+    "share_receipt": "Seddo reçu bi",
+    "comment_hint": "Bindeel sa xalaat (so ko bëggee)...",
+    "comment_title": "Sa xalaat",
+    "downloading": "Yebbi reçu bi mingi dox...",
+    "download_success": "Reçu PDF yebbi nañu ko",
+    "download_error": "Mënuloon yebbi reçu bi",
+    "share_subject": "Reçu yoonu Seddo",
+    "share_text": "Mii mooy reçu suma yoonu Seddo : {}",
     "appreciation_title": "Jërëjëf ci sa xalaat !",
     "appreciation_sub": "Sa xalaat dina nu dimbali ngir gën a baaxal liggéey bi.",
     "close": "Tëj"
@@ -341,7 +350,9 @@
     "quick_white_shirt": "Simis bu weex la sol",
     "quick_waiting": "Jërëjëf, maa ngi la xaar",
     "masked_numbers_title": "Nimero yi dañu leen làq",
-    "masked_numbers_notice": "Sa kàddu ak sa bind yépp dañu leen aar"
+    "masked_numbers_notice": "Sa kàddu ak sa bind yépp dañu leen aar",
+    "empty_title": "Amul benn bataaxal léegi",
+    "empty_subtitle": "Bindal bataaxal walla tànnal tontu bu gaaw ngir wax ak sofeer bi."
   },
   "saved_places": {
     "title": "Béréb yi ma denc",

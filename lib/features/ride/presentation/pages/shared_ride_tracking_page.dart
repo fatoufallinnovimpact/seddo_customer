@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
-import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/data/models/shared_ride_details_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 
 /// Screen displayed when opening the shared live tracking link matching Screenshot 4:
-/// - Browser style header with orange Seddo logo and "suivi.seddo.sn/t/8K02F"
+/// - Browser style header with orange Seddo logo and public tracking link
+/// - Connected to backend public endpoint GET /v1/share/{token}
 /// - Live map tracking car
 /// - Bottom card with "Awa partage son trajet avec vous"
 /// - "Arrivée prévue 18:42"
@@ -23,6 +28,9 @@ class SharedRideTrackingPage extends StatefulWidget {
   final String shareUrl;
   final String sharerName;
   final String etaText;
+  final String? token;
+  final String? rideId;
+  final RideService? rideService;
 
   const SharedRideTrackingPage({
     super.key,
@@ -33,6 +41,9 @@ class SharedRideTrackingPage extends StatefulWidget {
     this.shareUrl = 'suivi.seddo.sn/t/8K02F',
     this.sharerName = 'Awa',
     this.etaText = '18:42',
+    this.token,
+    this.rideId,
+    this.rideService,
   });
 
   @override
@@ -45,16 +56,82 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   BitmapDescriptor? _pickupPinIcon;
   BitmapDescriptor? _destPinIcon;
 
+  late final RideService _rideService;
+  SharedRideDetailsModel? _sharedDetails;
+  Timer? _refreshTimer;
+  LatLng? _liveDriverPos;
+  String? _effectiveToken;
+  late String _displayShareUrl;
+
   @override
   void initState() {
     super.initState();
+    _rideService = widget.rideService ?? RideService();
+    _liveDriverPos = widget.driver.location;
+    _displayShareUrl = widget.shareUrl;
+    _effectiveToken = widget.token;
     _loadMarkers();
+
+    if (_effectiveToken != null && _effectiveToken!.isNotEmpty) {
+      _fetchSharedDetails();
+      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (mounted) {
+          _fetchSharedDetails();
+        }
+      });
+    } else if (widget.rideId != null && widget.rideId!.isNotEmpty) {
+      _initFromRideId(widget.rideId!);
+    }
+  }
+
+  Future<void> _initFromRideId(String rideId) async {
+    try {
+      final res = await _rideService.shareRide(rideId);
+      if (!mounted || res == null) return;
+      setState(() {
+        _effectiveToken = res.token;
+        if (res.url.isNotEmpty) {
+          _displayShareUrl = res.url;
+        }
+      });
+      _fetchSharedDetails();
+      _refreshTimer?.cancel();
+      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (mounted) {
+          _fetchSharedDetails();
+        }
+      });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchSharedDetails() async {
+    final token = _effectiveToken;
+    if (token == null || token.isEmpty) return;
+
+    try {
+      final details = await _rideService.getSharedRideDetails(token);
+      if (!mounted || details == null) return;
+
+      setState(() {
+        _sharedDetails = details;
+        if (details.driverPosition != null) {
+          _liveDriverPos = details.driverPosition;
+        }
+      });
+
+      if (_mapController != null && details.driverPosition != null) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLng(details.driverPosition!),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadMarkers() async {
@@ -74,14 +151,13 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
     final markers = <Marker>{};
 
     // 1. Departure location pin
+    final pickupLat = widget.departure.latitude;
+    final pickupLng = widget.departure.longitude;
     if (_pickupPinIcon != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('pickup_pin'),
-          position: LatLng(
-            widget.departure.latitude,
-            widget.departure.longitude,
-          ),
+          position: LatLng(pickupLat, pickupLng),
           icon: _pickupPinIcon!,
           anchor: const Offset(0.5, 1.0),
         ),
@@ -89,14 +165,15 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
     }
 
     // 2. Destination location pin
+    final destLat = _sharedDetails?.dropoffPosition?.latitude ??
+        widget.destination.latitude;
+    final destLng = _sharedDetails?.dropoffPosition?.longitude ??
+        widget.destination.longitude;
     if (_destPinIcon != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('dest_pin'),
-          position: LatLng(
-            widget.destination.latitude,
-            widget.destination.longitude,
-          ),
+          position: LatLng(destLat, destLng),
           icon: _destPinIcon!,
           anchor: const Offset(0.5, 1.0),
         ),
@@ -104,11 +181,14 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
     }
 
     // 3. 3D Driver car
+    final carPos = _liveDriverPos ??
+        _sharedDetails?.driverPosition ??
+        widget.driver.location;
     if (_carMarkerIcon != null) {
       markers.add(
         Marker(
           markerId: const MarkerId('shared_car'),
-          position: widget.driver.location,
+          position: carPos,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
         ),
@@ -138,14 +218,25 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
     final _ = context.locale;
     final systemTop = MediaQuery.of(context).padding.top;
     final systemBottom = MediaQuery.of(context).padding.bottom;
-    final initials = widget.driver.name.isNotEmpty
-        ? widget.driver.name
+
+    final driverName = _sharedDetails != null &&
+            _sharedDetails!.driverFirstName.isNotEmpty
+        ? _sharedDetails!.driverFirstName
+        : widget.driver.name;
+
+    final initials = driverName.isNotEmpty
+        ? driverName
             .split(' ')
             .map((e) => e.isNotEmpty ? e[0] : '')
             .take(2)
             .join()
             .toUpperCase()
         : 'MS';
+
+    final vehicleText = _sharedDetails != null &&
+            _sharedDetails!.vehicleMake.isNotEmpty
+        ? '${_sharedDetails!.vehicleMake} ${_sharedDetails!.vehicleModel} · ${_sharedDetails!.vehiclePlate} (${_sharedDetails!.vehicleColor})'
+        : '${widget.driver.carModel} · ${widget.driver.licensePlate}';
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -225,7 +316,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
                   // URL
                   Expanded(
                     child: Text(
-                      widget.shareUrl,
+                      _displayShareUrl,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: AppColors.textPrimary,
@@ -234,6 +325,32 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+
+                  // Copy URL Button
+                  IconButton(
+                    icon: const Icon(
+                      Icons.copy_rounded,
+                      size: 17,
+                      color: AppColors.textSecondary,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Copier le lien',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _displayShareUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: AppColors.buttonBlack,
+                          content: Text(
+                            'Lien copié dans le presse-papier',
+                            style: GoogleFonts.inter(color: AppColors.white),
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 8),
 
                   // Close button
                   GestureDetector(
@@ -291,7 +408,72 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
+
+                  // Status and Ref if available from API
+                  if (_sharedDetails != null) ...[
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _sharedDetails!.live
+                                ? AppColors.refundPillBg
+                                : AppColors.surfaceGrey,
+                            borderRadius:
+                                BorderRadius.circular(AppConstants.radiusPill),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: _sharedDetails!.live
+                                      ? AppColors.refundGreen
+                                      : AppColors.textSecondary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _sharedDetails!.live
+                                    ? 'EN DIRECT · ${_sharedDetails!.ref}'
+                                    : _sharedDetails!.ref,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: _sharedDetails!.live
+                                      ? AppColors.refundGreen
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _sharedDetails!.status == 'ACCEPTED'
+                              ? 'Chauffeur en route'
+                              : _sharedDetails!.status == 'IN_PROGRESS'
+                                  ? 'Course en cours'
+                                  : _sharedDetails!.status == 'COMPLETED'
+                                      ? 'Course terminée'
+                                      : _sharedDetails!.status,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
 
                   // "Awa partage son trajet avec vous"
                   Text(
@@ -343,7 +525,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${widget.driver.name.split(' ').first} · ★ ${widget.driver.rating}',
+                              '$driverName · ★ ${widget.driver.rating}',
                               style: GoogleFonts.inter(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
@@ -352,7 +534,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${widget.driver.carModel} · ${widget.driver.licensePlate}',
+                              vehicleText,
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: AppColors.textSecondary,

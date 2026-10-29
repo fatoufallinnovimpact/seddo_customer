@@ -20,17 +20,29 @@ class ChatMessageModel {
   /// Parse backend JSON according to OpenAPI spec (GET /v1/rides/{id}/messages)
   /// Handles { "body": "...", "sender": "customer|driver", "createdAt": "..." }
   factory ChatMessageModel.fromJson(Map<String, dynamic> json) {
-    final senderStr = (json['sender'] ??
-            json['senderType'] ??
-            json['from'] ??
-            json['role'] ??
-            '')
-        .toString()
-        .toLowerCase();
+    String senderStr = '';
+    if (json['sender'] is Map) {
+      final sMap = json['sender'] as Map;
+      senderStr = (sMap['role'] ?? sMap['type'] ?? sMap['userType'] ?? sMap['name'] ?? '').toString();
+    } else {
+      senderStr = (json['sender'] ??
+              json['senderType'] ??
+              json['senderRole'] ??
+              json['from'] ??
+              json['role'] ??
+              '')
+          .toString();
+    }
+    senderStr = senderStr.toLowerCase();
     final isCustomer = senderStr == 'customer' ||
         senderStr == 'passenger' ||
         senderStr == 'client' ||
-        senderStr == 'user';
+        senderStr == 'user' ||
+        senderStr == 'rider' ||
+        senderStr.contains('customer') ||
+        senderStr.contains('client') ||
+        senderStr.contains('passenger') ||
+        senderStr.contains('rider');
     final sender = isCustomer ? ChatSender.customer : ChatSender.driver;
 
     DateTime parsedTime;
@@ -71,6 +83,22 @@ class ChatMessageModel {
       'createdAt': timestamp.toIso8601String(),
       'isRead': isRead,
     };
+  }
+
+  ChatMessageModel copyWith({
+    String? id,
+    ChatSender? sender,
+    String? text,
+    DateTime? timestamp,
+    bool? isRead,
+  }) {
+    return ChatMessageModel(
+      id: id ?? this.id,
+      sender: sender ?? this.sender,
+      text: text ?? this.text,
+      timestamp: timestamp ?? this.timestamp,
+      isRead: isRead ?? this.isRead,
+    );
   }
 
   String get formattedTime {

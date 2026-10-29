@@ -310,6 +310,15 @@
     "receipt_driver": "Chauffeur",
     "receipt_trip": "Trajet",
     "receipt_payment_method": "Moyen de paiement",
+    "download_receipt": "Télécharger le reçu",
+    "share_receipt": "Partager le reçu",
+    "comment_hint": "Laisser un commentaire (optionnel)...",
+    "comment_title": "Votre commentaire",
+    "downloading": "Téléchargement du reçu en cours...",
+    "download_success": "Reçu PDF téléchargé avec succès",
+    "download_error": "Impossible de télécharger le reçu",
+    "share_subject": "Reçu de course Seddo",
+    "share_text": "Voici le reçu de ma course Seddo : {}",
     "appreciation_title": "Merci pour votre avis !",
     "appreciation_sub": "Votre retour nous aide à améliorer la qualité de nos services.",
     "close": "Fermer"
@@ -341,7 +350,9 @@
     "quick_white_shirt": "Je porte une chemise blanche",
     "quick_waiting": "Merci, je vous attends",
     "masked_numbers_title": "Numéros masqués",
-    "masked_numbers_notice": "Échanges anonymisés et sécurisés"
+    "masked_numbers_notice": "Échanges anonymisés et sécurisés",
+    "empty_title": "Aucun message pour le moment",
+    "empty_subtitle": "Écrivez un message ou choisissez une réponse rapide pour contacter le chauffeur."
   },
   "saved_places": {
     "title": "Lieux enregistrés",

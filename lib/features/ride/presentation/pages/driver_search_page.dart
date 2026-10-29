@@ -20,6 +20,7 @@ import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_shee
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/no_driver_found_sheet.dart';
+import 'package:seddo/services/route_service.dart';
 
 /// Screen displayed while searching for nearby drivers:
 /// - Map with pickup marker, true pulsating radar waves, real nearby cars from GET /v1/drivers/nearby
@@ -164,10 +165,24 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             defaultRideType: widget.rideOption.type,
           );
           final code = DriverModel.extractDepartureCode(data);
+
+          final rideObj = data['ride'] is Map<String, dynamic>
+              ? data['ride'] as Map<String, dynamic>
+              : data;
+          List<LatLng>? updatedTripPolyline;
+          final plannedPolyStr = rideObj['plannedPolyline'] as String?;
+          if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
+            final decoded = RouteService.decodePolyline(plannedPolyStr);
+            if (decoded.length >= 2) {
+              updatedTripPolyline = decoded;
+            }
+          }
+
           onDriverFound(
             driver,
             code,
             rideId,
+            updatedTripPolyline,
           );
         } else if (status.startsWith('CANCELLED') || status == 'NO_DRIVER') {
           _rideStatusPollTimer?.cancel();
@@ -219,6 +234,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     DriverModel? matchedDriver,
     String? code,
     String? rideId,
+    List<LatLng>? tripPolyline,
   ]) {
     _autoMatchTimer?.cancel();
     _rideStatusPollTimer?.cancel();
@@ -241,7 +257,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           destination: widget.destination,
           rideOption: widget.rideOption,
           driver: driver,
-          polylinePoints: widget.polylinePoints,
+          polylinePoints: tripPolyline ?? widget.polylinePoints,
           departureCode: code ?? '4821',
           rideId: effectiveRideId,
           rideService: widget.rideService,
