@@ -65,13 +65,14 @@ class DriverSearchPage extends StatefulWidget {
 }
 
 class _DriverSearchPageState extends State<DriverSearchPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final RideService _rideService;
   GoogleMapController? _mapController;
   Timer? _autoMatchTimer;
   Timer? _nearbyPollTimer;
   Timer? _rideStatusPollTimer;
   late AnimationController _radarController;
+  late AnimationController _sheetAnimationController;
   late CameraPosition _currentCameraPosition;
   final ValueNotifier<Offset?> _departureScreenOffsetNotifier =
       ValueNotifier<Offset?>(null);
@@ -86,9 +87,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   List<NearbyCarModel> _nearbyCars = [];
   int? _nearbyDriversCount;
+  late List<LatLng> _polylinePoints = List<LatLng>.from(widget.polylinePoints);
 
   final GlobalKey _bottomSheetKey = GlobalKey();
-  double _bottomSheetHeight = 360.0;
+  double _bottomSheetHeight = 410.0;
 
   @override
   void initState() {
@@ -102,6 +104,16 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       ),
       zoom: 17.2,
     );
+
+    // Contrôleur pour le modal rétractable (1.0 = étendu, 0.0 = réduit)
+    _sheetAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: 1.0,
+    );
+    _sheetAnimationController.addListener(() {
+      _updateDepartureScreenOffset(_currentCameraPosition);
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureBottomSheet();
@@ -121,6 +133,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
     _loadCustomMarkers();
     _loadNearbyDrivers();
+    if (_polylinePoints.isEmpty) {
+      _loadFallbackPolyline();
+    }
 
     final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
 
@@ -219,6 +234,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     _nearbyPollTimer?.cancel();
     _rideStatusPollTimer?.cancel();
     _departureScreenOffsetNotifier.dispose();
+    _sheetAnimationController.dispose();
     _radarController.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -263,6 +279,11 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             final decoded = RouteService.decodePolyline(plannedPolyStr);
             if (decoded.length >= 2) {
               updatedTripPolyline = decoded;
+              if (mounted) {
+                setState(() {
+                  _polylinePoints = decoded;
+                });
+              }
             }
           }
 
@@ -280,6 +301,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     } catch (e) {
       debugPrint('[DriverSearchPage] ⚠️ Erreur polling statut course: $e');
     }
+  }
+
+  /// Charge le polyline décodé suivant les vraies routes si non fourni
+  Future<void> _loadFallbackPolyline() async {
+    try {
+      final route = await RouteService().getRoute(
+        origin: LatLng(widget.departure.latitude, widget.departure.longitude),
+        destination: LatLng(widget.destination.latitude, widget.destination.longitude),
+      );
+      if (mounted && route.polylinePoints.isNotEmpty) {
+        setState(() {
+          _polylinePoints = route.polylinePoints;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadCustomMarkers() async {
@@ -477,11 +513,15 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     if (!mounted) return;
     _currentCameraPosition = position;
     final size = MediaQuery.sizeOf(context);
+    final systemBottom = MediaQuery.of(context).padding.bottom;
+    final collapsedH = 112.0 + systemBottom;
+    final currentBottomPadding = collapsedH +
+        (_bottomSheetHeight - collapsedH) * _sheetAnimationController.value;
     final offset = _getDepartureScreenPosition(
       departure: LatLng(widget.departure.latitude, widget.departure.longitude),
       cameraPosition: position,
       screenSize: size,
-      bottomPadding: _bottomSheetHeight,
+      bottomPadding: currentBottomPadding,
     );
     _departureScreenOffsetNotifier.value = offset;
   }
@@ -569,11 +609,14 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   }
 
   Set<Polyline> _buildPolylines() {
-    if (widget.polylinePoints.isEmpty) return {};
+    final effectivePoints = _polylinePoints.isNotEmpty
+        ? _polylinePoints
+        : widget.polylinePoints;
+    if (effectivePoints.isEmpty) return {};
     return {
       Polyline(
         polylineId: const PolylineId('route_polyline'),
-        points: widget.polylinePoints,
+        points: effectivePoints,
         color: AppColors.yangoRouteGreen,
         width: 4,
         jointType: JointType.round,
@@ -583,6 +626,121 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     };
   }
 
+  double get _collapsedSheetHeight {
+    final systemBottom = MediaQuery.of(context).padding.bottom;
+    return 112.0 + systemBottom;
+  }
+
+  double get _expandedSheetHeight => _bottomSheetHeight;
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    final range = _expandedSheetHeight - _collapsedSheetHeight;
+    if (range <= 0) return;
+    final delta = details.primaryDelta! / range;
+    _sheetAnimationController.value =
+        (_sheetAnimationController.value - delta).clamp(0.0, 1.0);
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity > 300) {
+      _sheetAnimationController.animateTo(0.0, curve: Curves.easeOutCubic);
+    } else if (velocity < -300) {
+      _sheetAnimationController.animateTo(1.0, curve: Curves.easeOutCubic);
+    } else {
+      if (_sheetAnimationController.value >= 0.5) {
+        _sheetAnimationController.animateTo(1.0, curve: Curves.easeOutCubic);
+      } else {
+        _sheetAnimationController.animateTo(0.0, curve: Curves.easeOutCubic);
+      }
+    }
+  }
+
+  void _toggleSheet() {
+    if (_sheetAnimationController.value > 0.5) {
+      _sheetAnimationController.animateTo(0.0, curve: Curves.easeInOutCubic);
+    } else {
+      _sheetAnimationController.animateTo(1.0, curve: Curves.easeInOutCubic);
+    }
+  }
+
+  Widget _buildChevronButton({required bool isExpanded}) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: const BoxDecoration(
+        color: AppColors.surfaceGrey,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        isExpanded
+            ? Icons.keyboard_arrow_down_rounded
+            : Icons.keyboard_arrow_up_rounded,
+        color: AppColors.textPrimary,
+        size: 20,
+      ),
+    );
+  }
+
+  Widget _buildLiveSearchPill({bool compact = false}) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 4 : 5,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withAlpha(25),
+        borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'ride.live_search'.tr(),
+            style: GoogleFonts.inter(
+              fontSize: compact ? 10 : 11,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehicleImage({required double width, required double height}) {
+    return Image.asset(
+      widget.rideOption.type == RideType.confort
+          ? 'assets/images/seddo_confort_3d.png'
+          : 'assets/images/seddo_eco_3d.png',
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+    );
+  }
+
+  Widget _buildProgressBar() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: const LinearProgressIndicator(
+        color: AppColors.primary,
+        backgroundColor: AppColors.surfaceGrey,
+        minHeight: 3.5,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final _ = context.locale;
@@ -590,394 +748,469 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     final rideTypeLabel =
         widget.rideOption.type == RideType.eco ? 'Eco' : 'Confort';
 
+    final collapsedH = 112.0 + systemBottom;
+    final expandedH = _bottomSheetHeight;
+
     return Scaffold(
       backgroundColor: AppColors.white,
-      body: Stack(
-        children: [
-          // 1. Google Map interactif (pan & zoom libres)
-          GoogleMap(
-            style: MapStyleService.style,
-            initialCameraPosition: _currentCameraPosition,
-            padding: EdgeInsets.only(bottom: _bottomSheetHeight),
-            buildingsEnabled: false,
-            onMapCreated: (ctrl) {
-              _mapController = ctrl;
-              MapStyleService.applyStyle(ctrl);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _syncDepartureScreenOffsetFromController();
-              });
-            },
-            onCameraMove: (position) {
-              _updateDepartureScreenOffset(position);
-            },
-            onCameraIdle: () {
-              _syncDepartureScreenOffsetFromController();
-            },
-            markers: _buildMarkers(),
-            polylines: _buildPolylines(),
-            scrollGesturesEnabled: true,
-            zoomGesturesEnabled: true,
-            rotateGesturesEnabled: true,
-            tiltGesturesEnabled: false,
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
-            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-              Factory<OneSequenceGestureRecognizer>(
-                () => EagerGestureRecognizer(),
-              ),
-            },
-          ),
+      body: AnimatedBuilder(
+        animation: _sheetAnimationController,
+        builder: (context, _) {
+          final isExpanded = _sheetAnimationController.value > 0.5;
+          final currentSheetHeight = collapsedH +
+              (expandedH - collapsedH) * _sheetAnimationController.value;
 
-          // 2. Ondes radar pulsantes ultra-fluides centrées sur le point de départ
-          ValueListenableBuilder<Offset?>(
-            valueListenable: _departureScreenOffsetNotifier,
-            builder: (context, departureOffset, _) {
-              final size = MediaQuery.sizeOf(context);
-              final effectiveOffset = departureOffset ??
-                  Offset(
-                    size.width / 2.0,
-                    (size.height - _bottomSheetHeight) / 2.0,
+          return Stack(
+            children: [
+              // 1. Google Map interactif (pan, zoom, rotation et inclinaison libres)
+              GoogleMap(
+                style: MapStyleService.style,
+                initialCameraPosition: _currentCameraPosition,
+                padding: EdgeInsets.only(
+                  bottom: isExpanded ? expandedH : collapsedH,
+                ),
+                buildingsEnabled: false,
+                onMapCreated: (ctrl) {
+                  _mapController = ctrl;
+                  MapStyleService.applyStyle(ctrl);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _syncDepartureScreenOffsetFromController();
+                  });
+                },
+                onCameraMove: (position) {
+                  _updateDepartureScreenOffset(position);
+                },
+                onCameraIdle: () {
+                  _syncDepartureScreenOffsetFromController();
+                },
+                markers: _buildMarkers(),
+                polylines: _buildPolylines(),
+                scrollGesturesEnabled: true,
+                zoomGesturesEnabled: true,
+                rotateGesturesEnabled: true,
+                tiltGesturesEnabled: true,
+                myLocationEnabled: false,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                compassEnabled: false,
+                mapToolbarEnabled: false,
+                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<OneSequenceGestureRecognizer>(
+                    () => EagerGestureRecognizer(),
+                  ),
+                },
+              ),
+
+              // 2. Ondes radar pulsantes ultra-fluides centrées sur le point de départ
+              ValueListenableBuilder<Offset?>(
+                valueListenable: _departureScreenOffsetNotifier,
+                builder: (context, departureOffset, _) {
+                  final size = MediaQuery.sizeOf(context);
+                  final effectiveOffset = departureOffset ??
+                      Offset(
+                        size.width / 2.0,
+                        (size.height - currentSheetHeight) / 2.0,
+                      );
+                  return IgnorePointer(
+                    ignoring: true,
+                    child: AnimatedBuilder(
+                      animation: _radarController,
+                      builder: (context, _) {
+                        return CustomPaint(
+                          painter: _RadarWavePainter(
+                            progress: _radarController.value,
+                            center: effectiveOffset,
+                          ),
+                          size: Size.infinite,
+                        );
+                      },
+                    ),
                   );
-              return IgnorePointer(
-                ignoring: true,
-                child: AnimatedBuilder(
-                  animation: _radarController,
-                  builder: (context, _) {
-                    return CustomPaint(
-                      painter: _RadarWavePainter(
-                        progress: _radarController.value,
-                        center: effectiveOffset,
-                      ),
-                      size: Size.infinite,
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-
-          // 3. Indicateur discret de reconnexion WebSocket (PDF page 7)
-          const SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: RealtimeStatusIndicator(),
-            ),
-          ),
-
-          // 4. Floating Top Back Button
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
+                },
               ),
-              child: Container(
-                width: AppConstants.circularButtonSize,
-                height: AppConstants.circularButtonSize,
-                decoration: const BoxDecoration(
-                  color: AppColors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.shadowMarker,
-                      blurRadius: 10,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
+
+              // 3. Indicateur discret de reconnexion WebSocket (PDF page 7)
+              const SafeArea(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: RealtimeStatusIndicator(),
                 ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_rounded,
-                    color: AppColors.textPrimary,
-                    size: 22,
+              ),
+
+              // 4. Floating Top Back Button
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingMd,
+                    vertical: AppConstants.spacingSm,
                   ),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-            ),
-          ),
-
-          // 5. Bouton flottant de caméra cyclique (Départ / Arrivée / Trajet complet)
-          Positioned(
-            right: 16,
-            bottom: _bottomSheetHeight + 14,
-            child: RideMapCameraToggleButton(
-              mapControllerGetter: () => _mapController,
-              departureLocation: LatLng(
-                widget.departure.latitude,
-                widget.departure.longitude,
-              ),
-              destinationLocation: LatLng(
-                widget.destination.latitude,
-                widget.destination.longitude,
-              ),
-              polylinePoints: widget.polylinePoints,
-              initialMode: RideMapCameraMode.departure,
-              bottomPadding: _bottomSheetHeight + 20,
-            ),
-          ),
-
-          // 3. Bottom Sheet Modal ("Recherche d'un chauffeur")
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              key: _bottomSheetKey,
-              decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(AppConstants.radiusSheet),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.shadowCardBlack,
-                    blurRadius: 24,
-                    offset: Offset(0, -6),
-                  ),
-                ],
-              ),
-              padding: EdgeInsets.fromLTRB(
-                AppConstants.spacingLg,
-                12,
-                AppConstants.spacingLg,
-                systemBottom + AppConstants.spacingMd,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Drag Handle
-                  Container(
-                    width: AppConstants.circularIconContainerSize,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.dragHandle,
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusXs,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Top Live Status Bar with 3D Vehicle Preview
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withAlpha(25),
-                          borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                  child: Container(
+                    width: AppConstants.circularButtonSize,
+                    height: AppConstants.circularButtonSize,
+                    decoration: const BoxDecoration(
+                      color: AppColors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.shadowMarker,
+                          blurRadius: 10,
+                          offset: Offset(0, 3),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'ride.live_search'.tr(),
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primary,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Image.asset(
-                        widget.rideOption.type == RideType.confort
-                            ? 'assets/images/seddo_confort_3d.png'
-                            : 'assets/images/seddo_eco_3d.png',
-                        width: 56,
-                        height: 38,
-                        fit: BoxFit.contain,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Title: Recherche d'un chauffeur
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'ride.searching'.tr(),
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.arrow_back_rounded,
                         color: AppColors.textPrimary,
-                        letterSpacing: -0.5,
+                        size: 22,
                       ),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Animated Progress Bar (Orange)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: const LinearProgressIndicator(
-                      color: AppColors.primary,
-                      backgroundColor: AppColors.surfaceGrey,
-                      minHeight: 3.5,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-
-                  // Tile 1: Paiement reçu ou Paiement en espèces
-                  Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: const BoxDecoration(
-                          color: AppColors.refundContainerBg,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          widget.paymentMethod == PaymentMethodType.cash
-                              ? Icons.payments_outlined
-                              : Icons.check_rounded,
-                          color: AppColors.refundGreen,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.paymentMethod == PaymentMethodType.cash
-                                  ? 'ride.payment_cash_due'.tr(args: [widget.rideOption.formattedPrice])
-                                  : 'ride.payment_received'.tr(args: [widget.rideOption.formattedPrice]),
-                              style: GoogleFonts.inter(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.paymentMethod == PaymentMethodType.cash
-                                  ? 'ride.pay_driver_on_arrival'.tr()
-                                  : 'ride.refund_guarantee'.tr(),
-                              style: GoogleFonts.inter(
-                                fontSize: 12.5,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Divider(height: 1, color: AppColors.cardBorder),
-                  ),
-
-                  // Tile 2: 6 chauffeurs Eco autour de vous
-                  Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: const BoxDecoration(
-                          color: AppColors.surfaceGrey,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: SvgPicture.asset(
-                          widget.rideOption.type == RideType.eco
-                              ? 'assets/icons/ecocar.svg'
-                              : 'assets/icons/confortcar.svg',
-                          width: 22,
-                          height: 22,
-                          colorFilter: const ColorFilter.mode(
-                            AppColors.textPrimary,
-                            BlendMode.srcIn,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _nearbyDriversCount != null
-                                  ? (_nearbyDriversCount! > 0
-                                      ? 'ride.drivers_around_count'.tr(args: ['$_nearbyDriversCount', rideTypeLabel])
-                                      : 'ride.searching_drivers_type'.tr(args: [rideTypeLabel]))
-                                  : 'ride.drivers_around_type'
-                                      .tr(args: [rideTypeLabel]),
-                              style: GoogleFonts.inter(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'ride.offer_closest_first'.tr(),
-                              style: GoogleFonts.inter(
-                                fontSize: 12.5,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Button: Annuler la course
-                  SizedBox(
-                    width: double.infinity,
-                    height: AppConstants.buttonHeight,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.cancelSecondaryBtnBg,
-                        foregroundColor: AppColors.textPrimary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusLg,
-                          ),
-                        ),
-                      ),
-                      onPressed: _onCancelRide,
-                      child: Text(
-                        'ride.cancel_ride'.tr(),
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                ],
+                ),
               ),
-            ),
-          ),
-        ],
+
+              // 5. Bouton flottant de caméra cyclique (Départ / Arrivée / Trajet complet)
+              Positioned(
+                right: 16,
+                bottom: currentSheetHeight + 14,
+                child: RideMapCameraToggleButton(
+                  mapControllerGetter: () => _mapController,
+                  departureLocation: LatLng(
+                    widget.departure.latitude,
+                    widget.departure.longitude,
+                  ),
+                  destinationLocation: LatLng(
+                    widget.destination.latitude,
+                    widget.destination.longitude,
+                  ),
+                  polylinePoints: _polylinePoints.isNotEmpty
+                      ? _polylinePoints
+                      : widget.polylinePoints,
+                  initialMode: RideMapCameraMode.departure,
+                  bottomPadding: currentSheetHeight + 20,
+                ),
+              ),
+
+              // 6. Bottom Sheet Modal glissant ("Recherche d'un chauffeur")
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  onVerticalDragUpdate: _onVerticalDragUpdate,
+                  onVerticalDragEnd: _onVerticalDragEnd,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(AppConstants.radiusSheet),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.shadowCardBlack,
+                          blurRadius: 24,
+                          offset: Offset(0, -6),
+                        ),
+                      ],
+                    ),
+                    padding: EdgeInsets.fromLTRB(
+                      AppConstants.spacingLg,
+                      10,
+                      AppConstants.spacingLg,
+                      systemBottom + AppConstants.spacingMd,
+                    ),
+                    child: Column(
+                      key: _bottomSheetKey,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Drag Handle
+                        GestureDetector(
+                          onTap: _toggleSheet,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Center(
+                              child: Container(
+                                width: AppConstants.circularIconContainerSize,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: AppColors.dragHandle,
+                                  borderRadius: BorderRadius.circular(
+                                    AppConstants.radiusXs,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Search Header (tap to toggle collapse / expand)
+                        GestureDetector(
+                          onTap: _toggleSheet,
+                          behavior: HitTestBehavior.opaque,
+                          child: isExpanded
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        _buildLiveSearchPill(),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            _buildVehicleImage(
+                                                width: 56, height: 38),
+                                            const SizedBox(width: 8),
+                                            _buildChevronButton(
+                                                isExpanded: true),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'ride.searching'.tr(),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w900,
+                                          color: AppColors.textPrimary,
+                                          letterSpacing: -0.5,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _buildProgressBar(),
+                                  ],
+                                )
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        _buildLiveSearchPill(compact: true),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'ride.searching'.tr(),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        _buildVehicleImage(
+                                            width: 44, height: 28),
+                                        const SizedBox(width: 8),
+                                        _buildChevronButton(
+                                            isExpanded: false),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    _buildProgressBar(),
+                                  ],
+                                ),
+                        ),
+
+                        // Expandable Content: Payment Info, Drivers Around & Cancel Button
+                        ClipRect(
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            heightFactor:
+                                _sheetAnimationController.value.clamp(0.0, 1.0),
+                            child: Opacity(
+                              opacity: _sheetAnimationController.value
+                                  .clamp(0.0, 1.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const SizedBox(height: 18),
+
+                                  // Tile 1: Paiement reçu ou Paiement en espèces
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: const BoxDecoration(
+                                          color: AppColors.refundContainerBg,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Icon(
+                                          widget.paymentMethod ==
+                                                  PaymentMethodType.cash
+                                              ? Icons.payments_outlined
+                                              : Icons.check_rounded,
+                                          color: AppColors.refundGreen,
+                                          size: 22,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              widget.paymentMethod ==
+                                                      PaymentMethodType.cash
+                                                  ? 'ride.payment_cash_due'.tr(
+                                                      args: [
+                                                          widget.rideOption
+                                                              .formattedPrice
+                                                        ])
+                                                  : 'ride.payment_received'.tr(
+                                                      args: [
+                                                          widget.rideOption
+                                                              .formattedPrice
+                                                        ]),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              widget.paymentMethod ==
+                                                      PaymentMethodType.cash
+                                                  ? 'ride.pay_driver_on_arrival'
+                                                      .tr()
+                                                  : 'ride.refund_guarantee'
+                                                      .tr(),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12.5,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 12),
+                                    child: Divider(
+                                        height: 1, color: AppColors.cardBorder),
+                                  ),
+
+                                  // Tile 2: X chauffeurs Eco autour de vous
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: const BoxDecoration(
+                                          color: AppColors.surfaceGrey,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: SvgPicture.asset(
+                                          widget.rideOption.type ==
+                                                  RideType.eco
+                                              ? 'assets/icons/ecocar.svg'
+                                              : 'assets/icons/confortcar.svg',
+                                          width: 22,
+                                          height: 22,
+                                          colorFilter: const ColorFilter.mode(
+                                            AppColors.textPrimary,
+                                            BlendMode.srcIn,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _nearbyDriversCount != null
+                                                  ? (_nearbyDriversCount! > 0
+                                                      ? 'ride.drivers_around_count'
+                                                          .tr(args: [
+                                                          '$_nearbyDriversCount',
+                                                          rideTypeLabel
+                                                        ])
+                                                      : 'ride.searching_drivers_type'
+                                                          .tr(args: [
+                                                          rideTypeLabel
+                                                        ]))
+                                                  : 'ride.drivers_around_type'
+                                                      .tr(args: [rideTypeLabel]),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'ride.offer_closest_first'.tr(),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12.5,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 20),
+
+                                  // Button: Annuler la course
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: AppConstants.buttonHeight,
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor:
+                                            AppColors.cancelSecondaryBtnBg,
+                                        foregroundColor: AppColors.textPrimary,
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            AppConstants.radiusLg,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: _onCancelRide,
+                                      child: Text(
+                                        'ride.cancel_ride'.tr(),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

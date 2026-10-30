@@ -50,6 +50,32 @@ enum PaymentMethodType {
         return 'assets/images/cfa.jpg';
     }
   }
+
+  /// Valeur normalisée conforme à l'API Swagger backend (POST /v1/rides)
+  /// "paymentMethod doit valoir ORANGE_MONEY, WAVE ou CASH"
+  String get apiValue {
+    switch (this) {
+      case PaymentMethodType.wave:
+        return 'WAVE';
+      case PaymentMethodType.orangeMoney:
+        return 'ORANGE_MONEY';
+      case PaymentMethodType.cash:
+        return 'CASH';
+    }
+  }
+
+  static PaymentMethodType fromApiValue(String? value) {
+    switch (value?.toUpperCase()) {
+      case 'WAVE':
+        return PaymentMethodType.wave;
+      case 'ORANGE_MONEY':
+      case 'OM':
+        return PaymentMethodType.orangeMoney;
+      case 'CASH':
+      default:
+        return PaymentMethodType.cash;
+    }
+  }
 }
 
 /// Modal de confirmation de paiement connecté à l'API de paiement :
@@ -132,9 +158,13 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
 
     final quoteId = widget.rideOption.quoteId;
     if (quoteId != null && quoteId.isNotEmpty) {
+      final apiPaymentMethod = widget.paymentMethod.apiValue;
       debugPrint(
-          '[PaymentModal] 🚀 POST /v1/rides avec quoteId: $quoteId (${widget.paymentMethod.name})');
-      final rideData = await _rideService.createRide(quoteId: quoteId);
+          '[PaymentModal] 🚀 POST /v1/rides avec quoteId: $quoteId (paymentMethod: $apiPaymentMethod)');
+      final rideData = await _rideService.createRide(
+        quoteId: quoteId,
+        paymentMethod: apiPaymentMethod,
+      );
 
       if (rideData != null) {
         final payment = rideData['payment'] as Map<String, dynamic>?;

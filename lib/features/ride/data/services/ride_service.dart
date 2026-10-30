@@ -95,16 +95,27 @@ class RideService {
   }
 
   /// POST /v1/rides
-  /// Commander : crée la course depuis un devis et lance le paiement Orange Money.
+  /// Commander : crée la course depuis un devis et lance le paiement.
+  /// paymentMethod doit valoir ORANGE_MONEY, WAVE ou CASH.
   /// Renvoie la course (PAYMENT_PENDING) avec payment.paymentUrl (app) et payment.payToken (Max it).
   Future<Map<String, dynamic>?> createRide({
     required String quoteId,
+    String paymentMethod = 'ORANGE_MONEY',
   }) async {
     try {
-      debugPrint('[RideService] 🚀 POST ${ApiEndpoints.rides} avec quoteId: $quoteId');
+      final normalizedMethod = switch (paymentMethod.toUpperCase()) {
+        'WAVE' => 'WAVE',
+        'CASH' => 'CASH',
+        _ => 'ORANGE_MONEY',
+      };
+      final body = {
+        'quoteId': quoteId,
+        'paymentMethod': normalizedMethod,
+      };
+      debugPrint('[RideService] 🚀 POST ${ApiEndpoints.rides} avec $body');
       final response = await _dio.post(
         ApiEndpoints.rides,
-        data: {'quoteId': quoteId},
+        data: body,
         options: Options(
           sendTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),

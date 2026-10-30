@@ -76,6 +76,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
   String? _zoneName;
 
   RideType _selectedRideType = RideType.eco;
+  PaymentMethodType _selectedPaymentMethod = PaymentMethodType.orangeMoney;
   late RideOptionModel _ecoOption;
   late RideOptionModel _confortOption;
   String? _pickupLandmark;
@@ -443,10 +444,11 @@ class _RideBookingPageState extends State<RideBookingPage> {
     // 1. Premier modal : Sélection du Mode de paiement (Wave, OM, Espèces)
     final chosenMethod = await SelectPaymentMethodSheet.show(
       context,
-      initialMethod: PaymentMethodType.cash,
+      initialMethod: _selectedPaymentMethod,
     );
 
     if (!mounted || chosenMethod == null) return;
+    setState(() => _selectedPaymentMethod = chosenMethod);
 
     // 2. Second modal : Confirmation du paiement connecté à l'API
     final result = await OrangeMoneyPaymentSheet.show(
