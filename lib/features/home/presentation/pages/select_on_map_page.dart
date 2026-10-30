@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/widgets/seddo_map_picker_pin.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
@@ -51,6 +52,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
   late LatLng _currentCenter;
   Timer? _geocodeDebounce;
   bool _isLoadingAddress = false;
+  bool _isMapMoving = false;
 
   String _addressTitle = '';
   String _addressSubtitle = '';
@@ -73,11 +75,24 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
     super.dispose();
   }
 
+  void _onCameraMoveStarted() {
+    if (!_isMapMoving) {
+      setState(() {
+        _isMapMoving = true;
+      });
+    }
+  }
+
   void _onCameraMove(CameraPosition position) {
     _currentCenter = position.target;
   }
 
   void _onCameraIdle() {
+    if (_isMapMoving) {
+      setState(() {
+        _isMapMoving = false;
+      });
+    }
     _geocodeDebounce?.cancel();
     _geocodeDebounce = Timer(const Duration(milliseconds: 350), () {
       _fetchAddressForLocation(_currentCenter);
@@ -191,6 +206,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
               _mapController = controller;
               MapStyleService.applyStyle(controller);
             },
+            onCameraMoveStarted: _onCameraMoveStarted,
             onCameraMove: _onCameraMove,
             onCameraIdle: _onCameraIdle,
             buildingsEnabled: false,
@@ -205,65 +221,22 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
             zoomGesturesEnabled: true,
           ),
 
-          // 2. Interactive Map Center Pin
-          // Anchored mathematically such that the center of the bottom orange square
-          // aligns with the exact center of the map.
+          // 2. Interactive Map Center Pin avec effet qui sautille au déplacement et à l'arrêt
           Center(
-            child: Transform.translate(
-              offset: const Offset(0, -21),
-              child: IgnorePointer(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Black pill bubble with label
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.mapPinAnchor,
-                        borderRadius: BorderRadius.circular(AppConstants.radiusItem),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: AppColors.shadowHeavy,
-                            blurRadius: 8,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        widget.isArrival
-                            ? 'select_on_map.arrival_here'.tr()
-                            : 'select_on_map.departure_here'.tr(),
-                        style: GoogleFonts.inter(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.white,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 2),
-
-                    // Modern Location Pin Icon: Flag for arrival, passenger hail silhouette for departure
-                    widget.isArrival
-                        ? SvgPicture.asset(
-                            'assets/icons/flag-svgrepo-com.svg',
-                            width: 32,
-                            height: 32,
-                            colorFilter: const ColorFilter.mode(
-                              AppColors.primary,
-                              BlendMode.srcIn,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.hail_rounded,
-                            size: 34,
-                            color: AppColors.textPrimary,
-                          ),
-                  ],
+            child: IgnorePointer(
+              child: SeddoMapPickerPin(
+                isMoving: _isMapMoving,
+                label: widget.isArrival
+                    ? 'select_on_map.arrival_here'.tr()
+                    : 'select_on_map.departure_here'.tr(),
+                customPinIcon: SvgPicture.asset(
+                  'assets/icons/location-pin-svgrepo-com.svg',
+                  width: 44,
+                  height: 44,
+                  colorFilter: const ColorFilter.mode(
+                    AppColors.primary,
+                    BlendMode.srcIn,
+                  ),
                 ),
               ),
             ),

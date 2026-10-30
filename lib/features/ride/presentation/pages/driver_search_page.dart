@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -21,12 +24,13 @@ import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sh
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/no_driver_found_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/services/route_service.dart';
 
 /// Screen displayed while searching for nearby drivers:
-/// - Map with pickup marker, true pulsating radar waves, real nearby cars from GET /v1/drivers/nearby
+/// - Interactive map with pickup marker, silky smooth GPU-rendered radar waves, real nearby cars
 /// - Bottom sheet:
 ///   - "Recherche d'un chauffeur" + animated progress bar
 ///   - "Paiement reçu · [Price] F" / "Remboursé si aucun chauffeur n'accepte"
@@ -68,6 +72,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   Timer? _nearbyPollTimer;
   Timer? _rideStatusPollTimer;
   late AnimationController _radarController;
+  late CameraPosition _currentCameraPosition;
+  final ValueNotifier<Offset?> _departureScreenOffsetNotifier =
+      ValueNotifier<Offset?>(null);
 
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
   StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
@@ -88,23 +95,33 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     super.initState();
     _rideService = widget.rideService ?? RideService();
 
+    _currentCameraPosition = CameraPosition(
+      target: LatLng(
+        widget.departure.latitude,
+        widget.departure.longitude,
+      ),
+      zoom: 17.2,
+    );
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureBottomSheet();
     });
 
-    // True pulsating radar waves expanding outward continuously
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+    // True pulsating radar waves expanding outward continuously via GPU overlay
     _radarController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
-    )..addListener(() {
-        if (mounted) setState(() {});
-      })..repeat();
+    );
+    if (!isTest) {
+      _radarController.repeat();
+    }
 
     _loadCustomMarkers();
     _loadNearbyDrivers();
 
-    final bool isTest =
-        WidgetsBinding.instance.runtimeType.toString().contains('Test');
     final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
 
     if (shouldAutoMatch) {
@@ -201,6 +218,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     _autoMatchTimer?.cancel();
     _nearbyPollTimer?.cancel();
     _rideStatusPollTimer?.cancel();
+    _departureScreenOffsetNotifier.dispose();
     _radarController.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -215,6 +233,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         setState(() {
           _bottomSheetHeight = h;
         });
+        _updateDepartureScreenOffset(_currentCameraPosition);
       }
     }
   }
@@ -417,56 +436,69 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     }
   }
 
-  Set<Circle> _buildRadarCircles() {
-    final center = LatLng(
-      widget.departure.latitude,
-      widget.departure.longitude,
+  static Offset _getDepartureScreenPosition({
+    required LatLng departure,
+    required CameraPosition cameraPosition,
+    required Size screenSize,
+    required double bottomPadding,
+  }) {
+    final double centerX = screenSize.width / 2.0;
+    final double centerY = (screenSize.height - bottomPadding) / 2.0;
+    final double scale = 256.0 * math.pow(2.0, cameraPosition.zoom);
+
+    double xWorld(double lng) => (lng + 180.0) / 360.0 * scale;
+
+    double yWorld(double lat) {
+      final double sinLat =
+          math.sin(lat * math.pi / 180.0).clamp(-0.9999, 0.9999);
+      return (0.5 -
+              math.log((1.0 + sinLat) / (1.0 - sinLat)) / (4.0 * math.pi)) *
+          scale;
+    }
+
+    final double dx = xWorld(departure.longitude) -
+        xWorld(cameraPosition.target.longitude);
+    final double dy =
+        yWorld(departure.latitude) - yWorld(cameraPosition.target.latitude);
+
+    if (cameraPosition.bearing != 0.0) {
+      final double rad = -cameraPosition.bearing * math.pi / 180.0;
+      final double cosB = math.cos(rad);
+      final double sinB = math.sin(rad);
+      final double rotX = dx * cosB - dy * sinB;
+      final double rotY = dx * sinB + dy * cosB;
+      return Offset(centerX + rotX, centerY + rotY);
+    }
+
+    return Offset(centerX + dx, centerY + dy);
+  }
+
+  void _updateDepartureScreenOffset(CameraPosition position) {
+    if (!mounted) return;
+    _currentCameraPosition = position;
+    final size = MediaQuery.sizeOf(context);
+    final offset = _getDepartureScreenPosition(
+      departure: LatLng(widget.departure.latitude, widget.departure.longitude),
+      cameraPosition: position,
+      screenSize: size,
+      bottomPadding: _bottomSheetHeight,
     );
+    _departureScreenOffsetNotifier.value = offset;
+  }
 
-    final t1 = _radarController.value;
-    final t2 = (t1 + 0.5) % 1.0;
-
-    final progress1 = Curves.easeOut.transform(t1);
-    final progress2 = Curves.easeOut.transform(t2);
-
-    final radius1 = 15.0 + (progress1 * 125.0);
-    final alpha1 = (1.0 - progress1) * 0.35;
-
-    final radius2 = 15.0 + (progress2 * 125.0);
-    final alpha2 = (1.0 - progress2) * 0.35;
-
-    return {
-      // Core glowing anchor at departure
-      Circle(
-        circleId: const CircleId('radar_core'),
-        center: center,
-        radius: 10.0,
-        fillColor: AppColors.primary.withValues(alpha: 0.40),
-        strokeColor: AppColors.primary,
-        strokeWidth: 2,
-        zIndex: 3,
-      ),
-      // Pulsatile Wave 1
-      Circle(
-        circleId: const CircleId('radar_pulse_1'),
-        center: center,
-        radius: radius1,
-        fillColor: AppColors.primary.withValues(alpha: alpha1),
-        strokeColor: AppColors.primary.withValues(alpha: alpha1 * 1.8),
-        strokeWidth: 2,
-        zIndex: 1,
-      ),
-      // Pulsatile Wave 2
-      Circle(
-        circleId: const CircleId('radar_pulse_2'),
-        center: center,
-        radius: radius2,
-        fillColor: AppColors.primary.withValues(alpha: alpha2),
-        strokeColor: AppColors.primary.withValues(alpha: alpha2 * 1.8),
-        strokeWidth: 2,
-        zIndex: 2,
-      ),
-    };
+  Future<void> _syncDepartureScreenOffsetFromController() async {
+    if (_mapController == null || !mounted) return;
+    try {
+      final screenCoord = await _mapController!.getScreenCoordinate(
+        LatLng(widget.departure.latitude, widget.departure.longitude),
+      );
+      if (!mounted) return;
+      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+      _departureScreenOffsetNotifier.value = Offset(
+        screenCoord.x / pixelRatio,
+        screenCoord.y / pixelRatio,
+      );
+    } catch (_) {}
   }
 
   Set<Marker> _buildMarkers() {
@@ -562,50 +594,72 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Google Map en gros plan (zoom 17.2) verrouillé sur le point de départ
-          IgnorePointer(
-            ignoring: true,
-            child: GoogleMap(
-              style: MapStyleService.style,
-              initialCameraPosition: CameraPosition(
-                target: LatLng(
-                  widget.departure.latitude,
-                  widget.departure.longitude,
-                ),
-                zoom: 17.2,
+          // 1. Google Map interactif (pan & zoom libres)
+          GoogleMap(
+            style: MapStyleService.style,
+            initialCameraPosition: _currentCameraPosition,
+            padding: EdgeInsets.only(bottom: _bottomSheetHeight),
+            buildingsEnabled: false,
+            onMapCreated: (ctrl) {
+              _mapController = ctrl;
+              MapStyleService.applyStyle(ctrl);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _syncDepartureScreenOffsetFromController();
+              });
+            },
+            onCameraMove: (position) {
+              _updateDepartureScreenOffset(position);
+            },
+            onCameraIdle: () {
+              _syncDepartureScreenOffsetFromController();
+            },
+            markers: _buildMarkers(),
+            polylines: _buildPolylines(),
+            scrollGesturesEnabled: true,
+            zoomGesturesEnabled: true,
+            rotateGesturesEnabled: true,
+            tiltGesturesEnabled: false,
+            myLocationEnabled: false,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            compassEnabled: false,
+            mapToolbarEnabled: false,
+            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+              Factory<OneSequenceGestureRecognizer>(
+                () => EagerGestureRecognizer(),
               ),
-              buildingsEnabled: false,
-              onMapCreated: (ctrl) {
-                _mapController = ctrl;
-                MapStyleService.applyStyle(ctrl);
-                ctrl.moveCamera(
-                  CameraUpdate.newCameraPosition(
-                    CameraPosition(
-                      target: LatLng(
-                        widget.departure.latitude,
-                        widget.departure.longitude,
-                      ),
-                      zoom: 17.2,
-                    ),
-                  ),
-                );
-              },
-              circles: _buildRadarCircles(),
-              markers: _buildMarkers(),
-              polylines: _buildPolylines(),
-              scrollGesturesEnabled: false,
-              zoomGesturesEnabled: false,
-              rotateGesturesEnabled: false,
-              tiltGesturesEnabled: false,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              compassEnabled: false,
-              mapToolbarEnabled: false,
-            ),
+            },
           ),
 
-          // 2. Indicateur discret de reconnexion WebSocket (PDF page 7)
+          // 2. Ondes radar pulsantes ultra-fluides centrées sur le point de départ
+          ValueListenableBuilder<Offset?>(
+            valueListenable: _departureScreenOffsetNotifier,
+            builder: (context, departureOffset, _) {
+              final size = MediaQuery.sizeOf(context);
+              final effectiveOffset = departureOffset ??
+                  Offset(
+                    size.width / 2.0,
+                    (size.height - _bottomSheetHeight) / 2.0,
+                  );
+              return IgnorePointer(
+                ignoring: true,
+                child: AnimatedBuilder(
+                  animation: _radarController,
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _RadarWavePainter(
+                        progress: _radarController.value,
+                        center: effectiveOffset,
+                      ),
+                      size: Size.infinite,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+
+          // 3. Indicateur discret de reconnexion WebSocket (PDF page 7)
           const SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
@@ -613,7 +667,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             ),
           ),
 
-          // 3. Floating Top Back Button
+          // 4. Floating Top Back Button
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -643,6 +697,26 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
+            ),
+          ),
+
+          // 5. Bouton flottant de caméra cyclique (Départ / Arrivée / Trajet complet)
+          Positioned(
+            right: 16,
+            bottom: _bottomSheetHeight + 14,
+            child: RideMapCameraToggleButton(
+              mapControllerGetter: () => _mapController,
+              departureLocation: LatLng(
+                widget.departure.latitude,
+                widget.departure.longitude,
+              ),
+              destinationLocation: LatLng(
+                widget.destination.latitude,
+                widget.destination.longitude,
+              ),
+              polylinePoints: widget.polylinePoints,
+              initialMode: RideMapCameraMode.departure,
+              bottomPadding: _bottomSheetHeight + 20,
             ),
           ),
 
@@ -906,5 +980,63 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         ],
       ),
     );
+  }
+}
+
+/// Peintre personnalisé haute performance pour l'onde radar pulsatile.
+/// Rendu GPU natif Flutter (Impeller/Skia) à 60/120 FPS sans recharger la carte.
+class _RadarWavePainter extends CustomPainter {
+  final double progress;
+  final Offset center;
+
+  _RadarWavePainter({
+    required this.progress,
+    required this.center,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (center.dx < -200 ||
+        center.dx > size.width + 200 ||
+        center.dy < -200 ||
+        center.dy > size.height + 200) {
+      return;
+    }
+
+    // 1. Halo lumineux central
+    final corePaint = Paint()
+      ..color = AppColors.primary.withValues(alpha: 0.35)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 12.0, corePaint);
+
+    final coreDot = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(center, 4.0, coreDot);
+
+    // 2. Trois ondes concentriques en expansion continue
+    const int waveCount = 3;
+    for (int i = 0; i < waveCount; i++) {
+      final waveProgress = (progress + (i / waveCount)) % 1.0;
+      final curved = Curves.easeOutCubic.transform(waveProgress);
+      final radius = 14.0 + (curved * 125.0);
+      final alpha = (1.0 - curved) * 0.38;
+
+      final fillPaint = Paint()
+        ..color = AppColors.primary.withValues(alpha: alpha * 0.22)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(center, radius, fillPaint);
+
+      final strokePaint = Paint()
+        ..color = AppColors.primary.withValues(alpha: alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawCircle(center, radius, strokePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarWavePainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.center != center;
   }
 }

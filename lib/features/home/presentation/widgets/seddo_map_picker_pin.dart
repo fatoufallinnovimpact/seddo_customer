@@ -1,22 +1,28 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 
 /// Marqueur de sélection sur la carte inspiré du design Yango
 /// adapté aux couleurs et à l'identité visuelle de Seddo :
-/// - Squircle orange Seddo avec silhouette passager / point de départ
-/// - Tige verticale fine sombre
+/// - Icône personnalisable (ex: location-pin vectoriel orange) ou squircle orange par défaut
+/// - Tige verticale fine sombre ou pointe vectorielle
 /// - Ombre au sol dynamique
 /// - Animation de lévitation / flottement doux pendant le déplacement
 /// - Animation d'atterrissage avec petit rebond (jump) à l'arrêt sur une adresse
 class SeddoMapPickerPin extends StatefulWidget {
   final bool isMoving;
   final String? label;
+  final Widget? customPinIcon;
+  final double? yAnchorOffset;
 
   const SeddoMapPickerPin({
     super.key,
     required this.isMoving,
     this.label,
+    this.customPinIcon,
+    this.yAnchorOffset,
   });
 
   @override
@@ -110,6 +116,13 @@ class _SeddoMapPickerPinState extends State<SeddoMapPickerPin>
         final shadowScale = math.max(0.45, 1.0 - (liftValue * 0.45));
         final shadowOpacity = math.max(0.18, 0.45 - (liftValue * 0.25));
 
+        final double anchor = widget.yAnchorOffset ??
+            (widget.customPinIcon != null
+                ? (widget.label != null && widget.label!.isNotEmpty
+                    ? 36.0
+                    : 22.0)
+                : 33.0);
+
         return Stack(
           alignment: Alignment.center,
           clipBehavior: Clip.none,
@@ -137,58 +150,92 @@ class _SeddoMapPickerPinState extends State<SeddoMapPickerPin>
               ),
             ),
 
-            // 2. Marqueur surélevé (Tige + Badge orange)
+            // 2. Marqueur surélevé (Tige + Badge ou customPinIcon)
             Transform.translate(
-              // Le bas de la tige est calé précisément au niveau de l'ombre au sol (0,0)
-              offset: Offset(0, totalYOffset - 33),
+              // Le bas de la pointe est calé précisément au niveau de l'ombre au sol (0,0)
+              offset: Offset(0, totalYOffset - anchor),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Badge orange arrondi
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          AppColors.primary,
-                          AppColors.mapPickerPinOrange,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  if (widget.label != null && widget.label!.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
                       ),
-                      borderRadius: BorderRadius.circular(15),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.38),
-                          blurRadius: 12,
-                          offset: const Offset(0, 5),
+                      decoration: BoxDecoration(
+                        color: AppColors.mapPinAnchor,
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.radiusItem),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: AppColors.shadowHeavy,
+                            blurRadius: 8,
+                            offset: Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        widget.label!,
+                        style: GoogleFonts.inter(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.white,
+                          letterSpacing: -0.2,
                         ),
-                        const BoxShadow(
-                          color: AppColors.shadowCardBlack,
-                          blurRadius: 6,
-                          offset: Offset(0, 2),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                  ],
+                  if (widget.customPinIcon != null)
+                    widget.customPinIcon!
+                  else ...[
+                    // Badge orange arrondi
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            AppColors.mapPickerPinOrange,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                      ],
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.38),
+                            blurRadius: 12,
+                            offset: const Offset(0, 5),
+                          ),
+                          const BoxShadow(
+                            color: AppColors.shadowCardBlack,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.hail_rounded,
+                        color: AppColors.white,
+                        size: 27,
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.hail_rounded,
-                      color: AppColors.white,
-                      size: 27,
-                    ),
-                  ),
 
-                  // Tige verticale noire fine
-                  Container(
-                    width: 3.0,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: AppColors.markerIconBlack,
-                      borderRadius: BorderRadius.circular(1.5),
+                    // Tige verticale noire fine
+                    Container(
+                      width: 3.0,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: AppColors.markerIconBlack,
+                        borderRadius: BorderRadius.circular(1.5),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
