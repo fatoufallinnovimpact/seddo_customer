@@ -1,6 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
@@ -11,6 +12,8 @@ import 'package:seddo/features/activity/domain/bloc/activity_bloc.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_event.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_state.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
+import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/services/map_style_service.dart';
 
 export 'package:seddo/features/activity/domain/bloc/activity_event.dart'
     show ActivityTab;
@@ -68,11 +71,25 @@ class _ActivityPageView extends StatefulWidget {
 
 class _ActivityPageViewState extends State<_ActivityPageView> {
   final ScrollController _scrollController = ScrollController();
+  BitmapDescriptor? _originMarkerIcon;
+  BitmapDescriptor? _destMarkerIcon;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _loadCustomMarkers();
+  }
+
+  Future<void> _loadCustomMarkers() async {
+    final origin = await MapMarkerHelper.getDeparturePinMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
+    if (mounted) {
+      setState(() {
+        _originMarkerIcon = origin;
+        _destMarkerIcon = dest;
+      });
+    }
   }
 
   @override
@@ -519,6 +536,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                     // Embedded Map with route polyline
                     IgnorePointer(
                       child: GoogleMap(
+                        style: MapStyleService.style,
                         initialCameraPosition: CameraPosition(
                           target: LatLng(
                             (ride.departure.latitude +
@@ -530,6 +548,8 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                           ),
                           zoom: 12.8,
                         ),
+                        buildingsEnabled: false,
+                        onMapCreated: MapStyleService.applyStyle,
                         polylines: {
                           Polyline(
                             polylineId: const PolylineId('recent_preview_line'),
@@ -545,9 +565,11 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                               ride.departure.latitude,
                               ride.departure.longitude,
                             ),
-                            icon: BitmapDescriptor.defaultMarkerWithHue(
-                              BitmapDescriptor.hueOrange,
-                            ),
+                            icon: _originMarkerIcon ??
+                                BitmapDescriptor.defaultMarkerWithHue(
+                                  BitmapDescriptor.hueOrange,
+                                ),
+                            anchor: const Offset(0.5, 1.0),
                           ),
                           Marker(
                             markerId: const MarkerId('preview_destination'),
@@ -555,9 +577,11 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                               ride.destination.latitude,
                               ride.destination.longitude,
                             ),
-                            icon: BitmapDescriptor.defaultMarkerWithHue(
-                              BitmapDescriptor.hueAzure,
-                            ),
+                            icon: _destMarkerIcon ??
+                                BitmapDescriptor.defaultMarkerWithHue(
+                                  BitmapDescriptor.hueAzure,
+                                ),
+                            anchor: const Offset(0.5, 1.0),
                           ),
                         },
                         zoomControlsEnabled: false,
@@ -626,6 +650,57 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                               color: AppColors.slateDark,
                               letterSpacing: -0.3,
                             ),
+                          ),
+                          const SizedBox(height: AppConstants.spacingXs),
+                          // Route summary: Departure (silhouette) -> Destination (flag)
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.hail_rounded,
+                                size: AppConstants.iconSizeSm,
+                                color: AppColors.textPrimary,
+                              ),
+                              const SizedBox(width: AppConstants.spacingXxs),
+                              Flexible(
+                                child: Text(
+                                  ride.departure.mainText,
+                                  style: GoogleFonts.inter(
+                                    fontSize: AppConstants.fontXs,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: AppConstants.spacingXs),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 11,
+                                color: AppColors.textSecondary,
+                              ),
+                              const SizedBox(width: AppConstants.spacingXs),
+                              SvgPicture.asset(
+                                'assets/icons/flag-svgrepo-com.svg',
+                                width: AppConstants.iconSizeSm,
+                                height: AppConstants.iconSizeSm,
+                                colorFilter: const ColorFilter.mode(
+                                  AppColors.primary,
+                                  BlendMode.srcIn,
+                                ),
+                              ),
+                              const SizedBox(width: AppConstants.spacingXxs),
+                              Flexible(
+                                child: Text(
+                                  ride.destination.mainText,
+                                  style: GoogleFonts.inter(
+                                    fontSize: AppConstants.fontXs,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.slateDark,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: AppConstants.spacingXs),
                           Row(

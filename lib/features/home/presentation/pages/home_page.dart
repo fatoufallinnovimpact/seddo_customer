@@ -1,26 +1,34 @@
 import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import 'package:seddo/features/home/data/models/home_suggestions_model.dart';
 import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/home/domain/bloc/home_event.dart';
 import 'package:seddo/features/home/domain/bloc/home_state.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/edit_user_position_page.dart';
+import 'package:seddo/features/home/presentation/pages/pickup_map_location_picker_page.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
-import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
-import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
+import 'package:seddo/features/home/presentation/widgets/seddo_share_position_sheet.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
+import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
+import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
+import 'package:seddo/services/realtime_service.dart';
 
 /// Main Home Screen of Seddo:
 /// - Top Bar: SEDDO logo on left + real user street address beneath it (tapping opens "VOTRE POSITION" modal),
@@ -49,15 +57,12 @@ class _HomePageContent extends StatefulWidget {
 }
 
 class _HomePageContentState extends State<_HomePageContent> {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final RideService _rideService = RideService();
   final PlacesService _placesService = PlacesService();
-  late final PageController _pageController;
 
-  int _selectedCardIndex = 0;
   Timer? _nearbyDriversPollTimer;
+  StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
 
-  NearbyDriversResponseModel? _nearbyDrivers;
   LatLng? _lastNearbyFetchPos;
   HomeSuggestionsModel? _suggestions;
   List<RecentSuggestionModel> _localRecentTrips = [];
@@ -65,11 +70,20 @@ class _HomePageContentState extends State<_HomePageContent> {
   String _currentAddressShort = 'Rue YF-557, 20';
   String _currentAddressDetails = 'Yoff, Almadies, Département de Dakar';
   LatLng? _currentUserLocation;
+  GoogleMapController? _miniMapController;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(viewportFraction: 0.88);
+
+    // Connexion WebSocket sur l'accueil pour recevoir les chauffeurs proches (PDF Seddo page 7)
+    RealtimeService().connect();
+
+    _realtimeNearbySub = RealtimeService().nearbyDriversStream.listen((cars) {
+      if (mounted && cars.isNotEmpty) {
+        // Chauffeurs proches reçus en temps réel sans requête GET
+      }
+    });
 
     // Initialisation après le montage du widget
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -83,11 +97,11 @@ class _HomePageContentState extends State<_HomePageContent> {
       }
     });
 
-    // Rafraîchissement périodique des chauffeurs à proximité (toutes les 10s)
+    // Rafraîchissement périodique passif de secours (uniquement si WebSocket non connecté)
     _nearbyDriversPollTimer = Timer.periodic(
-      const Duration(seconds: 10),
+      const Duration(seconds: 15),
       (_) {
-        if (mounted) {
+        if (mounted && !RealtimeService().isConnected) {
           final bloc = context.read<HomeBloc>();
           _fetchNearbyDrivers(_lastNearbyFetchPos ?? bloc.state.userLocation);
         }
@@ -97,8 +111,9 @@ class _HomePageContentState extends State<_HomePageContent> {
 
   @override
   void dispose() {
+    _realtimeNearbySub?.cancel();
     _nearbyDriversPollTimer?.cancel();
-    _pageController.dispose();
+    _miniMapController = null;
     super.dispose();
   }
 
@@ -159,26 +174,16 @@ class _HomePageContentState extends State<_HomePageContent> {
           }
           _currentUserLocation = location;
         });
+        _miniMapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: location,
+              zoom: AppConstants.userPositionMapZoom,
+            ),
+          ),
+        );
       }
     } catch (_) {}
-  }
-
-  /// Ouvre le modal "VOTRE POSITION" au clic sur le logo Seddo ou l'adresse
-  Future<void> _openUserPositionModal(BuildContext context) async {
-    final state = context.read<HomeBloc>().state;
-    final loc = _currentUserLocation ?? state.userLocation;
-
-    final result = await UserPositionBottomSheet.show(
-      context,
-      userLocation: loc,
-      mainAddress: _currentAddressShort,
-      secondaryAddress: _currentAddressDetails,
-      placesService: _placesService,
-    );
-
-    if (result != null && mounted) {
-      _applyNewUserPosition(result);
-    }
   }
 
   /// Applique la nouvelle position sélectionnée depuis la carte plein écran ou la recherche
@@ -196,6 +201,15 @@ class _HomePageContentState extends State<_HomePageContent> {
       _currentAddressDetails = details;
       _currentUserLocation = newLoc;
     });
+
+    _miniMapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: newLoc,
+          zoom: AppConstants.userPositionMapZoom,
+        ),
+      ),
+    );
 
     final bloc = context.read<HomeBloc>();
     bloc.add(HomeUserLocationUpdatedEvent(newLoc));
@@ -225,7 +239,6 @@ class _HomePageContentState extends State<_HomePageContent> {
       );
       if (res != null && mounted) {
         setState(() {
-          _nearbyDrivers = res;
           _lastNearbyFetchPos = location;
         });
       }
@@ -291,20 +304,11 @@ class _HomePageContentState extends State<_HomePageContent> {
     );
   }
 
-  void _openPublicTransport(BuildContext context) {
-    Navigator.of(context).push(
-      SlideRightToLeftRoute(
-        page: const PublicTransportPage(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final _ = context.locale;
 
     return Scaffold(
-      key: _scaffoldKey,
       endDrawer: const SeddoDrawerWidget(),
       endDrawerEnableOpenDragGesture: true,
       backgroundColor: Colors.white,
@@ -319,42 +323,32 @@ class _HomePageContentState extends State<_HomePageContent> {
         },
         builder: (context, state) {
           return SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // 1. Top bar aérée : Logo SEDDO à gauche + vraie adresse en dessous, menu burger à droite
-                          _buildTopBar(context),
-                          const SizedBox(height: 12),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: AppConstants.spacingTwenty),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Top bar aérée : Logo SEDDO à gauche, menu burger à droite
+                  _buildTopBar(context),
+                  const SizedBox(height: AppConstants.spacingUnitLg),
 
-                          // 2. Search card aérée : "Où allez-vous ?"
-                          _buildSearchBar(context),
-                          const SizedBox(height: 20),
+                  // 2. Search card aérée : "Où allez-vous ?"
+                  _buildSearchBar(context),
+                  const SizedBox(height: AppConstants.spacingUnitLg),
 
-                          // 3. Suggestions section : 2 cartes de trajets récents en base
-                          _buildSuggestionsSection(context),
+                  // 3. Suggestions section : trajets récents listés par ligne
+                  _buildSuggestionsSection(context),
+                  const SizedBox(height: AppConstants.spacingMd),
 
-                          // 4. Espace dynamique : pousse les cartes d'offres tout en bas de la page
-                          const Spacer(),
-                          const SizedBox(height: 16),
+                  // 4. Bannière Transports Urbains (TCU) : Voyagez en toute simplicité
+                  _buildTcuBanner(context),
+                  const SizedBox(height: AppConstants.spacingMd),
 
-                          // 5. Offer cards carousel : Seddo Eco, Seddo Confort, BRT / TCU
-                          _buildOfferCardsSection(context),
-                          const SizedBox(height: 18),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
+                  // 5. Carte de la position actuelle avec mini-carte, bouton "Modifier" et bouton "Partager"
+                  _buildCurrentLocationCard(context, state),
+                ],
+              ),
             ),
           );
         },
@@ -362,82 +356,39 @@ class _HomePageContentState extends State<_HomePageContent> {
     );
   }
 
-  // Top Bar aérée : SEDDO Logo + Adresse de la rue (cliquables) + Burger Menu
+  // Top Bar aérée : SEDDO Logo + Burger Menu
   Widget _buildTopBar(BuildContext context) {
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
+      color: AppColors.white,
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spacingTwenty,
+        AppConstants.spacingUnitXl,
+        AppConstants.spacingTwenty,
+        AppConstants.spacingSm,
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Logo SEDDO + Vraie adresse cliquable (ouvre le modal Votre position)
-          GestureDetector(
+          // Logo SEDDO seul (statique, pas d'ouverture de modal)
+          Text(
+            'SEDDO',
             key: const ValueKey('seddo_logo_and_location_header'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _openUserPositionModal(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Logo SEDDO (style affirmé inspiré de Yango aux couleurs Seddo)
-                Text(
-                  'SEDDO',
-                  style: GoogleFonts.inter(
-                    fontSize: 27,
-                    fontWeight: FontWeight.w900,
-                    fontStyle: FontStyle.italic,
-                    color: AppColors.primary,
-                    letterSpacing: -0.6,
-                  ),
-                ),
-                const SizedBox(height: 5),
-
-                // Vraie localisation de la personne : "Rue YF-557, 20 ›"
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width * 0.65,
-                      ),
-                      child: Text(
-                        _currentAddressShort,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Container(
-                      width: 17,
-                      height: 17,
-                      decoration: const BoxDecoration(
-                        color: AppColors.textPrimary,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.chevron_right_rounded,
-                        color: Colors.white,
-                        size: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.fontTitleLarge,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+              color: AppColors.primary,
+              letterSpacing: AppConstants.titleLetterSpacing,
             ),
           ),
 
-          // Menu burger à droite
-          _buildTopCircleButton(
-            icon: Icons.menu_rounded,
-            onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
+          // Menu burger à droite (ouvre le drawer sans GlobalKey)
+          Builder(
+            builder: (scaffoldContext) => _buildTopCircleButton(
+              icon: Icons.menu_rounded,
+              onTap: () => Scaffold.of(scaffoldContext).openEndDrawer(),
+            ),
           ),
         ],
       ),
@@ -451,14 +402,14 @@ class _HomePageContentState extends State<_HomePageContent> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 48,
-        height: 48,
+        width: AppConstants.circularPickerSize,
+        height: AppConstants.circularPickerSize,
         decoration: const BoxDecoration(
-          color: Colors.white,
+          color: AppColors.white,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Color(0x18000000),
+              color: AppColors.shadowCardBlack,
               blurRadius: 10,
               offset: Offset(0, 3),
             ),
@@ -466,8 +417,8 @@ class _HomePageContentState extends State<_HomePageContent> {
         ),
         child: Icon(
           icon,
-          color: const Color(0xFF18181A),
-          size: 24,
+          color: AppColors.textPrimary,
+          size: AppConstants.iconSizeLg,
         ),
       ),
     );
@@ -475,64 +426,37 @@ class _HomePageContentState extends State<_HomePageContent> {
 
   // Barre de recherche aérée "Où allez-vous ?"
   Widget _buildSearchBar(BuildContext context) {
-    final bool isTcu = _selectedCardIndex == 2;
-    final String placeholder =
-        isTcu ? 'Où allez-vous en commun ?' : 'Où allez-vous ?';
-    final Color buttonColor =
-        isTcu ? const Color(0xFF2E57C7) : const Color(0xFFFF5700);
-
     return GestureDetector(
-      onTap: () {
-        if (isTcu) {
-          _openPublicTransport(context);
-        } else {
-          _openDestinationSearch(context);
-        }
-      },
+      onTap: () => _openDestinationSearch(context),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        padding: const EdgeInsets.fromLTRB(16, 7, 7, 7),
+        margin: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.spacingMd,
+          vertical: AppConstants.spacingUnitXl,
+        ),
         decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(20),
+          color: AppColors.grayBgLight,
+          borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
           border: Border.all(
-            color: const Color(0xFFE5E7EB),
-            width: 1.2,
+            color: AppColors.grayBorderDivider,
+            width: AppConstants.strokeWidthBorder,
           ),
         ),
         child: Row(
           children: [
             const Icon(
               Icons.search_rounded,
-              size: 24,
-              color: Color(0xFF18181A),
+              size: AppConstants.iconSizeLg,
+              color: AppColors.textPrimary,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppConstants.spacingUnitLg),
             Expanded(
               child: Text(
-                placeholder,
+                'home.where_to'.tr(),
                 style: GoogleFonts.inter(
-                  fontSize: 15.5,
+                  fontSize: AppConstants.fontLg,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF9CA3AF),
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-            Container(
-              height: 42,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: buttonColor,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                'Aller',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: AppColors.textSecondary,
                   letterSpacing: -0.2,
                 ),
               ),
@@ -543,7 +467,7 @@ class _HomePageContentState extends State<_HomePageContent> {
     );
   }
 
-  // Section Suggestions avec 2 cartes de trajets récents depuis la base
+  // Section Suggestions : trajets récents listés par ligne (sans container carte)
   Widget _buildSuggestionsSection(BuildContext context) {
     final List<RecentSuggestionModel> recents = [];
 
@@ -559,7 +483,7 @@ class _HomePageContentState extends State<_HomePageContent> {
       }
     }
 
-    // Assurer au moins 2 cartes de trajets récents (Dakar)
+    // Assurer au moins 2 trajets récents (Dakar)
     final defaultRecents = [
       const RecentSuggestionModel(
         id: 'rec_sea_plaza',
@@ -597,7 +521,7 @@ class _HomePageContentState extends State<_HomePageContent> {
         placesList.isNotEmpty ? placesList.first : null;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -608,10 +532,10 @@ class _HomePageContentState extends State<_HomePageContent> {
                 child: Text(
                   'home.suggestions'.tr(),
                   style: GoogleFonts.inter(
-                    fontSize: 15.5,
+                    fontSize: AppConstants.fontBase,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF18181A),
-                    letterSpacing: -0.3,
+                    color: AppColors.textPrimary,
+                    letterSpacing: AppConstants.userPositionLetterSpacingTight,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -627,9 +551,9 @@ class _HomePageContentState extends State<_HomePageContent> {
                     );
                   },
                   child: Text(
-                    'Voir tout',
+                    'home.see_all'.tr(),
                     style: GoogleFonts.inter(
-                      fontSize: 12.5,
+                      fontSize: AppConstants.fontSm,
                       fontWeight: FontWeight.w700,
                       color: AppColors.primary,
                     ),
@@ -637,21 +561,22 @@ class _HomePageContentState extends State<_HomePageContent> {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppConstants.spacingSm),
 
-          // 2 cartes pour les trajets récents
-          ...displayRecents.map((item) => _buildRecentTripCard(
-                context: context,
-                item: item,
-              )),
+          // Trajets récents listés par ligne avec index unique garanti
+          for (int i = 0; i < displayRecents.length; i++)
+            _buildRecentTripCard(
+              context: context,
+              item: displayRecents[i],
+              index: i,
+            ),
 
           // Lieu enregistré si disponible
-          if (savedItem != null) ...[
+          if (savedItem != null)
             _buildSavedPlaceCard(
               context: context,
               item: savedItem,
             ),
-          ],
         ],
       ),
     );
@@ -660,9 +585,11 @@ class _HomePageContentState extends State<_HomePageContent> {
   Widget _buildRecentTripCard({
     required BuildContext context,
     required RecentSuggestionModel item,
+    required int index,
   }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return InkWell(
+      key: ValueKey('recent_suggestion_${item.id}_$index'),
+      borderRadius: BorderRadius.circular(AppConstants.radiusSm),
       onTap: () {
         final place = PlaceSearchResult(
           id: 'recent_${item.id}',
@@ -675,33 +602,27 @@ class _HomePageContentState extends State<_HomePageContent> {
         );
         _onSelectSuggestion(place);
       },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF9FAFB),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFE5E7EB),
-            width: 1,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          vertical: AppConstants.spacingSm,
+          horizontal: AppConstants.spacingXs,
         ),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: AppConstants.circularButtonSize,
+              height: AppConstants.circularButtonSize,
               decoration: const BoxDecoration(
-                color: Color(0xFFF3F4F6),
+                color: AppColors.grayBgLight,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.history_rounded,
-                color: Color(0xFF6B7280),
-                size: 20,
+                color: AppColors.textSecondary,
+                size: AppConstants.iconSizeMd,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppConstants.spacingUnitLg),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,22 +630,22 @@ class _HomePageContentState extends State<_HomePageContent> {
                   Text(
                     item.label,
                     style: GoogleFonts.inter(
-                      fontSize: 14,
+                      fontSize: AppConstants.fontMd,
                       fontWeight: FontWeight.w700,
-                      color: const Color(0xFF18181A),
-                      letterSpacing: -0.2,
+                      color: AppColors.textPrimary,
+                      letterSpacing: AppConstants.userPositionLetterSpacingSnug,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (item.address.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppConstants.spacingXxs),
                     Text(
                       item.address,
                       style: GoogleFonts.inter(
-                        fontSize: 12,
+                        fontSize: AppConstants.fontSm,
                         fontWeight: FontWeight.w400,
-                        color: const Color(0xFF6B7280),
+                        color: AppColors.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -732,11 +653,6 @@ class _HomePageContentState extends State<_HomePageContent> {
                   ],
                 ],
               ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFF9CA3AF),
-              size: 20,
             ),
           ],
         ),
@@ -748,8 +664,9 @@ class _HomePageContentState extends State<_HomePageContent> {
     required BuildContext context,
     required SavedPlaceModel item,
   }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return InkWell(
+      key: ValueKey('saved_place_${item.id}'),
+      borderRadius: BorderRadius.circular(AppConstants.radiusSm),
       onTap: () {
         final place = PlaceSearchResult(
           id: 'saved_${item.id}',
@@ -761,33 +678,27 @@ class _HomePageContentState extends State<_HomePageContent> {
         );
         _onSelectSuggestion(place);
       },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF9FAFB),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFE5E7EB),
-            width: 1,
-          ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          vertical: AppConstants.spacingSm,
+          horizontal: AppConstants.spacingXs,
         ),
         child: Row(
           children: [
             Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(25),
+              width: AppConstants.circularButtonSize,
+              height: AppConstants.circularButtonSize,
+              decoration: const BoxDecoration(
+                color: AppColors.peachContainer,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 _iconForPlaceKind(item.kind),
                 color: AppColors.primary,
-                size: 20,
+                size: AppConstants.iconSizeMd,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppConstants.spacingUnitLg),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -795,22 +706,22 @@ class _HomePageContentState extends State<_HomePageContent> {
                   Text(
                     item.name,
                     style: GoogleFonts.inter(
-                      fontSize: 14,
+                      fontSize: AppConstants.fontMd,
                       fontWeight: FontWeight.w700,
-                      color: const Color(0xFF18181A),
-                      letterSpacing: -0.2,
+                      color: AppColors.textPrimary,
+                      letterSpacing: AppConstants.userPositionLetterSpacingSnug,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (item.address.isNotEmpty) ...[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppConstants.spacingXxs),
                     Text(
                       item.address,
                       style: GoogleFonts.inter(
-                        fontSize: 12,
+                        fontSize: AppConstants.fontSm,
                         fontWeight: FontWeight.w400,
-                        color: const Color(0xFF6B7280),
+                        color: AppColors.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -819,12 +730,148 @@ class _HomePageContentState extends State<_HomePageContent> {
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFF9CA3AF),
-              size: 20,
-            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // Bannière Transports Urbains (TCU) avec TER Dakar et bouton "Itinéraires"
+  Widget _buildTcuBanner(BuildContext context) {
+    return Container(
+      key: const ValueKey('home_tcu_banner_card'),
+      margin: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(AppConstants.radiusContainer),
+        border: Border.all(
+          color: AppColors.grayBorderLight,
+          width: AppConstants.strokeWidthBorder,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.shadowSubtleBlack,
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: AppColors.transparent,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              SlideRightToLeftRoute(
+                page: PublicTransportPage(
+                  initialOrigin: _currentAddressShort,
+                ),
+              ),
+            );
+          },
+          child: Stack(
+            children: [
+              // Lignes de transit subtiles en fond de carte
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _TcuBackgroundRoutePainter(),
+                ),
+              ),
+
+              // Train TER Dakar sur la droite du card : taille réduite, harmonieuse et compacte
+              Positioned(
+                right: AppConstants.tcuBannerTrainRightOffset,
+                top: AppConstants.spacingXs,
+                bottom: AppConstants.spacingXs,
+                width: AppConstants.tcuBannerTrainWidth,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/images/tcu/ter_train.png',
+                    fit: BoxFit.contain,
+                    alignment: Alignment.centerRight,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+
+              // Contenu gauche compact : titre, sous-titre et bouton "Itinéraires"
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: AppConstants.spacingMd,
+                  top: AppConstants.spacingUnitLg,
+                  bottom: AppConstants.spacingUnitLg,
+                  right: AppConstants.tcuBannerContentRightPadding,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Titre "Voyagez en toute simplicité"
+                    Text(
+                      'home.tcu_banner_title'.tr(),
+                      style: GoogleFonts.inter(
+                        fontSize: AppConstants.fontTitle,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.pureBlack,
+                        height: AppConstants.titleLineHeight,
+                        letterSpacing: AppConstants.titleLetterSpacing,
+                      ),
+                    ),
+                    const SizedBox(height: AppConstants.spacingXs),
+
+                    // Sous-titre "TER, BRT, bus AFTU et DDD : planifiez vos déplacements à Dakar"
+                    Text(
+                      'home.tcu_banner_subtitle'.tr(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: AppConstants.fontSm,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                        height: AppConstants.bannerLineHeight,
+                      ),
+                    ),
+                    const SizedBox(height: AppConstants.spacingUnit),
+
+                    // Bouton orange "Itinéraires" avec icône boussole
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spacingUnitLg,
+                        vertical: AppConstants.spacingS,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'home.tcu_banner_button'.tr(),
+                              style: GoogleFonts.inter(
+                                fontSize: AppConstants.fontSm,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.white,
+                              ),
+                            ),
+                            const SizedBox(width: AppConstants.spacingXs),
+                            const Icon(
+                              Icons.explore_outlined,
+                              color: AppColors.white,
+                              size: AppConstants.iconSizeSm,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -844,432 +891,347 @@ class _HomePageContentState extends State<_HomePageContent> {
     return Icons.star_rounded;
   }
 
-  // Section Carrousel des cartes d'offres : Eco, Confort, TCU
-  Widget _buildOfferCardsSection(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 4),
-        SizedBox(
-          height: 168,
-          child: PageView.builder(
-            controller: _pageController,
-            itemCount: 3,
-            onPageChanged: (index) {
-              setState(() {
-                _selectedCardIndex = index;
-              });
-            },
-            itemBuilder: (context, index) => _buildCard(index, context),
-          ),
+  // Carte de la position actuelle de l'utilisateur avec mini-carte, bouton "Modifier"
+  // et bande blanche avec titre du lieu et bouton "Partager" à droite
+  Widget _buildCurrentLocationCard(BuildContext context, HomeState state) {
+    final loc = _currentUserLocation ?? state.userLocation;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
+        border: Border.all(
+          color: AppColors.grayBorderLight,
+          width: AppConstants.strokeWidthBorder,
         ),
-        const SizedBox(height: 8),
-        _buildPaginationDots(),
-      ],
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.shadowSubtleBlack,
+            blurRadius: 14,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 1. Mini-carte Google Map avec marqueur Seddo et bouton "Modifier" en bas à droite
+          SizedBox(
+            height: AppConstants.userPositionMapHeight,
+            width: double.infinity,
+            child: Stack(
+              children: [
+                // Fond beige doux pour garantir un affichage beige instantané
+                Container(color: AppColors.mapBeige),
+
+                GoogleMap(
+                  key: const ValueKey('home_current_location_mini_map'),
+                  style: MapStyleService.style,
+                  initialCameraPosition: CameraPosition(
+                    target: loc,
+                    zoom: AppConstants.userPositionMapZoom,
+                  ),
+                  onMapCreated: (ctrl) {
+                    _miniMapController = ctrl;
+                    MapStyleService.applyStyle(ctrl);
+                  },
+                  buildingsEnabled: false,
+                  myLocationEnabled: false,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  compassEnabled: false,
+                  mapToolbarEnabled: false,
+                  rotateGesturesEnabled: false,
+                  scrollGesturesEnabled: false,
+                  tiltGesturesEnabled: false,
+                  zoomGesturesEnabled: false,
+                  gestureRecognizers:
+                      const <Factory<OneSequenceGestureRecognizer>>{},
+                ),
+
+                // Overlay cliquable pour ouvrir la carte plein écran
+                Positioned.fill(
+                  child: Material(
+                    color: AppColors.transparent,
+                    child: InkWell(
+                      key: const ValueKey('home_mini_map_overlay'),
+                      onTap: () => _openFullMapPicker(context),
+                    ),
+                  ),
+                ),
+
+                // Marqueur central Seddo sur la mini-carte
+                Center(
+                  child: IgnorePointer(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: AppConstants.iconSizeHero,
+                          height: AppConstants.iconSizeHero,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusDefault,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: AppColors.shadowPinBox,
+                                blurRadius: 8,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.hail_rounded,
+                            color: AppColors.white,
+                            size: AppConstants.iconSizeLg,
+                          ),
+                        ),
+                        Container(
+                          width: AppConstants.userPositionStalkWidth,
+                          height: AppConstants.userPositionStalkHeight,
+                          color: AppColors.mapPinAnchor,
+                        ),
+                        Container(
+                          width: AppConstants.userPositionShadowWidth,
+                          height: AppConstants.userPositionShadowHeight,
+                          decoration: BoxDecoration(
+                            color: AppColors.shadowSoftBlack,
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusSm,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Bouton "Modifier" flottant en bas à droite de la carte
+                Positioned(
+                  right: AppConstants.spacingUnit,
+                  bottom: AppConstants.spacingUnit,
+                  child: Material(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.radiusPill,
+                    ),
+                    elevation: 2,
+                    shadowColor: AppColors.shadowCardBlack,
+                    child: InkWell(
+                      key: const ValueKey('home_edit_position_button'),
+                      onTap: () => _openEditPosition(context),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusPill,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppConstants.spacingUnitLg,
+                          vertical: AppConstants.spacingS,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SvgPicture.asset(
+                              'assets/icons/edit-pencil-line-01-svgrepo-com.svg',
+                              width: AppConstants.iconSizeSm,
+                              height: AppConstants.iconSizeSm,
+                              colorFilter: const ColorFilter.mode(
+                                AppColors.textPrimary,
+                                BlendMode.srcIn,
+                              ),
+                            ),
+                            const SizedBox(width: AppConstants.spacingS),
+                            Text(
+                              'common.edit'.tr(),
+                              style: GoogleFonts.inter(
+                                fontSize: AppConstants.fontMd,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 2. Bande blanche : Titre du lieu et adresse à gauche, Bouton "Partager" à droite du titre
+          Container(
+            color: AppColors.white,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spacingMd,
+              vertical: AppConstants.spacingUnitLg,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Titre et détails de la position actuelle
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _currentAddressShort,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontLg,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing:
+                              AppConstants.userPositionLetterSpacingTight,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppConstants.spacingXs),
+                      Text(
+                        _currentAddressDetails,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontSm,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppConstants.spacingUnit),
+
+                // Bouton "Partager" : icône share en noir avec le texte partager (sans rectangle ni cercle vert)
+                InkWell(
+                  key: const ValueKey('home_share_position_button'),
+                  onTap: () => _shareCurrentLocation(context),
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppConstants.spacingS,
+                      vertical: AppConstants.spacingXs,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SvgPicture.asset(
+                          'assets/icons/share-svgrepo-com.svg',
+                          width: AppConstants.iconSizeDefault,
+                          height: AppConstants.iconSizeDefault,
+                          colorFilter: const ColorFilter.mode(
+                            AppColors.textPrimary,
+                            BlendMode.srcIn,
+                          ),
+                        ),
+                        const SizedBox(width: AppConstants.spacingS),
+                        Text(
+                          'common.share'.tr(),
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontSm,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildCard(int index, BuildContext context) {
-    switch (index) {
-      case 0:
-        return _buildSeddoEcoCard(context);
-      case 1:
-        return _buildSeddoConfortCard(context);
-      case 2:
-        return _buildTcuCard(context);
-      default:
-        return const SizedBox.shrink();
+  Future<void> _openEditPosition(BuildContext context) async {
+    final state = context.read<HomeBloc>().state;
+    final loc = _currentUserLocation ?? state.userLocation;
+
+    final result = await Navigator.of(context).push<PlaceSearchResult>(
+      SlideRightToLeftRoute(
+        page: EditUserPositionPage(
+          currentLocation: loc,
+          currentMainText: _currentAddressShort,
+          currentSecondaryText: _currentAddressDetails,
+          placesService: _placesService,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      _applyNewUserPosition(result);
     }
   }
 
-  Widget _buildSeddoEcoCard(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _openDestinationSearch(context),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: const Color(0xFF18181A),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x28000000),
-              blurRadius: 14,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF5700),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'ÉCONOMIQUE',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Seddo Eco',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Arrive dans ${_nearbyDrivers?.ecoEtaMinutes ?? 2} min',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Prix bas · À partir de 1 500 F',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withAlpha(200),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(Icons.people_alt_rounded, size: 14, color: Color(0xFFFF5700)),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            '4 places',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFFF5700),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Image.asset(
-              'assets/images/seddo_eco_3d.png',
-              width: 140,
-              height: 90,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (context, error, stackTrace) => Image.asset(
-                'assets/images/car.png',
-                width: 140,
-                height: 90,
-                fit: BoxFit.contain,
-              ),
-            ),
-          ],
+  Future<void> _openFullMapPicker(BuildContext context) async {
+    final state = context.read<HomeBloc>().state;
+    final loc = _currentUserLocation ?? state.userLocation;
+
+    final result = await Navigator.of(context).push<PlaceSearchResult>(
+      SlideRightToLeftRoute(
+        page: PickupMapLocationPickerPage(
+          initialLocation: loc,
+          initialMainText: _currentAddressShort,
+          initialSecondaryText: _currentAddressDetails,
+          placesService: _placesService,
         ),
       ),
     );
+
+    if (result != null && mounted) {
+      _applyNewUserPosition(result);
+    }
   }
 
-  Widget _buildSeddoConfortCard(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _openDestinationSearch(context),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF232526), Color(0xFF414345)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x28000000),
-              blurRadius: 14,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF8A00),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        "PLUS D'ESPACE",
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Seddo Confort',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${_nearbyDrivers?.confortCount ?? 3} Confort autour · ${_nearbyDrivers?.confortEtaMinutes ?? 4} min',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Berlines récentes & Chauffeurs Pro',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withAlpha(200),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFF8A00)),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            'Top chauffeurs',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFFF8A00),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Image.asset(
-              'assets/images/seddo_confort_3d.png',
-              width: 140,
-              height: 90,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (context, error, stackTrace) => Image.asset(
-                'assets/images/car.png',
-                width: 140,
-                height: 90,
-                fit: BoxFit.contain,
-              ),
-            ),
-          ],
-        ),
-      ),
+  void _shareCurrentLocation(BuildContext context) {
+    final state = context.read<HomeBloc>().state;
+    final loc = _currentUserLocation ?? state.userLocation;
+
+    SeddoSharePositionSheet.show(
+      context,
+      location: loc,
+      mainAddress: _currentAddressShort,
+      secondaryAddress: _currentAddressDetails,
     );
   }
+}
 
-  Widget _buildTcuCard(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _openPublicTransport(context),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x301E3A8A),
-              blurRadius: 14,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4C70DC),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'SANS VOITURE',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Bus, BRT, ...',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Dem Dikk, AFTU, BRT & TER',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withAlpha(220),
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        _buildTransitBadge('D', const Color(0xFF10B981)),
-                        const SizedBox(width: 4),
-                        _buildTransitBadge('A', const Color(0xFF3B82F6)),
-                        const SizedBox(width: 4),
-                        _buildTransitBadge('B', const Color(0xFFF59E0B)),
-                        const SizedBox(width: 4),
-                        _buildTransitBadge('T', const Color(0xFF8B5CF6)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Image.asset(
-              'assets/images/tcu/ddd_bus.png',
-              width: 135,
-              height: 85,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (context, error, stackTrace) => Image.asset(
-                'assets/images/tcu/brt_bus.png',
-                width: 135,
-                height: 85,
-                fit: BoxFit.contain,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+/// Dessine un réseau délicat de lignes de transit stylisées pour le fond de la carte TCU
+class _TcuBackgroundRoutePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = AppColors.grayBorderLight
+      ..strokeWidth = AppConstants.strokeWidthBorder
+      ..style = PaintingStyle.stroke;
+
+    final path1 = Path()
+      ..moveTo(size.width * 0.45, 0)
+      ..lineTo(size.width * 0.65, size.height * 0.35)
+      ..lineTo(size.width, size.height * 0.25);
+    canvas.drawPath(path1, paint);
+
+    final path2 = Path()
+      ..moveTo(size.width * 0.50, size.height * 0.40)
+      ..lineTo(size.width * 0.70, size.height * 0.75)
+      ..lineTo(size.width, size.height * 0.70);
+    canvas.drawPath(path2, paint);
+
+    final path3 = Path()
+      ..moveTo(size.width * 0.30, size.height)
+      ..lineTo(size.width * 0.60, size.height * 0.85);
+    canvas.drawPath(path3, paint);
   }
 
-  Widget _buildTransitBadge(String letter, Color color) {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 1.2),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        letter,
-        style: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-          color: Colors.white,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPaginationDots() {
-    final Color activeColor =
-        _selectedCardIndex == 2 ? const Color(0xFF3257C9) : const Color(0xFFFF5700);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(3, (index) {
-        final bool isActive = index == _selectedCardIndex;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          width: isActive ? 22 : 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: isActive ? activeColor : const Color(0xFFD1D5DB),
-            borderRadius: BorderRadius.circular(3),
-          ),
-        );
-      }),
-    );
-  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

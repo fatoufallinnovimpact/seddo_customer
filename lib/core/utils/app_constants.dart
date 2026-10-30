@@ -146,4 +146,23 @@ abstract class AppConstants {
   static const double searchIconBoxSize = 40.0;
   static const double searchDistancePillRadius = 10.0;
   static const double searchLetterSpacing = 0.8;
+
+  // User Position Bottom Sheet Design Tokens
+  static const double userPositionMapHeight = 150.0;
+  static const double userPositionBadgeSize = 38.0;
+  static const double userPositionButtonHeight = 52.0;
+  static const double userPositionStalkHeight = 12.0;
+  static const double userPositionStalkWidth = 2.5;
+  static const double userPositionShadowWidth = 10.0;
+  static const double userPositionShadowHeight = 4.0;
+  static const double userPositionMapZoom = 16.2;
+  static const double userPositionLetterSpacingTight = -0.3;
+  static const double userPositionLetterSpacingSnug = -0.2;
+  static const double userPositionDragHandleTop = 12.0;
+
+  // TCU Home Banner Tokens
+  static const double tcuBannerTrainWidth = 150.0;
+  static const double tcuBannerTrainRightOffset = -25.0;
+  static const double tcuBannerContentRightPadding = 125.0;
 }
+

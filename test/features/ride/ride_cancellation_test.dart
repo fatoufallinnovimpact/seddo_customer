@@ -3,6 +3,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/ride/data/models/ride_cancel_result_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
@@ -234,6 +235,27 @@ void main() {
       expect(find.text('3000 FCFA'), findsOneWidget);
       expect(find.text('500 FCFA'), findsOneWidget);
       expect(find.text('Changement d\'itinéraire ou de plan'), findsOneWidget);
+    });
+
+    testWidgets('tapping Retour a l\'accueil redirects to HomePage',
+        (WidgetTester tester) async {
+      await tester.pumpWidget(
+        wrapWithLocalization(
+          const RideCancelledPage(
+            rideOption: testOption,
+            cancellationFee: 0,
+            refundAmount: 3500,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Retour à l\'accueil'), findsOneWidget);
+      await tester.tap(find.text('Retour à l\'accueil'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.byType(HomePage), findsOneWidget);
     });
   });
 }

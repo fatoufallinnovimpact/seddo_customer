@@ -23,6 +23,7 @@ import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.d
 import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_option_card_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/select_payment_method_sheet.dart';
+import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -502,6 +503,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
         children: [
           // 1. Fullscreen Google Map
           GoogleMap(
+            style: MapStyleService.style,
             initialCameraPosition: CameraPosition(
               target: LatLng(
                 widget.departure.latitude,
@@ -512,12 +514,14 @@ class _RideBookingPageState extends State<RideBookingPage> {
             padding: EdgeInsets.only(top: 80, bottom: _bottomSheetHeight + 10),
             onMapCreated: (controller) {
               _mapController = controller;
+              MapStyleService.applyStyle(controller);
               if (_polylinePoints.isNotEmpty) {
                 _fitCameraToBounds();
               }
             },
             polylines: _buildPolylines(),
             markers: _buildMarkers(),
+            buildingsEnabled: false,
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,

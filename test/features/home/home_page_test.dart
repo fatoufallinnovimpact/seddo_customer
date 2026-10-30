@@ -5,6 +5,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/core/localization/wolof_localizations_delegate.dart';
 import 'package:seddo/features/home/presentation/pages/home_page.dart';
+import 'package:seddo/features/home/presentation/widgets/seddo_share_position_sheet.dart';
+import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
 
 class MockHomeTestAssetLoader extends AssetLoader {
   const MockHomeTestAssetLoader();
@@ -15,6 +17,7 @@ class MockHomeTestAssetLoader extends AssetLoader {
       'app_name': 'Seddo',
       'home': {
         'where_to': 'Où allez-vous ?',
+        'go': 'Aller',
         'where_to_sub': 'Entrez votre destination',
         'recent_places': 'Mes récentes courses',
         'almadies': 'Les Almadies',
@@ -30,6 +33,11 @@ class MockHomeTestAssetLoader extends AssetLoader {
         'airport_sub': 'AIBD direct',
         'tcu': 'TCU',
         'tcu_sub': 'Bus, BRT & TER',
+        'tcu_banner_badge': 'TRANSPORTS URBAINS',
+        'tcu_banner_title': 'Voyagez en toute simplicité',
+        'tcu_banner_subtitle': 'TER, BRT, bus AFTU et DDD :\nplanifiez vos déplacements à Dakar',
+        'tcu_banner_button': 'Itinéraires',
+        'see_all': 'Voir tout',
         'drivers_around': '{} chauffeurs autour · {} min',
       },
       'drawer': {
@@ -52,6 +60,9 @@ class MockHomeTestAssetLoader extends AssetLoader {
       'common': {
         'french': 'Français',
         'wolof': 'Wolof',
+        'save': 'Enregistrer',
+        'share': 'Partager',
+        'edit': 'Modifier',
       },
     };
   }
@@ -90,7 +101,7 @@ void main() {
   });
 
   testWidgets(
-      'HomePage renders top bar with SEDDO logo & address, no bottom GoogleMap, and offer cards carousel',
+      'HomePage renders top bar with SEDDO logo & address, and bottom current location card with mini GoogleMap, Modifier button and Partager button',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -99,39 +110,34 @@ void main() {
     await tester.pumpWidget(createHomeScreen());
     await tester.pump(const Duration(milliseconds: 600));
 
-    // 1. GoogleMap is removed from HomePage per user request
-    expect(find.byType(GoogleMap), findsNothing);
-
-    // 2. Top bar elements
+    // 1. Top bar elements
     expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
     expect(find.text('SEDDO'), findsOneWidget);
-    expect(find.text('Rue YF-557, 20'), findsOneWidget);
+    expect(find.text('Rue YF-557, 20'), findsAtLeastNWidgets(1));
 
-    // 3. Search Bar
+    // 2. Search Bar
     expect(find.text('Où allez-vous ?'), findsOneWidget);
+    expect(find.text('Aller'), findsNothing);
 
-    // 4. Initial Card: Seddo Eco
-    expect(find.text('ÉCONOMIQUE'), findsOneWidget);
-    expect(find.text('Seddo Eco'), findsOneWidget);
-    expect(find.text('Arrive dans 2 min'), findsOneWidget);
+    // 3. Mini GoogleMap preview in current location card
+    expect(find.byType(GoogleMap), findsOneWidget);
 
-    // 5. Swipe PageView to Confort
-    await tester.drag(find.byType(PageView), const Offset(-300, 0));
-    await tester.pump(const Duration(milliseconds: 600));
+    // 4. Modifier button on mini map
+    expect(find.byKey(const ValueKey('home_edit_position_button')), findsOneWidget);
+    expect(find.text('Modifier'), findsOneWidget);
 
-    expect(find.text("PLUS D'ESPACE"), findsOneWidget);
-    expect(find.text('Seddo Confort'), findsOneWidget);
-    expect(find.text('3 Confort autour · 4 min'), findsOneWidget);
+    // 5. White strip: current address and Partager button
+    expect(find.byKey(const ValueKey('home_share_position_button')), findsOneWidget);
+    expect(find.text('Partager'), findsOneWidget);
 
-    // 6. Swipe PageView to TCU
-    await tester.drag(find.byType(PageView), const Offset(-300, 0));
-    await tester.pump(const Duration(milliseconds: 600));
+    // 6. Tapping Partager button opens SeddoSharePositionSheet
+    await tester.tap(find.byKey(const ValueKey('home_share_position_button')));
+    await tester.pumpAndSettle();
 
-    expect(find.text('SANS VOITURE'), findsOneWidget);
-    expect(find.text('Bus, BRT, ...'), findsOneWidget);
+    expect(find.byType(SeddoSharePositionSheet), findsOneWidget);
   });
 
-  testWidgets('Tapping SEDDO logo or street address opens VOTRE POSITION bottom sheet',
+  testWidgets('Tapping SEDDO logo does not open any modal',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -140,17 +146,12 @@ void main() {
     await tester.pumpWidget(createHomeScreen());
     await tester.pump(const Duration(milliseconds: 600));
 
-    // Tap header (SEDDO logo + street location)
+    // Tap header (SEDDO logo)
     await tester.tap(find.byKey(const ValueKey('seddo_logo_and_location_header')));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
 
-    // Verify "VOTRE POSITION" modal appears
-    expect(find.text('VOTRE POSITION'), findsOneWidget);
-    expect(find.text('Rue YF-557, 20'), findsAtLeastNWidgets(1));
-    expect(find.text('Enregistrer la position pour une utilisation ultérieure'),
-        findsOneWidget);
-    expect(find.text('Partager la position'), findsOneWidget);
-    expect(find.text('Modifier votre position'), findsOneWidget);
+    // Verify user position modal does NOT appear
+    expect(find.byType(UserPositionBottomSheet), findsNothing);
   });
 
   testWidgets('HomePage displays 2 recent trip cards from base / defaults',
@@ -170,6 +171,24 @@ void main() {
     expect(find.text('Sea Plaza'), findsOneWidget);
     expect(find.text("Place de l'Indépendance"), findsOneWidget);
     expect(find.byIcon(Icons.history_rounded), findsNWidgets(2));
+  });
+
+  testWidgets('HomePage renders TCU banner with TER Dakar and Itinéraires button',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(createHomeScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(seconds: 1));
+
+    // TCU Banner elements
+    expect(find.byKey(const ValueKey('home_tcu_banner_card')), findsOneWidget);
+    expect(find.text('TRANSPORTS URBAINS'), findsNothing);
+    expect(find.text('Voyagez en toute simplicité'), findsOneWidget);
+    expect(find.text('Itinéraires'), findsOneWidget);
+    expect(find.byIcon(Icons.explore_outlined), findsOneWidget);
   });
 
   testWidgets('Tapping menu icon opens endDrawer from right to left',

@@ -114,7 +114,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PlaceSearchPage), findsOneWidget);
-      expect(find.text('VOTRE TRAJET'), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
 
       // Verify Quick Action Chips
       expect(find.text('Ma position'), findsOneWidget);

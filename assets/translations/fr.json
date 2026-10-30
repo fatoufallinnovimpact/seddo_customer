@@ -15,7 +15,15 @@
     "message": "Message",
     "support": "Support",
     "later": "Plus tard",
-    "share": "Partager"
+    "share": "Partager",
+    "edit": "Modifier"
+  },
+  "user_position": {
+    "title": "Votre position",
+    "saved_success": "Lieu enregistré avec succès dans vos favoris",
+    "save": "Enregistrer",
+    "share": "Partager",
+    "edit": "Modifier"
   },
   "onboarding": {
     "hero_title": "Votre chauffeur,\npayé en Orange Money.",
@@ -50,6 +58,7 @@
   },
   "home": {
     "where_to": "Où allez-vous ?",
+    "go": "Aller",
     "search_subtitle": "Saisissez une destination, une adresse...",
     "search_hint": "Rechercher à Dakar (ex: Ouakam)...",
     "popular_destinations": "Destinations populaires à Dakar",
@@ -69,6 +78,10 @@
     "airport_sub": "Transfert",
     "tcu": "TCU",
     "tcu_sub": "Transport public",
+    "tcu_banner_badge": "TRANSPORTS URBAINS",
+    "tcu_banner_title": "Voyagez en toute simplicité",
+    "tcu_banner_subtitle": "TER, BRT, bus AFTU et DDD :\nplanifiez vos déplacements à Dakar",
+    "tcu_banner_button": "Itinéraires",
     "drivers_around": "{} chauffeurs autour · {} min"
   },
   "drawer": {
@@ -275,6 +288,8 @@
     "offline_title": "Vous êtes hors ligne",
     "offline_desc": "Vérifiez votre connexion internet ou utilisez l'urgence par SMS.",
     "offline_banner": "Pas de réseau. Votre course continue et la position se mettra à jour au retour du réseau.",
+    "reconnecting": "Connexion en cours...",
+    "position_updating": "Position en cours de mise à jour",
     "last_position_ago": "Dernière position il y a 40 s",
     "sms_emergency": "Urgence par SMS",
     "sms_emergency_desc": "Fonctionne sans connexion internet",

@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
@@ -180,13 +182,18 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
         children: [
           // 1. Fullscreen Google Map
           GoogleMap(
+            style: MapStyleService.style,
             initialCameraPosition: CameraPosition(
               target: _currentCenter,
               zoom: 16.2,
             ),
-            onMapCreated: (controller) => _mapController = controller,
+            onMapCreated: (controller) {
+              _mapController = controller;
+              MapStyleService.applyStyle(controller);
+            },
             onCameraMove: _onCameraMove,
             onCameraIdle: _onCameraIdle,
+            buildingsEnabled: false,
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
@@ -240,14 +247,22 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
 
                     const SizedBox(height: 2),
 
-                    // Modern Location Pin Icon (replaces previous orange square anchor)
-                    Icon(
-                      Icons.location_on_rounded,
-                      size: 34,
-                      color: widget.isArrival
-                          ? AppColors.buttonBlack
-                          : AppColors.primary,
-                    ),
+                    // Modern Location Pin Icon: Flag for arrival, passenger hail silhouette for departure
+                    widget.isArrival
+                        ? SvgPicture.asset(
+                            'assets/icons/flag-svgrepo-com.svg',
+                            width: 32,
+                            height: 32,
+                            colorFilter: const ColorFilter.mode(
+                              AppColors.primary,
+                              BlendMode.srcIn,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.hail_rounded,
+                            size: 34,
+                            color: AppColors.textPrimary,
+                          ),
                   ],
                 ),
               ),

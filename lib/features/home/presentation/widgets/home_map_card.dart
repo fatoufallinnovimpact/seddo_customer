@@ -10,6 +10,7 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/home/domain/bloc/home_state.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/services/map_style_service.dart';
 
 /// Embedded interactive Google Map Card matching the reference mockup:
 /// - Smooth moving nearby drivers (active cars) around Dakar
@@ -172,12 +173,14 @@ class _HomeMapCardState extends State<HomeMapCard> {
               children: [
                 // 1. Interactive Google Map with all gestures enabled
                 GoogleMap(
+                  style: MapStyleService.style,
                   initialCameraPosition: CameraPosition(
                     target: state.userLocation,
                     zoom: 15.6,
                   ),
                   onMapCreated: (controller) {
                     _mapController = controller;
+                    MapStyleService.applyStyle(controller);
                     controller.animateCamera(
                       CameraUpdate.newLatLng(state.userLocation),
                     );
@@ -187,6 +190,7 @@ class _HomeMapCardState extends State<HomeMapCard> {
                   scrollGesturesEnabled: true,
                   tiltGesturesEnabled: true,
                   rotateGesturesEnabled: true,
+                  buildingsEnabled: false,
                   myLocationEnabled: false,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,

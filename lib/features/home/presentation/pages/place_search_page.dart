@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
@@ -458,7 +459,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Top Bar: Back Arrow + "VOTRE TRAJET"
+            // 1. Top Bar: Back Arrow
             Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: AppConstants.spacingMd,
@@ -487,17 +488,6 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                         size: AppConstants.iconSizeMd,
                       ),
                       onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ),
-                  const SizedBox(width: AppConstants.spacingMd),
-                  Text(
-                    'search.your_trip_caps'.tr(),
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontTitleLarge,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.textPrimary,
-                      letterSpacing: AppConstants.titleLetterSpacing,
-                      height: AppConstants.titleLineHeight,
                     ),
                   ),
                 ],
@@ -544,7 +534,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                       Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Departure Squircle
+                          // Departure Squircle: icône spécifiant la position actuelle (silhouette passager)
                           Container(
                             width: AppConstants.searchIconBoxSize,
                             height: AppConstants.searchIconBoxSize,
@@ -554,7 +544,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                             ),
                             alignment: Alignment.center,
                             child: const Icon(
-                              Icons.location_on,
+                              Icons.hail_rounded,
                               color: AppColors.textPrimary,
                               size: AppConstants.iconSizeMd,
                             ),
@@ -581,7 +571,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                               ),
                             ),
                           ),
-                          // Arrival Squircle
+                          // Arrival Squircle: icône drapeau spécifiant le point d'arrivée (flag-svgrepo-com.svg)
                           Container(
                             width: AppConstants.searchIconBoxSize,
                             height: AppConstants.searchIconBoxSize,
@@ -590,10 +580,14 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                               shape: BoxShape.circle,
                             ),
                             alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.location_on,
-                              color: AppColors.primary,
-                              size: AppConstants.iconSizeMd,
+                            child: SvgPicture.asset(
+                              'assets/icons/flag-svgrepo-com.svg',
+                              width: AppConstants.iconSizeSm,
+                              height: AppConstants.iconSizeSm,
+                              colorFilter: const ColorFilter.mode(
+                                AppColors.primary,
+                                BlendMode.srcIn,
+                              ),
                             ),
                           ),
                         ],
@@ -841,15 +835,11 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                         ),
                       ),
                     )
-                  : ListView.separated(
+                  : ListView.builder(
                       physics: const BouncingScrollPhysics(),
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       itemCount: _suggestions.length,
-                      separatorBuilder: (context, index) => const Divider(
-                        height: 1,
-                        color: AppColors.cardBorder,
-                      ),
                       itemBuilder: (context, index) {
                         final item = _suggestions[index];
                         final title = item.mainText ?? item.description;

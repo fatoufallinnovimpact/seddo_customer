@@ -348,8 +348,15 @@ class SeddoSharePositionSheet extends StatelessWidget {
 
                   // SMS
                   _buildShareChannelButton(
-                    icon: Icons.sms_rounded,
-                    iconColor: AppColors.blueHighlightText,
+                    customIcon: SvgPicture.asset(
+                      'assets/icons/chat-round-svgrepo-com.svg',
+                      width: 26,
+                      height: 26,
+                      colorFilter: const ColorFilter.mode(
+                        AppColors.blueHighlightText,
+                        BlendMode.srcIn,
+                      ),
+                    ),
                     bgColor: AppColors.blueHighlightBg,
                     label: 'SMS',
                     onTap: _shareToSms,

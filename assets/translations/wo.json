@@ -15,7 +15,15 @@
     "message": "Bataaxal",
     "support": "Ndimbal",
     "later": "Kanamb kanam",
-    "share": "Maye"
+    "share": "Maye",
+    "edit": "Soppi"
+  },
+  "user_position": {
+    "title": "Sa bereeb",
+    "saved_success": "Bereeb bi denc nañu ko ci say tànneef",
+    "save": "Denc",
+    "share": "Maye",
+    "edit": "Soppi"
   },
   "onboarding": {
     "hero_title": "Sa chauffeur,\nfey ko ci Orange Money.",
@@ -50,6 +58,7 @@
   },
   "home": {
     "where_to": "Fan ngay dem ?",
+    "go": "Dem",
     "search_subtitle": "Bindal fa ngay dem...",
     "search_hint": "Seet ci Ndakaaru (ci misaal: Ouakam)...",
     "popular_destinations": "Béréb yi siiw ci Ndakaaru",
@@ -69,6 +78,10 @@
     "airport_sub": "Yóbbu",
     "tcu": "TCU",
     "tcu_sub": "Gaal gi",
+    "tcu_banner_badge": "TRANSPORTS URBAINS",
+    "tcu_banner_title": "Tukkil ak jàmm\nte yomb",
+    "tcu_banner_subtitle": "TER, BRT, bus AFTU ak DDD :\nsaytu say dem ak dikk ci Ndakaaru",
+    "tcu_banner_button": "Yoon yi",
     "drivers_around": "{} chauffeur ñu ngi ci wet gi · {} min"
   },
   "drawer": {
@@ -275,6 +288,8 @@
     "offline_title": "Amoo connexion",
     "offline_desc": "Xoolal sa internet mbaa nga jëfandikoo SMS.",
     "offline_banner": "Amul réseau. Yoon wi mu ngi dox, béréb bi dina feeñ bu réseau bi dellusee.",
+    "reconnecting": "Jokkoo bi mu ngi dakkal...",
+    "position_updating": "Fi mu nekk mu ngi yeesal...",
     "last_position_ago": "Béréb bi mujj am na 40 s",
     "sms_emergency": "Urgence ci SMS",
     "sms_emergency_desc": "Doxna te soxlawul internet",

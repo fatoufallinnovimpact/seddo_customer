@@ -5,6 +5,7 @@ import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 
@@ -40,9 +41,18 @@ class RideCancelledPage extends StatelessWidget {
     final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
-      body: SafeArea(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomePage()),
+          (route) => false,
+        );
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.white,
+        body: SafeArea(
         child: SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
@@ -372,8 +382,11 @@ class RideCancelledPage extends StatelessWidget {
                     ),
                   ),
                   onPressed: () {
-                    // Pop back to root / HomePage
-                    Navigator.of(context).popUntil((route) => route.isFirst);
+                    // Navigate cleanly to HomePage
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const HomePage()),
+                      (route) => false,
+                    );
                   },
                   child: Text(
                     'cancelled.back_home'.tr(),
@@ -388,6 +401,7 @@ class RideCancelledPage extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

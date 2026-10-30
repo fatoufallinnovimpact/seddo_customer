@@ -24,9 +24,11 @@ import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page
 import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
+import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
+import 'package:seddo/services/map_style_service.dart';
+import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/services/route_service.dart';
-import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -106,6 +108,23 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   late RideService _rideService;
   Timer? _ridePollTimer;
 
+  // Realtime Socket.IO streams & smooth movement (PDF Seddo : 4s interpolation)
+  AnimationController? _smoothCarController;
+  LatLng? _animStartPos;
+  LatLng? _animEndPos;
+  double? _animStartHeading;
+  double? _animEndHeading;
+
+  StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
+  StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocationSub;
+  StreamSubscription<RealtimeRideEtaEvent>? _realtimeEtaSub;
+  StreamSubscription<RealtimeRideRouteEvent>? _realtimeRouteSub;
+  StreamSubscription<void>? _realtimeReconnectSub;
+
+  DateTime _lastDriverLocationTime = DateTime.now();
+  Timer? _stalePositionCheckTimer;
+  bool _isPositionUpdating = false;
+
   late final AnimationController _sheetAnimationController;
   BitmapDescriptor? _destinationMarkerIcon;
 
@@ -182,6 +201,33 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
 
+    // Contrôleur de déplacement fluide de la voiture (interpolation 4 secondes - PDF Seddo)
+    _smoothCarController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..addListener(() {
+        if (_animStartPos != null && _animEndPos != null && mounted) {
+          final t = _smoothCarController!.value;
+          final curLat = _animStartPos!.latitude +
+              (_animEndPos!.latitude - _animStartPos!.latitude) * t;
+          final curLng = _animStartPos!.longitude +
+              (_animEndPos!.longitude - _animStartPos!.longitude) * t;
+
+          double curHead = _currentCarHeading;
+          if (_animStartHeading != null && _animEndHeading != null) {
+            curHead = _animStartHeading! +
+                (_animEndHeading! - _animStartHeading!) * t;
+          }
+
+          final newPos = LatLng(curLat, curLng);
+          setState(() {
+            _currentCarPosition = newPos;
+            _currentCarHeading = curHead;
+          });
+          _updateEtaAndDistance(newPos);
+        }
+      });
+
     if (widget.autoStartSimulation && !isTest) {
       Future.delayed(const Duration(milliseconds: 600), () {
         if (mounted) {
@@ -190,24 +236,188 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       });
     }
 
-    // Interroge l'API GET /v1/rides/{id} pour récupérer immédiatement et en continu
-    // les données réelles (code à 4 chiffres, infos chauffeur, statut course)
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
     if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      // 1. Appel REST initial pour obtenir l'état complet
       _fetchRideDetails(effectiveRideId);
-      if (!isTest) {
-        _ridePollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+
+      // 2. Connexion WebSocket unique et adhésion au canal ride:{id}
+      RealtimeService().connect();
+      RealtimeService().joinRide(effectiveRideId);
+
+      // Écoute du statut de la course (ride.status)
+      _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+          _handleRealtimeRideStatus(event);
+        }
+      });
+
+      // Écoute de la position GPS du chauffeur (driver.location)
+      _realtimeLocationSub = RealtimeService().driverLocationStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          _handleRealtimeDriverLocation(event);
+        }
+      });
+
+      // Écoute du temps restant estimé (ride.eta)
+      _realtimeEtaSub = RealtimeService().rideEtaStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          _handleRealtimeEta(event);
+        }
+      });
+
+      // Écoute des mises à jour d'itinéraire (ride.route.updated)
+      _realtimeRouteSub = RealtimeService().rideRouteStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          _handleRealtimeRoute(event);
+        }
+      });
+
+      // Resynchronisation REST dès reconnexion (PDF page 7 & 8)
+      _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
+        if (mounted) {
           _fetchRideDetails(effectiveRideId);
+        }
+      });
+
+      // Fallback passif si le WebSocket est temporairement déconnecté (sans polling intensif)
+      if (!isTest) {
+        _ridePollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+          if (!RealtimeService().isConnected) {
+            _fetchRideDetails(effectiveRideId);
+          }
         });
       }
     }
+
+    // Détection d'absence de position > 30s (PDF page 8 & 9)
+    _stalePositionCheckTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && !_driverArrived) {
+        final elapsed =
+            DateTime.now().difference(_lastDriverLocationTime).inSeconds;
+        if (elapsed >= 30 && !_isPositionUpdating) {
+          setState(() {
+            _isPositionUpdating = true;
+          });
+        } else if (elapsed < 30 && _isPositionUpdating) {
+          setState(() {
+            _isPositionUpdating = false;
+          });
+        }
+      }
+    });
+  }
+
+  void _handleRealtimeRideStatus(RealtimeRideStatusEvent event) {
+    final status = event.status;
+    if (status.startsWith('CANCELLED') ||
+        status == 'NO_DRIVER' ||
+        status == 'NO_SHOW') {
+      _cleanupTimersAndSubs();
+      Navigator.of(context).pushReplacement(
+        SlideRightToLeftRoute(
+          page: RideCancelledPage(
+            rideOption: widget.rideOption,
+            departure: widget.departure,
+            destination: widget.destination,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (status == 'IN_PROGRESS') {
+      _cleanupTimersAndSubs();
+      startRide();
+      return;
+    }
+
+    if (status == 'DRIVER_ARRIVED' || status == 'ARRIVED') {
+      setState(() {
+        _driverArrived = true;
+        _isPositionUpdating = false;
+        _setEtaLabel('ride.arrived'.tr(), 0);
+      });
+    }
+
+    if (event.departureCode != null && event.departureCode!.isNotEmpty) {
+      setState(() {
+        _departureCode = event.departureCode!;
+      });
+    }
+
+    if (event.driver != null) {
+      setState(() {
+        _currentDriver = event.driver!;
+      });
+    }
+  }
+
+  void _handleRealtimeDriverLocation(RealtimeDriverLocationEvent event) {
+    if (event.location.latitude == 0 && event.location.longitude == 0) return;
+
+    _lastDriverLocationTime = DateTime.now();
+    if (_isPositionUpdating) {
+      setState(() {
+        _isPositionUpdating = false;
+      });
+    }
+
+    final heading = event.heading != 0.0
+        ? event.heading
+        : _calculateBearing(_currentCarPosition, event.location);
+
+    updateDriverGpsLocation(event.location, heading: heading);
+  }
+
+  void _handleRealtimeEta(RealtimeRideEtaEvent event) {
+    if (_driverArrived) return;
+    if (event.etaMinutes > 0) {
+      _setEtaLabel('${event.etaMinutes} min', event.etaMinutes);
+    }
+    if (event.distanceMeters != null && event.distanceMeters! > 0) {
+      setState(() {
+        _remainingDistanceM = event.distanceMeters!.toDouble();
+      });
+    }
+  }
+
+  void _handleRealtimeRoute(RealtimeRideRouteEvent event) {
+    if (event.points.length >= 2) {
+      setState(() {
+        _approachRoutePoints = event.points;
+        if (event.traffic.isNotEmpty) {
+          _approachTraffic = event.traffic;
+        }
+      });
+    }
+  }
+
+  void _cleanupTimersAndSubs() {
+    _ridePollTimer?.cancel();
+    _stalePositionCheckTimer?.cancel();
+    _approachController?.stop();
+    _smoothCarController?.stop();
+    _realtimeStatusSub?.cancel();
+    _realtimeLocationSub?.cancel();
+    _realtimeEtaSub?.cancel();
+    _realtimeRouteSub?.cancel();
+    _realtimeReconnectSub?.cancel();
   }
 
   @override
   void dispose() {
-    _ridePollTimer?.cancel();
-    _approachController?.stop();
+    _cleanupTimersAndSubs();
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(effectiveRideId);
+    }
     _approachController?.dispose();
+    _smoothCarController?.dispose();
     _sheetAnimationController.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -662,18 +872,37 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     if (_approachController != null && _approachController!.isAnimating) {
       _approachController!.stop();
     }
+    _smoothCarController?.stop();
+
     final calcHeading =
         heading ?? _calculateBearing(_currentCarPosition, position);
-    setState(() {
-      _currentCarPosition = position;
-      _currentCarHeading = calcHeading;
-    });
-    _updateEtaAndDistance(position);
+
+    // Si la position a très peu changé (< 1m), mise à jour instantanée
+    if ((_currentCarPosition.latitude - position.latitude).abs() < 0.00001 &&
+        (_currentCarPosition.longitude - position.longitude).abs() < 0.00001) {
+      setState(() {
+        _currentCarPosition = position;
+        _currentCarHeading = calcHeading;
+      });
+      _updateEtaAndDistance(position);
+      return;
+    }
+
+    _animStartPos = _currentCarPosition;
+    _animEndPos = position;
+    _animStartHeading = _currentCarHeading;
+    _animEndHeading = calcHeading;
+
+    _smoothCarController?.forward(from: 0.0);
   }
 
   /// Démarre la course vers la destination (transition vers ActiveRidePage)
   void startRide() {
-    _ridePollTimer?.cancel();
+    _cleanupTimersAndSubs();
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(effectiveRideId);
+    }
     final effectiveTripOption = _tripTraffic.isNotEmpty
         ? widget.rideOption.copyWith(traffic: _tripTraffic)
         : widget.rideOption;
@@ -1008,10 +1237,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             .toUpperCase()
         : 'MS';
 
-    final etaDisplay = _driverArrived ||
-            (_remainingDistanceM > 0 && _remainingDistanceM < 50)
-        ? 'ride.arrived'.tr()
-        : _currentEtaLabel;
+    final etaDisplay = _isPositionUpdating
+        ? 'ride.position_updating'.tr()
+        : (_driverArrived ||
+                (_remainingDistanceM > 0 && _remainingDistanceM < 50)
+            ? 'ride.arrived'.tr()
+            : _currentEtaLabel);
 
     final digits = _departureCode.padRight(4, '0').split('');
 
@@ -1021,13 +1252,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        _handleBack();
+        // Course en cours / chauffeur en approche : retour désactivé
       },
       child: Scaffold(
         backgroundColor: AppColors.white,
       body: Stack(
         children: [
+          // Indicateur discret de reconnexion WebSocket (PDF page 7)
+          const SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: RealtimeStatusIndicator(),
+            ),
+          ),
+
           // 1. Fullscreen Google Map with multi-touch gestures enabled
           Listener(
             onPointerDown: (_) {
@@ -1039,6 +1277,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             },
             child: GoogleMap(
               key: const ValueKey('approaching_google_map'),
+              style: MapStyleService.style,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   (_pickupPosition.latitude + _driverInitialPosition.latitude) /
@@ -1055,8 +1294,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                 left: 16,
                 right: 16,
               ),
+              buildingsEnabled: false,
               onMapCreated: (ctrl) {
                 _mapController = ctrl;
+                MapStyleService.applyStyle(ctrl);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   Future.delayed(const Duration(milliseconds: 300), () {
                     if (mounted) {
@@ -1086,43 +1327,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             ),
           ),
 
-          // 2. Top Bar: Back button (matching screenshot)
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  width: AppConstants.circularButtonSize,
-                  height: AppConstants.circularButtonSize,
-                  decoration: const BoxDecoration(
-                    color: AppColors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.shadowMarker,
-                        blurRadius: 10,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: AppColors.textPrimary,
-                      size: 22,
-                    ),
-                    onPressed: _handleBack,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // 3. Bottom Sheet Draggable & Collapsible : glissement direct ultra-fluide
+          // 2. Bottom Sheet Draggable & Collapsible : glissement direct ultra-fluide
           Align(
             alignment: Alignment.bottomCenter,
             child: AnimatedBuilder(
@@ -1770,13 +1975,4 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     );
   }
 
-  void _handleBack() {
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomePage()),
-      );
-    }
-  }
 }

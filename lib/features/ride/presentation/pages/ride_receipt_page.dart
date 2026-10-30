@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
@@ -11,8 +12,10 @@ import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_help_page.dart';
+import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/receipt_pdf_service.dart';
 import 'package:seddo/services/route_service.dart';
+import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Screen displaying the detailed trip receipt matching the reference design:
@@ -75,6 +78,8 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   late final RideService _rideService;
   GoogleMapController? _mapController;
   List<LatLng> _polylinePoints = [];
+  BitmapDescriptor? _departurePinMarker;
+  BitmapDescriptor? _destinationPinMarker;
 
   static const LatLng _defaultDepartureCoords = LatLng(14.7167, -17.4677); // Sacré-Cœur 3
   static const LatLng _defaultDestinationCoords = LatLng(14.7431, -17.5186); // Almadies
@@ -83,7 +88,19 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   void initState() {
     super.initState();
     _rideService = widget.rideService ?? RideService();
+    _loadCustomMarkers();
     _loadRoute();
+  }
+
+  Future<void> _loadCustomMarkers() async {
+    final pickup = await MapMarkerHelper.getDeparturePinMarker();
+    final dest = await MapMarkerHelper.getDestinationPinMarker();
+    if (mounted) {
+      setState(() {
+        _departurePinMarker = pickup;
+        _destinationPinMarker = dest;
+      });
+    }
   }
 
   Future<void> _loadRoute() async {
@@ -174,7 +191,9 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
       Marker(
         markerId: const MarkerId('receipt_departure'),
         position: origin,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: _departurePinMarker ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        anchor: const Offset(0.5, 1.0),
         infoWindow: InfoWindow(
           title: widget.departure?.mainText ?? 'Sacré-Cœur 3',
         ),
@@ -182,7 +201,9 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
       Marker(
         markerId: const MarkerId('receipt_destination'),
         position: destination,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        icon: _destinationPinMarker ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        anchor: const Offset(0.5, 1.0),
         infoWindow: InfoWindow(
           title: widget.destination?.mainText ?? 'Almadies',
         ),
@@ -361,12 +382,14 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
           // 1. Zoomable & Interactive Map in Background
           Positioned.fill(
             child: GoogleMap(
+              style: MapStyleService.style,
               initialCameraPosition: CameraPosition(
                 target: departureCoord,
                 zoom: 14.0,
               ),
               onMapCreated: (controller) {
                 _mapController = controller;
+                MapStyleService.applyStyle(controller);
                 _fitBounds();
               },
               polylines: _buildPolylines(),
@@ -375,6 +398,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
               scrollGesturesEnabled: true,
               rotateGesturesEnabled: true,
               tiltGesturesEnabled: true,
+              buildingsEnabled: false,
               zoomControlsEnabled: false,
               myLocationButtonEnabled: false,
               compassEnabled: false,
@@ -612,14 +636,14 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Departure Point (Different color location pin)
+          // 1. Departure Point (Silhouette passager Icons.hail_rounded)
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Icon(
-                Icons.location_on_rounded,
+                Icons.hail_rounded,
                 size: AppConstants.iconSizeMd,
-                color: AppColors.receiptDeparturePin,
+                color: AppColors.textPrimary,
               ),
               const SizedBox(width: AppConstants.spacingUnit),
               Expanded(
@@ -675,14 +699,18 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
             ),
           ),
 
-          // 3. Arrival Point (Different color location pin - Orange Seddo)
+          // 3. Arrival Point (Flag icon flag-svgrepo-com.svg - Orange Seddo)
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.location_on_rounded,
-                size: AppConstants.iconSizeMd,
-                color: AppColors.receiptArrivalPin,
+              SvgPicture.asset(
+                'assets/icons/flag-svgrepo-com.svg',
+                width: AppConstants.iconSizeMd,
+                height: AppConstants.iconSizeMd,
+                colorFilter: const ColorFilter.mode(
+                  AppColors.primary,
+                  BlendMode.srcIn,
+                ),
               ),
               const SizedBox(width: AppConstants.spacingUnit),
               Expanded(

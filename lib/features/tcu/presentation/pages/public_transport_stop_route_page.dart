@@ -10,6 +10,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/tcu/data/models/tcu_route_model.dart';
+import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/route_service.dart';
 
 /// Screen displaying walking navigation towards the nearest transit stop on the map (Yango style).
@@ -407,6 +408,7 @@ class _PublicTransportStopRoutePageState
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
+    MapStyleService.applyStyle(controller);
     _fitMapBounds();
   }
 
@@ -703,6 +705,7 @@ class _PublicTransportStopRoutePageState
           Positioned.fill(
             child: GoogleMap(
               key: const Key('tcu_stop_route_google_map'),
+              style: MapStyleService.style,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   (_userPos.latitude + _stopPos.latitude) / 2,
@@ -713,6 +716,7 @@ class _PublicTransportStopRoutePageState
               markers: _buildMarkers(),
               polylines: _buildPolylines(),
               onMapCreated: _onMapCreated,
+              buildingsEnabled: false,
               zoomControlsEnabled: false,
               myLocationButtonEnabled: false,
               myLocationEnabled: true,

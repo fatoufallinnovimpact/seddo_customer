@@ -20,6 +20,9 @@ import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_shee
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/no_driver_found_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
+import 'package:seddo/services/map_style_service.dart';
+import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/services/route_service.dart';
 
 /// Screen displayed while searching for nearby drivers:
@@ -66,6 +69,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   Timer? _rideStatusPollTimer;
   late AnimationController _radarController;
 
+  StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
+  StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
+  StreamSubscription<void>? _realtimeReconnectSub;
+
   BitmapDescriptor? _destPinIcon;
   BitmapDescriptor? _pickupPinIcon;
   BitmapDescriptor? _carMarkerIcon;
@@ -96,12 +103,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     _loadCustomMarkers();
     _loadNearbyDrivers();
 
-    // Poll nearby drivers periodically while searching
-    _nearbyPollTimer = Timer.periodic(
-      const Duration(seconds: 8),
-      (_) => _loadNearbyDrivers(),
-    );
-
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
     final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
@@ -114,14 +115,75 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       });
     }
 
-    // Interroge périodiquement GET /v1/rides/{id} pour détecter l'acceptation d'un chauffeur
+    // Écoute temps réel des chauffeurs proches via WebSocket (nearby.drivers)
+    _realtimeNearbySub = RealtimeService().nearbyDriversStream.listen((cars) {
+      if (mounted && cars.isNotEmpty) {
+        setState(() {
+          _nearbyCars = cars;
+          _nearbyDriversCount = cars.length;
+        });
+      }
+    });
+
+    // Poll de secours passif pour les chauffeurs à proximité (toutes les 15s si hors ligne)
+    _nearbyPollTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) {
+        if (!RealtimeService().isConnected) {
+          _loadNearbyDrivers();
+        }
+      },
+    );
+
+    // Initialisation et écoute temps réel de l'acceptation de la course par WebSocket
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
     if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
       _checkRideStatus(effectiveRideId);
+
+      // Connexion Socket.IO et adhésion au canal de la course
+      RealtimeService().connect();
+      RealtimeService().joinRide(effectiveRideId);
+
+      _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+          if (event.status == 'ACCEPTED' ||
+              event.status == 'DRIVER_ARRIVED' ||
+              event.status == 'IN_PROGRESS' ||
+              event.driver != null) {
+            _rideStatusPollTimer?.cancel();
+            final driver = event.driver ??
+                DriverModel.fromRideJson(
+                  event.raw,
+                  defaultRideType: widget.rideOption.type,
+                );
+            final code = event.departureCode ??
+                DriverModel.extractDepartureCode(event.raw);
+            onDriverFound(driver, code, effectiveRideId);
+          } else if (event.status.startsWith('CANCELLED') ||
+              event.status == 'NO_DRIVER') {
+            _rideStatusPollTimer?.cancel();
+            onNoDriverAvailable();
+          }
+        }
+      });
+
+      // Resynchronisation REST automatique dès la reconnexion (PDF page 7 & 8)
+      _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
+        if (mounted) {
+          _checkRideStatus(effectiveRideId);
+        }
+      });
+
+      // Si le WebSocket n'est pas encore connecté, conserver un polling de secours passif
       if (!isTest) {
         _rideStatusPollTimer = Timer.periodic(
-          const Duration(seconds: 3),
-          (_) => _checkRideStatus(effectiveRideId),
+          const Duration(seconds: 5),
+          (_) {
+            if (!RealtimeService().isConnected) {
+              _checkRideStatus(effectiveRideId);
+            }
+          },
         );
       }
     }
@@ -129,6 +191,13 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   @override
   void dispose() {
+    _realtimeStatusSub?.cancel();
+    _realtimeNearbySub?.cancel();
+    _realtimeReconnectSub?.cancel();
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(effectiveRideId);
+    }
     _autoMatchTimer?.cancel();
     _nearbyPollTimer?.cancel();
     _rideStatusPollTimer?.cancel();
@@ -497,6 +566,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           IgnorePointer(
             ignoring: true,
             child: GoogleMap(
+              style: MapStyleService.style,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   widget.departure.latitude,
@@ -504,8 +574,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                 ),
                 zoom: 17.2,
               ),
+              buildingsEnabled: false,
               onMapCreated: (ctrl) {
                 _mapController = ctrl;
+                MapStyleService.applyStyle(ctrl);
                 ctrl.moveCamera(
                   CameraUpdate.newCameraPosition(
                     CameraPosition(
@@ -533,7 +605,15 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             ),
           ),
 
-          // 2. Floating Top Back Button
+          // 2. Indicateur discret de reconnexion WebSocket (PDF page 7)
+          const SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: RealtimeStatusIndicator(),
+            ),
+          ),
+
+          // 3. Floating Top Back Button
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(

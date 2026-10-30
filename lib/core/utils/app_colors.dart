@@ -223,6 +223,7 @@ abstract class AppColors {
   static const Color amberRating = Color(0xFFFF9500);
   static const Color avatarLightBeige = Color(0xFFE2DBD3);
   static const Color buttonSecondaryBeige = Color(0xFFF4F1EA);
+  static const Color mapBeige = Color(0xFFF6F3EE);
   static const Color pureBlack = Color(0xFF000000);
   static const Color black38 = Color(0x61000000);
   static const Color errorLightBg = Color(0xFFFFECEC);

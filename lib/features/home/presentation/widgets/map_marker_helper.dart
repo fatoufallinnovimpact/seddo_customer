@@ -287,86 +287,72 @@ abstract class MapMarkerHelper {
   static Future<BitmapDescriptor> getCarMarker() => get3DCarMarker();
 
   /// Generate modern Departure Location Pin marker (compact Yango-style):
-  /// Vibrant Seddo Orange teardrop location pin with soft shadow, white ring and central dot.
-  /// Anchor at (0.5, 1.0) so the pin tip points directly at the departure point.
+  /// Modern Seddo departure pin marker:
+  /// Orange squircle with passenger silhouette (Icons.hail_rounded), needle stalk and ground shadow.
+  /// Anchor at (0.5, 1.0) so the pin stalk tip points directly at the departure point.
   static Future<BitmapDescriptor> getDeparturePinMarker() async {
     if (_departurePinIcon != null) return _departurePinIcon!;
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 24.0;
-    const double height = 30.0;
+    const double width = 36.0;
+    const double height = 46.0;
+    const double boxSize = 30.0;
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
       ..color = AppColors.shadowCanvasMedium
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawOval(
-      const Rect.fromLTWH(8, height - 3.5, 8, 3.0),
+      const Rect.fromLTWH((width - 12) / 2, height - 3.5, 12, 3.0),
       shadowPaint,
     );
 
-    // 2. Teardrop Location Pin Path
-    final pinPath = Path();
-    pinPath.moveTo(width / 2, height - 2.5); // Pin bottom tip
-    pinPath.cubicTo(
-      width * 0.16,
-      height * 0.65,
-      width * 0.04,
-      height * 0.45,
-      width * 0.04,
-      height * 0.32,
+    // 2. Vertical anchor stalk
+    final stalkPaint = Paint()
+      ..color = AppColors.markerIconBlack
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(width / 2, boxSize - 2),
+      const Offset(width / 2, height - 2.5),
+      stalkPaint,
     );
-    pinPath.arcToPoint(
-      Offset(width * 0.96, height * 0.32),
-      radius: const Radius.circular(width * 0.46),
-      clockwise: true,
-    );
-    pinPath.cubicTo(
-      width * 0.96,
-      height * 0.45,
-      width * 0.84,
-      height * 0.65,
-      width / 2,
-      height - 2.5,
-    );
-    pinPath.close();
 
-    // 3. Pin Body Gradient (Primary Orange -> Deep Orange)
-    final pinGradient = ui.Gradient.linear(
-      const Offset(width / 2, 0),
-      Offset(width / 2, height),
-      [
-        AppColors.amberRating,
-        AppColors.primary,
-        AppColors.orangeDarkPin,
-      ],
-      [0.0, 0.5, 1.0],
+    // 3. Orange squircle box (matches current position marker)
+    final boxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH((width - boxSize) / 2, 0, boxSize, boxSize),
+      const Radius.circular(9),
     );
-    final pinPaint = Paint()
-      ..shader = pinGradient
+    final boxPaint = Paint()
+      ..color = AppColors.primary
       ..style = PaintingStyle.fill;
-    canvas.drawPath(pinPath, pinPaint);
+    canvas.drawRRect(boxRect, boxPaint);
 
-    // White outer border for crisp definition on map
+    // White outer border for crisp definition
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-    canvas.drawPath(pinPath, borderPaint);
+      ..strokeWidth = 1.6;
+    canvas.drawRRect(boxRect, borderPaint);
 
-    // 4. White Center Circle
-    final centerOffset = Offset(width / 2, height * 0.33);
-    final whiteCenterPaint = Paint()
-      ..color = AppColors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 4.2, whiteCenterPaint);
-
-    // 5. Inner Orange Location Dot
-    final innerDotPaint = Paint()
-      ..color = AppColors.primary
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 2.2, innerDotPaint);
+    // 4. Icons.hail_rounded silhouette icon
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.hail_rounded.codePoint),
+        style: TextStyle(
+          fontSize: 19.0,
+          fontFamily: Icons.hail_rounded.fontFamily,
+          package: Icons.hail_rounded.fontPackage,
+          color: AppColors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((width - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
+    );
 
     final picture = pictureRecorder.endRecording();
     final image = await picture.toImage(width.toInt(), height.toInt());
@@ -376,87 +362,72 @@ abstract class MapMarkerHelper {
     return _departurePinIcon!;
   }
 
-  /// Generate modern Destination / Arrival Location Pin marker (compact Yango-style):
-  /// Sleek Deep Black teardrop location pin with white circle and target / arrival dot.
-  /// Anchor at (0.5, 1.0) so the pin tip points directly at destination point.
+  /// Modern Seddo destination / arrival pin marker:
+  /// Executive dark squircle with flag icon (Icons.flag_rounded), needle stalk and ground shadow.
+  /// Anchor at (0.5, 1.0) so the pin stalk tip points directly at destination point.
   static Future<BitmapDescriptor> getDestinationPinMarker() async {
     if (_destinationPinIcon != null) return _destinationPinIcon!;
 
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 24.0;
-    const double height = 30.0;
+    const double width = 36.0;
+    const double height = 46.0;
+    const double boxSize = 30.0;
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
       ..color = AppColors.shadowCanvasMedium
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
     canvas.drawOval(
-      const Rect.fromLTWH(8, height - 3.5, 8, 3.0),
+      const Rect.fromLTWH((width - 12) / 2, height - 3.5, 12, 3.0),
       shadowPaint,
     );
 
-    // 2. Teardrop Location Pin Path
-    final pinPath = Path();
-    pinPath.moveTo(width / 2, height - 2.5); // Pin bottom tip
-    pinPath.cubicTo(
-      width * 0.16,
-      height * 0.65,
-      width * 0.04,
-      height * 0.45,
-      width * 0.04,
-      height * 0.32,
+    // 2. Vertical anchor stalk
+    final stalkPaint = Paint()
+      ..color = AppColors.markerIconBlack
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(width / 2, boxSize - 2),
+      const Offset(width / 2, height - 2.5),
+      stalkPaint,
     );
-    pinPath.arcToPoint(
-      Offset(width * 0.96, height * 0.32),
-      radius: const Radius.circular(width * 0.46),
-      clockwise: true,
-    );
-    pinPath.cubicTo(
-      width * 0.96,
-      height * 0.45,
-      width * 0.84,
-      height * 0.65,
-      width / 2,
-      height - 2.5,
-    );
-    pinPath.close();
 
-    // 3. Pin Body Gradient (Executive Black)
-    final pinGradient = ui.Gradient.linear(
-      const Offset(width / 2, 0),
-      Offset(width / 2, height),
-      [
-        AppColors.pinDarkGradientStart,
-        AppColors.buttonBlack,
-        AppColors.pureBlack,
-      ],
-      [0.0, 0.5, 1.0],
+    // 3. Executive dark squircle box
+    final boxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH((width - boxSize) / 2, 0, boxSize, boxSize),
+      const Radius.circular(9),
     );
-    final pinPaint = Paint()
-      ..shader = pinGradient
+    final boxPaint = Paint()
+      ..color = AppColors.buttonBlack
       ..style = PaintingStyle.fill;
-    canvas.drawPath(pinPath, pinPaint);
+    canvas.drawRRect(boxRect, boxPaint);
 
-    // White outer border for crisp definition on map
+    // White outer border for crisp definition
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4;
-    canvas.drawPath(pinPath, borderPaint);
+      ..strokeWidth = 1.6;
+    canvas.drawRRect(boxRect, borderPaint);
 
-    // 4. White Center Circle
-    final centerOffset = Offset(width / 2, height * 0.33);
-    final whiteCenterPaint = Paint()
-      ..color = AppColors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 4.2, whiteCenterPaint);
-
-    // 5. Inner Black Arrival Dot
-    final innerDotPaint = Paint()
-      ..color = AppColors.buttonBlack
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(centerOffset, 2.2, innerDotPaint);
+    // 4. Icons.flag_rounded icon
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.flag_rounded.codePoint),
+        style: TextStyle(
+          fontSize: 18.0,
+          fontFamily: Icons.flag_rounded.fontFamily,
+          package: Icons.flag_rounded.fontPackage,
+          color: AppColors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((width - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
+    );
 
     final picture = pictureRecorder.endRecording();
     final image = await picture.toImage(width.toInt(), height.toInt());

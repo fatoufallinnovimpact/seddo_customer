@@ -5,9 +5,14 @@ import 'package:seddo/features/home/presentation/pages/edit_user_position_page.d
 import 'package:seddo/features/home/presentation/pages/pickup_map_location_picker_page.dart';
 import 'package:seddo/features/home/presentation/widgets/seddo_map_picker_pin.dart';
 import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
+import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initTestLocalization();
+  });
 
   group('SeddoMapPickerPin Widget Tests', () {
     testWidgets('renders idle pin with stem and passenger icon',
@@ -44,15 +49,15 @@ void main() {
   });
 
   group('UserPositionBottomSheet Widget Tests', () {
-    testWidgets('renders modal header, preview and action items',
+    testWidgets('renders preview, address and horizontal action buttons',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
 
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
+        wrapWithTestLocalization(
+          child: const Scaffold(
             body: UserPositionBottomSheet(
               userLocation: LatLng(14.6937, -17.4440),
               mainAddress: 'Rue YF-557, 20',
@@ -62,20 +67,16 @@ void main() {
         ),
       );
 
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
 
-      // 1. Header
-      expect(find.text('VOTRE POSITION'), findsOneWidget);
-
-      // 2. Addresses
+      // 1. Addresses
       expect(find.text('Rue YF-557, 20'), findsOneWidget);
       expect(find.text('Yoff, Almadies, Dakar'), findsOneWidget);
 
-      // 3. Action options
-      expect(find.text('Enregistrer la position pour une utilisation ultérieure'),
-          findsOneWidget);
-      expect(find.text('Partager la position'), findsOneWidget);
-      expect(find.text('Modifier votre position'), findsOneWidget);
+      // 2. Action options
+      expect(find.text('Modifier'), findsOneWidget);
+      expect(find.text('Enregistrer'), findsOneWidget);
+      expect(find.text('Partager'), findsOneWidget);
     });
   });
 

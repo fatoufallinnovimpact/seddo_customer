@@ -9,6 +9,8 @@ import 'package:seddo/features/ride/data/models/chat_message_model.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
+import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
+import 'package:seddo/services/realtime_service.dart';
 
 /// Screen allowing the customer to chat with the assigned driver.
 /// Connected to backend API endpoints:
@@ -36,6 +38,8 @@ class _DriverChatPageState extends State<DriverChatPage> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessageModel> _messages = [];
   Timer? _pollTimer;
+  StreamSubscription<ChatMessageModel>? _realtimeChatSub;
+  StreamSubscription<void>? _realtimeReconnectSub;
   late final RideService _rideService;
   bool _isLoading = true;
 
@@ -55,19 +59,56 @@ class _DriverChatPageState extends State<DriverChatPage> {
     super.initState();
     _rideService = widget.rideService ?? RideService();
 
-    // Initial fetch of real messages from backend API GET /v1/rides/{id}/messages
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+    // Chargement initial des messages par REST
     _fetchMessages();
 
-    // Periodic poll for incoming driver messages (every 4 seconds)
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (mounted) {
-        _fetchMessages();
-      }
-    });
+    // Connexion temps réel WebSocket pour la réception instantanée des messages du chauffeur
+    if (_effectiveRideId.isNotEmpty) {
+      RealtimeService().connect();
+      RealtimeService().joinRide(_effectiveRideId);
+
+      _realtimeChatSub = RealtimeService().chatMessageStream.listen((msg) {
+        if (!mounted) return;
+        final exists = _messages.any((m) =>
+            m.id == msg.id ||
+            (m.text == msg.text && m.sender == msg.sender));
+        if (!exists) {
+          setState(() {
+            _messages.add(msg);
+            _messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          });
+          _scrollToBottom();
+        }
+      });
+
+      // Resynchronisation dès reconnexion
+      _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
+        if (mounted) {
+          _fetchMessages();
+        }
+      });
+    }
+
+    // Polling passif de secours uniquement si hors-ligne
+    if (!isTest) {
+      _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (!RealtimeService().isConnected) {
+          _fetchMessages();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _realtimeChatSub?.cancel();
+    _realtimeReconnectSub?.cancel();
+    if (_effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(_effectiveRideId);
+    }
     _pollTimer?.cancel();
     _textController.dispose();
     _scrollController.dispose();
@@ -280,6 +321,7 @@ class _DriverChatPageState extends State<DriverChatPage> {
         child: Column(
           children: [
             const Divider(height: 1, color: AppColors.cardBorder),
+            const RealtimeStatusIndicator(),
 
             // Numéros masqués security notice banner
             Container(

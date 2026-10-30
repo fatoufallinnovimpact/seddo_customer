@@ -17,8 +17,12 @@ import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
+import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
+import 'package:seddo/services/map_style_service.dart';
+import 'package:seddo/services/realtime_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_driver_card_widget.dart';
@@ -97,6 +101,17 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   DateTime _lastCameraUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   late bool _isOffline;
 
+  // Realtime Socket.IO streams & stale location tracking (PDF Seddo)
+  StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
+  StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocationSub;
+  StreamSubscription<RealtimeRideEtaEvent>? _realtimeEtaSub;
+  StreamSubscription<RealtimeRideRouteEvent>? _realtimeRouteSub;
+  StreamSubscription<void>? _realtimeReconnectSub;
+
+  DateTime _lastDriverLocationTime = DateTime.now();
+  Timer? _stalePositionCheckTimer;
+  bool _isPositionUpdating = false;
+
   /// Whether to display the simulation toggle button in the bottom sheet.
   /// Kept in code for later use as requested by the user.
   static const bool _showNetworkSimulationControls = false;
@@ -142,10 +157,111 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         }
       });
     }
+
+    // Connexion WebSocket en direct pour suivre la course (PDF Seddo)
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      RealtimeService().connect();
+      RealtimeService().joinRide(effectiveRideId);
+
+      _realtimeStatusSub =
+          RealtimeService().rideStatusStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+          if (event.status == 'COMPLETED') {
+            _cleanupRealtime();
+            _onTripCompleted();
+          } else if (event.status.startsWith('CANCELLED')) {
+            _cleanupRealtime();
+            Navigator.of(context).pushReplacement(
+              SlideRightToLeftRoute(
+                page: RideCancelledPage(
+                  rideOption: widget.rideOption,
+                  departure: widget.departure,
+                  destination: widget.destination,
+                ),
+              ),
+            );
+          }
+        }
+      });
+
+      _realtimeLocationSub =
+          RealtimeService().driverLocationStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          _lastDriverLocationTime = DateTime.now();
+          if (_isPositionUpdating) {
+            setState(() {
+              _isPositionUpdating = false;
+            });
+          }
+          updateCarLocation(event.location, heading: event.heading);
+        }
+      });
+
+      _realtimeEtaSub = RealtimeService().rideEtaStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          if (event.etaMinutes > 0) {
+            setState(() {
+              _remainingEtaMinutes = event.etaMinutes;
+            });
+          }
+          if (event.distanceMeters != null && event.distanceMeters! > 0) {
+            setState(() {
+              _remainingDistanceKm = event.distanceMeters! / 1000.0;
+            });
+          }
+        }
+      });
+
+      _realtimeRouteSub = RealtimeService().rideRouteStream.listen((event) {
+        if (!mounted) return;
+        if (event.points.length >= 2) {
+          setState(() {
+            _effectiveRoute = List.from(event.points);
+          });
+        }
+      });
+
+      _stalePositionCheckTimer =
+          Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted && _progressRatio < 0.99) {
+          final elapsed =
+              DateTime.now().difference(_lastDriverLocationTime).inSeconds;
+          if (elapsed >= 30 && !_isPositionUpdating) {
+            setState(() {
+              _isPositionUpdating = true;
+            });
+          } else if (elapsed < 30 && _isPositionUpdating) {
+            setState(() {
+              _isPositionUpdating = false;
+            });
+          }
+        }
+      });
+    }
+  }
+
+  void _cleanupRealtime() {
+    _stalePositionCheckTimer?.cancel();
+    _realtimeStatusSub?.cancel();
+    _realtimeLocationSub?.cancel();
+    _realtimeEtaSub?.cancel();
+    _realtimeRouteSub?.cancel();
+    _realtimeReconnectSub?.cancel();
   }
 
   @override
   void dispose() {
+    _cleanupRealtime();
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(effectiveRideId);
+    }
     _animController?.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -812,6 +928,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         backgroundColor: AppColors.white,
       body: Stack(
         children: [
+          // Indicateur discret de reconnexion WebSocket (PDF page 7)
+          const SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: RealtimeStatusIndicator(),
+            ),
+          ),
+
           // 1. Fullscreen Google Map avec pinch-to-zoom et contrôle gestuel fluide
           Listener(
             onPointerDown: (_) {
@@ -823,6 +947,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             },
             child: GoogleMap(
               key: const ValueKey('active_ride_map_view'),
+              style: MapStyleService.style,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   (widget.departure.latitude + widget.destination.latitude) / 2,
@@ -837,8 +962,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                 right: 16,
               ),
               mapType: MapType.normal,
+              buildingsEnabled: false,
               onMapCreated: (ctrl) {
                 _mapController = ctrl;
+                MapStyleService.applyStyle(ctrl);
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   Future.delayed(const Duration(milliseconds: 300), () {
                     if (mounted) {
@@ -979,10 +1106,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                                 const SizedBox(width: 6),
                                 Text(
                                   _progressRatio >= 0.99
-                                      ? 'Arrivé à destination !'
-                                      : (_isStopped
-                                          ? _stopReason
-                                          : 'Arrive dans $_remainingEtaMinutes min'),
+                                      ? 'ride.arrived_at_destination'.tr()
+                                      : (_isPositionUpdating
+                                          ? 'ride.position_updating'.tr()
+                                          : (_isStopped
+                                              ? _stopReason
+                                              : 'ride.arriving_in'.tr(args: ['$_remainingEtaMinutes']))),
                                   style: GoogleFonts.inter(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w800,

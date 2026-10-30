@@ -11,6 +11,7 @@ import 'package:seddo/features/home/presentation/widgets/seddo_map_picker_pin.da
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
 import 'package:seddo/features/saved_places/data/services/saved_places_service.dart';
 import 'package:seddo/features/saved_places/presentation/widgets/add_saved_place_sheet.dart';
+import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
 
 /// Écran plein écran de sélection de la position de départ sur la carte
@@ -202,14 +203,19 @@ class _PickupMapLocationPickerPageState
           // 1. Google Map plein écran
           GoogleMap(
             key: const ValueKey('pickup_picker_google_map'),
+            style: MapStyleService.style,
             initialCameraPosition: CameraPosition(
               target: _currentLocation,
               zoom: 16.5,
             ),
-            onMapCreated: (ctrl) => _mapController = ctrl,
+            onMapCreated: (ctrl) {
+              _mapController = ctrl;
+              MapStyleService.applyStyle(ctrl);
+            },
             onCameraMoveStarted: _onCameraMoveStarted,
             onCameraMove: _onCameraMove,
             onCameraIdle: _onCameraIdle,
+            buildingsEnabled: false,
             myLocationEnabled: false,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,

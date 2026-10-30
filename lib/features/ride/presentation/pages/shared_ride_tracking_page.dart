@@ -11,6 +11,8 @@ import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart'
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/shared_ride_details_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
+import 'package:seddo/services/map_style_service.dart';
+import 'package:seddo/services/realtime_service.dart';
 
 /// Screen displayed when opening the shared live tracking link matching Screenshot 4:
 /// - Browser style header with orange Seddo logo and public tracking link
@@ -59,6 +61,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   late final RideService _rideService;
   SharedRideDetailsModel? _sharedDetails;
   Timer? _refreshTimer;
+  StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocSub;
   LatLng? _liveDriverPos;
   String? _effectiveToken;
   late String _displayShareUrl;
@@ -72,10 +75,26 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
     _effectiveToken = widget.token;
     _loadMarkers();
 
+    final effectiveRideId = widget.rideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      RealtimeService().connect();
+      RealtimeService().joinRide(effectiveRideId);
+
+      _realtimeLocSub =
+          RealtimeService().driverLocationStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          setState(() {
+            _liveDriverPos = event.location;
+          });
+        }
+      });
+    }
+
     if (_effectiveToken != null && _effectiveToken!.isNotEmpty) {
       _fetchSharedDetails();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-        if (mounted) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (mounted && !RealtimeService().isConnected) {
           _fetchSharedDetails();
         }
       });
@@ -96,8 +115,8 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
       });
       _fetchSharedDetails();
       _refreshTimer?.cancel();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-        if (mounted) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+        if (mounted && !RealtimeService().isConnected) {
           _fetchSharedDetails();
         }
       });
@@ -106,6 +125,11 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
 
   @override
   void dispose() {
+    _realtimeLocSub?.cancel();
+    final effectiveRideId = widget.rideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(effectiveRideId);
+    }
     _refreshTimer?.cancel();
     _mapController?.dispose();
     super.dispose();
@@ -245,6 +269,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
           // 1. Map
           Positioned.fill(
             child: GoogleMap(
+              style: MapStyleService.style,
               initialCameraPosition: CameraPosition(
                 target: LatLng(
                   (widget.departure.latitude + widget.destination.latitude) / 2,
@@ -253,9 +278,13 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
                 ),
                 zoom: 13.5,
               ),
-              onMapCreated: (ctrl) => _mapController = ctrl,
+              onMapCreated: (ctrl) {
+                _mapController = ctrl;
+                MapStyleService.applyStyle(ctrl);
+              },
               markers: _buildMarkers(),
               polylines: _buildPolylines(),
+              buildingsEnabled: false,
               zoomControlsEnabled: false,
               myLocationButtonEnabled: false,
               compassEnabled: false,
