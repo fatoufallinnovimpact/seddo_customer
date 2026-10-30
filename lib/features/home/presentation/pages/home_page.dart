@@ -771,12 +771,7 @@ class _HomePageContentState extends State<_HomePageContent> {
           },
           child: Stack(
             children: [
-              // Lignes de transit subtiles en fond de carte
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _TcuBackgroundRoutePainter(),
-                ),
-              ),
+
 
               // Train TER Dakar sur la droite du card : taille réduite, harmonieuse et compacte
               Positioned(
@@ -1205,33 +1200,4 @@ class _HomePageContentState extends State<_HomePageContent> {
   }
 }
 
-/// Dessine un réseau délicat de lignes de transit stylisées pour le fond de la carte TCU
-class _TcuBackgroundRoutePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.grayBorderLight
-      ..strokeWidth = AppConstants.strokeWidthBorder
-      ..style = PaintingStyle.stroke;
 
-    final path1 = Path()
-      ..moveTo(size.width * 0.45, 0)
-      ..lineTo(size.width * 0.65, size.height * 0.35)
-      ..lineTo(size.width, size.height * 0.25);
-    canvas.drawPath(path1, paint);
-
-    final path2 = Path()
-      ..moveTo(size.width * 0.50, size.height * 0.40)
-      ..lineTo(size.width * 0.70, size.height * 0.75)
-      ..lineTo(size.width, size.height * 0.70);
-    canvas.drawPath(path2, paint);
-
-    final path3 = Path()
-      ..moveTo(size.width * 0.30, size.height)
-      ..lineTo(size.width * 0.60, size.height * 0.85);
-    canvas.drawPath(path3, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
