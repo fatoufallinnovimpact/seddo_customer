@@ -33,7 +33,7 @@ import 'package:seddo/features/ride/presentation/widgets/offline_emergency_sheet
 import 'package:seddo/features/ride/presentation/widgets/ride_action_tile_widget.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
 
-/// Screen displayed once a driver has accepted the ride matching Screenshot 1:
+/// Écran de suivi du trajet en cours avec chauffeur :
 /// - Floating top bar with back button, center status, and red safety siren button
 /// - Interactive map showing driver's car approaching or on route
 /// - Header: "En route vers [Destination]" + ETA and distance
@@ -1003,7 +1003,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
           // 2. Floating Offline Banner (when offline) or Top Bar (when online)
           if (_isOffline) ...[
-            // Floating Black Offline Banner matching user screenshot
+            // Bannière flottante d'indication du mode hors-ligne
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
               left: 16,
@@ -1125,7 +1125,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       ),
                     ),
 
-                    // Floating Red Siren Button (Screenshot 1 top-right)
+                    // Bouton rouge flottant d'appel d'urgence / sécurité
                     Container(
                       width: AppConstants.circularButtonSize,
                       height: AppConstants.circularButtonSize,
@@ -1236,7 +1236,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                     const SizedBox(height: 14),
 
                     if (_isOffline) ...[
-                      // Offline View matching user screenshot:
+                      // Vue détaillée en mode hors-ligne :
                       Text(
                         'Dernière position il y a 40 s',
                         style: GoogleFonts.inter(
@@ -1257,7 +1257,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       ),
                       const SizedBox(height: 14),
 
-                      // "Urgence par SMS" tile matching screenshot
+                      // Tuile d'urgence par SMS (sans connexion internet)
                       InkWell(
                         onTap: _openOfflineEmergency,
                         borderRadius: BorderRadius.circular(

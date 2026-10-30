@@ -65,7 +65,7 @@ void main() {
   });
 
   group('ServiceUnavailableSheet Widget Tests', () {
-    testWidgets('Renders all content matching screenshot and triggers actions',
+    testWidgets('Renders all content and triggers actions',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;

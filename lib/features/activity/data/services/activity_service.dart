@@ -456,7 +456,7 @@ class ActivityService {
     return _allPastRides.length;
   }
 
-  /// Refunds list matching Screenshot 2
+  /// Liste des remboursements effectués sur les courses annulées.
   Future<List<ActivityRefundItem>> getRefunds() async {
     await Future<void>.delayed(const Duration(milliseconds: 30));
     return [

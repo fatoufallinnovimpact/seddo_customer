@@ -558,8 +558,7 @@ abstract class MapMarkerHelper {
     return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
   }
 
-  /// Generate Departure marker with floating white badge "Rendez-vous ici"
-  /// matching the approaching driver screenshot.
+  /// Marqueur de départ avec badge blanc flottant "Rendez-vous ici".
   static Future<BitmapDescriptor> getRendezVousIciMarker() async {
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
@@ -774,7 +773,7 @@ abstract class MapMarkerHelper {
     return _userHaloMarkerIcon!;
   }
 
-  /// Dark Eco car top-down marker matching Screenshot 1
+  /// Marqueur véhicule vue du dessus Seddo Eco (teinte sombre).
   static Future<BitmapDescriptor> getEcoCarMarker() async {
     if (_ecoCarMarkerIcon != null) return _ecoCarMarkerIcon!;
     _ecoCarMarkerIcon = await getTopDownCarMarker(
@@ -785,7 +784,7 @@ abstract class MapMarkerHelper {
     return _ecoCarMarkerIcon!;
   }
 
-  /// Vibrant Orange Confort car top-down marker matching Screenshot 2
+  /// Marqueur véhicule vue du dessus Seddo Confort (orange signature).
   static Future<BitmapDescriptor> getConfortCarMarker() async {
     if (_confortCarMarkerIcon != null) return _confortCarMarkerIcon!;
     _confortCarMarkerIcon = await getTopDownCarMarker(
@@ -796,7 +795,7 @@ abstract class MapMarkerHelper {
     return _confortCarMarkerIcon!;
   }
 
-  /// Top-down car generator matching the reference screenshots
+  /// Générateur dynamique de marqueur véhicule vue du dessus.
   static Future<BitmapDescriptor> getTopDownCarMarker({
     required Color bodyColor,
     required Color roofColor,
@@ -886,7 +885,7 @@ abstract class MapMarkerHelper {
     return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
   }
 
-  /// Circular transit stop pin with white border and single letter matching Screenshot 3
+  /// Marqueur circulaire pour arrêt de transport avec bordure blanche et initiale.
   static Future<BitmapDescriptor> getTransitStopLetterMarker({
     required String letter,
     required Color color,

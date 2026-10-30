@@ -5,7 +5,7 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 
-/// Modal bottom sheet for insufficient balance matching Screenshot 2:
+/// Feuille modale affichée en cas de solde Orange Money insuffisant :
 /// - Wallet icon in circular peach/red badge
 /// - Title: "Solde insuffisant"
 /// - Subtitle: "Rien n'a été débité de votre Orange Money."

@@ -12,7 +12,7 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/widgets/safety_incident_report_sheet.dart';
 
-/// Modern safety bottom sheet modal matching reference design:
+/// Modal de sécurité et d'assistance d'urgence 24h/24 et 7j/7 :
 /// - Vivid Seddo orange header with decorative wave arcs
 /// - Concentric badge with security shield SVG icon
 /// - Title "SÉCURITÉ DU TRAJET" & "On est là, 24h/24 et 7j/7"

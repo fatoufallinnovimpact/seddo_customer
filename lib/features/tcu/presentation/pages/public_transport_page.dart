@@ -13,7 +13,7 @@ import 'package:seddo/features/tcu/presentation/pages/public_transport_stop_rout
 import 'package:seddo/services/places_service.dart';
 
 /// Main Public Transport (TCU) page for Dakar.
-/// Matches user screenshots with dynamic i18n title ("Où allons-nous ?"),
+/// Interface moderne avec titre i18n dynamique ("Où allons-nous ?"),
 /// Real address autocomplete with "Ma position actuelle" GPS shortcut,
 /// Origin/Destination input fields with swap button, category filters (Tous, Dem Dikk, AFTU, BRT, TER),
 /// vehicle photos, expandable stops list, navigation towards nearest stop,
@@ -620,7 +620,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 3),
-                // Distinctive orange accent line matching Screenshot 1
+                // Trait d'accentuation sous l'onglet actif
                 Container(
                   height: AppConstants.tcuUnderlineHeight,
                   width: AppConstants.tcuUnderlineWidth,
@@ -955,7 +955,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     );
   }
 
-  /// Floating dark Seddo VTC card matching user screenshot (media_1792705913474.png).
+  /// Carte flottante de raccourci Seddo VTC.
   /// Stays visible floating over the page during scrolling, dismissible with ✕ button.
   Widget _buildFloatingSeddoCard() {
     return Container(
@@ -985,7 +985,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Car icon matching screenshot
+                // Icône véhicule de transport
                 const Icon(
                   Icons.directions_car_outlined,
                   color: AppColors.white,
@@ -1453,7 +1453,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Vertical Timeline Track on the left (Screenshot 1)
+          // Ligne temporelle verticale de l'itinéraire à pied
           Column(
             children: [
               // Origin node (orange ring)
@@ -1508,7 +1508,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
           ),
           const SizedBox(width: AppConstants.spacingUnitLg),
 
-          // Main Proposition Card on the right (Screenshot 1 & 3)
+          // Carte principale de proposition de transport
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1594,7 +1594,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Vehicle Image and Line info row (Screenshot 1)
+          // Visuel du véhicule et référence de la ligne
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -1681,7 +1681,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
           const Divider(height: 1, thickness: 0.8, color: AppColors.border),
           const SizedBox(height: AppConstants.spacingUnitLg),
 
-          // Stop name + Walking summary (Screenshot 3)
+          // Nom de l'arrêt et résumé du trajet piéton
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1720,7 +1720,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
 
           const SizedBox(height: AppConstants.spacingUnitLg),
 
-          // 3 Column Metrics (Prochain | Durée | Arrêts) (Screenshot 3)
+          // Métriques de trajet (Prochain départ, Durée, Arrêts)
           Row(
             children: [
               // Prochain
@@ -1762,7 +1762,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
 
           const SizedBox(height: AppConstants.spacingUnitLg),
 
-          // Buttons Row: Orange "Itinéraire vers l'arrêt" & Grey "Arrêts ∨" (Screenshot 3)
+          // Actions rapides : Itinéraire vers l'arrêt et détails des arrêts
           Row(
             children: [
               // "Itinéraire vers l'arrêt"

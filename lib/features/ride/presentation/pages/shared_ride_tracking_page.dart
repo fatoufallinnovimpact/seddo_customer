@@ -14,7 +14,7 @@ import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
 
-/// Screen displayed when opening the shared live tracking link matching Screenshot 4:
+/// Écran de consultation publique du suivi de trajet partagé :
 /// - Browser style header with orange Seddo logo and public tracking link
 /// - Connected to backend public endpoint GET /v1/share/{token}
 /// - Live map tracking car

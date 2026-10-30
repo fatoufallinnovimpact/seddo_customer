@@ -104,7 +104,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify DriverSearchPage is displayed matching Screenshot 3
+      // Verify DriverSearchPage is displayed with search title
       expect(find.byType(DriverSearchPage), findsOneWidget);
       expect(find.textContaining('Recherche d\'un chauffeur'), findsOneWidget);
 

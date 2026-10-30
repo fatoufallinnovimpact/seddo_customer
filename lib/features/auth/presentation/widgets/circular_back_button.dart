@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 
-/// Reusable circular back button matching the reference design:
+/// Bouton retour circulaire réutilisable :
 /// Pure white circle, soft elevation/shadow, black centered arrow icon.
 class CircularBackButton extends StatelessWidget {
   final VoidCallback? onPressed;

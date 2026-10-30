@@ -12,7 +12,7 @@ enum NoDriverFoundAction {
   retry,
 }
 
-/// Bottom sheet modal displayed when no driver accepts or is found matching Screenshot 2:
+/// Feuille modale affichée lorsqu'aucun chauffeur n'est disponible dans la zone :
 /// - "Aucun chauffeur disponible"
 /// - "Forte demande en ce moment autour de [lieu]."
 /// - Refund notification card with green refresh icon, amount, and OM ref

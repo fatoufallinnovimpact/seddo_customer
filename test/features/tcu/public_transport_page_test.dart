@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import 'package:seddo/features/tcu/data/models/tcu_route_model.dart';
 import 'package:seddo/features/tcu/data/services/public_transport_service.dart';
+import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_stop_route_page.dart';
 import '../../test_helpers/test_localization_helper.dart';
@@ -258,7 +259,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Navigated to PlaceSearchPage with prefilled departure & destination
-      expect(find.text('VOTRE TRAJET'), findsOneWidget);
+      expect(find.byType(PlaceSearchPage), findsOneWidget);
       expect(find.text('Ouakam'), findsWidgets);
       expect(find.text('Plateau'), findsWidgets);
     });

@@ -13,7 +13,7 @@ import 'package:seddo/features/auth/presentation/pages/otp_verification_page.dar
 import 'package:seddo/features/auth/presentation/widgets/circular_back_button.dart';
 import 'package:seddo/features/auth/presentation/widgets/senegal_phone_formatter.dart';
 
-/// Phone Number Input Screen matching the reference design:
+/// Écran de saisie du numéro de téléphone :
 /// - Circular back button on the left, orange SEDDO logo on the right
 /// - Title: "Votre numéro"
 /// - Subtitle: "Un numéro Orange Money est nécessaire pour payer vos courses."

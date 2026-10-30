@@ -12,7 +12,7 @@ import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
 
-/// Fullscreen interactive map picker matching the reference design:
+/// Page de sélection de point de départ ou d'arrivée directement sur la carte :
 /// - Floating top-left circular back button
 /// - Full interactive Google Map
 /// - Center pin with:
@@ -45,7 +45,7 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
   late final PlacesService _placesService;
   GoogleMapController? _mapController;
 
-  // Default coordinate: Ngor / Almadies Dakar (matches reference design screenshot)
+  // Coordonnées par défaut : Ngor / Almadies Dakar
   static const LatLng _defaultLocation = LatLng(14.7547, -17.5142);
 
   late LatLng _currentCenter;

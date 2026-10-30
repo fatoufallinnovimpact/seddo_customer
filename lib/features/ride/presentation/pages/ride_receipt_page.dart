@@ -18,7 +18,7 @@ import 'package:seddo/services/route_service.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Screen displaying the detailed trip receipt matching the reference design:
+/// Écran affichant le reçu détaillé et l'itinéraire de la course :
 /// - Top: Interactive & zoomable Google Map showing the traced route between departure & arrival
 /// - Floating circular back button on top-left
 /// - Draggable overlay bottom modal sheet:

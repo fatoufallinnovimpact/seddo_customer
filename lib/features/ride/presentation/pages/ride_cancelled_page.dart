@@ -9,7 +9,7 @@ import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 
-/// Screen displayed when a ride is cancelled and automatically refunded matching Screenshot 4:
+/// Écran affiché lorsqu'une course est annulée avec confirmation du remboursement :
 /// - Green circular refund icon
 /// - "Course annulée" title and free cancellation subtitle
 /// - Card with Montant remboursé, Vers Orange Money, Statut Remboursé, Réf. Orange

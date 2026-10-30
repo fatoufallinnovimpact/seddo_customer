@@ -32,8 +32,7 @@ import 'package:seddo/services/route_service.dart';
 import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 import 'package:share_plus/share_plus.dart';
 
-/// Screen displayed when the driver is approaching the pickup location:
-/// Matches the user's reference design:
+/// Écran affiché lorsque le chauffeur est en approche vers le point de départ :
 /// - Fullscreen interactive map with:
 ///   - Pickup pin with floating white badge "Rendez-vous ici" + glowing orange halo
 ///   - Approaching 3D car with translucent orange halo

@@ -1277,7 +1277,7 @@ class _PublicTransportStopRoutePageState
   }
 }
 
-/// Custom painter rendering the Dakar street map matching Screenshot 4 with Yango route coloring
+/// Rendu vectoriel de secours de la carte des rues pour le guidage piéton vers l'arrêt.
 class _DakarWalkingMapPainter extends CustomPainter {
   final bool isNavigating;
   final double progress;

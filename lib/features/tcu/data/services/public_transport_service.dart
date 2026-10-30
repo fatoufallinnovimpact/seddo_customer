@@ -517,7 +517,7 @@ class PublicTransportService {
     ];
   }
 
-  /// Master list of Dakar TCU propositions matching reference designs
+  /// Catalogue par défaut des propositions de transport urbain de Dakar (DDD, AFTU, BRT, TER).
   static List<TcuRouteOption> _buildDefaultOptions() {
     return const [
       // 1. Dakar Dem Dikk - DDD 10

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Animated Onboarding Car Widget using the exact artwork from the reference design.
+/// Widget d'animation réaliste du véhicule Seddo à l'écran d'accueil.
 /// - Animates the photorealistic orange sedan with realistic drive-in,
 ///   deceleration, braking suspension tilt, and settling into its parking spot.
 class AnimatedParkingCarWidget extends StatefulWidget {

@@ -16,7 +16,7 @@ import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
 
-/// Interactive place search screen matching the reference design:
+/// Écran de recherche et sélection d'adresses (départ et arrivée) :
 /// - Header: Back arrow + "Votre trajet"
 /// - Route card container:
 ///   - Departure with location.svg + editable text / "Ma position actuelle"
