@@ -1,6 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
@@ -169,8 +170,27 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet> {
       if (rideData != null) {
         final payment = rideData['payment'] as Map<String, dynamic>?;
         final orderId = payment?['orderId'] as String?;
+        final paymentUrl = payment?['paymentUrl'] as String?;
+        final payToken = payment?['payToken']?.toString();
 
-        if (orderId != null &&
+        debugPrint(
+            '[PaymentModal] ✅ Course créée ID: ${rideData['id']} - Statut: ${rideData['status']}');
+        debugPrint(
+            '[PaymentModal] 💳 Paiement (${payment?['method']}) URL: $paymentUrl - Token: $payToken');
+
+        // Si une paymentUrl est retournée (Wave ou Orange Money), ouvre Wave/l'app de paiement
+        if (paymentUrl != null && paymentUrl.isNotEmpty) {
+          final uri = Uri.tryParse(paymentUrl);
+          if (uri != null) {
+            try {
+              debugPrint(
+                  '[PaymentModal] 🌐 Ouverture lien de paiement (${widget.paymentMethod.name}): $paymentUrl');
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } catch (e) {
+              debugPrint('[PaymentModal] ⚠️ Erreur ouverture URL de paiement: $e');
+            }
+          }
+        } else if (orderId != null &&
             orderId.isNotEmpty &&
             widget.paymentMethod != PaymentMethodType.cash) {
           debugPrint(

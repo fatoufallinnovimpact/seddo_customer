@@ -29,6 +29,9 @@ class RideService {
   /// Identifiant de la dernière course créée ou restaurée
   static String? lastCreatedRideId;
 
+  /// Données complètes de la dernière course créée (id, plannedPolyline, status, payment)
+  static Map<String, dynamic>? lastCreatedRideData;
+
   String get endpoint => _endpoint;
 
   RideService({Dio? dio}) : _dio = dio ?? ApiClient().dio;
@@ -133,6 +136,7 @@ class RideService {
         if (rideId != null && rideId.isNotEmpty) {
           lastCreatedRideId = rideId;
         }
+        lastCreatedRideData = data;
         return data;
       }
     } catch (e) {

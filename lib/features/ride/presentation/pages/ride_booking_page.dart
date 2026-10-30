@@ -473,13 +473,24 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
     if (result == OrangeMoneyPaymentResult.success) {
       if (mounted) {
+        // Lire la réponse de l'API (plannedPolyline décodé)
+        final lastData = RideService.lastCreatedRideData;
+        List<LatLng> effectivePoints = _polylinePoints;
+        final plannedPoly = lastData?['plannedPolyline'] as String?;
+        if (plannedPoly != null && plannedPoly.isNotEmpty) {
+          final decoded = RouteService.decodePolyline(plannedPoly);
+          if (decoded.length >= 2) {
+            effectivePoints = decoded;
+          }
+        }
+
         Navigator.of(context).push(
           SlideRightToLeftRoute(
             page: DriverSearchPage(
               departure: widget.departure,
               destination: widget.destination,
               rideOption: selectedOption,
-              polylinePoints: _polylinePoints,
+              polylinePoints: effectivePoints,
               pickupLandmark: _pickupLandmark,
               rideId: RideService.lastCreatedRideId,
               paymentMethod: chosenMethod,
