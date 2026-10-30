@@ -32,6 +32,9 @@ class RideService {
   /// Données complètes de la dernière course créée (id, plannedPolyline, status, payment)
   static Map<String, dynamic>? lastCreatedRideData;
 
+  /// Dernière erreur retournée par POST /v1/rides (ex: 422 PAYMENT_DECLINED, INSUFFICIENT_FUNDS)
+  static Map<String, dynamic>? lastCreateRideError;
+
   String get endpoint => _endpoint;
 
   RideService({Dio? dio}) : _dio = dio ?? ApiClient().dio;
@@ -129,6 +132,7 @@ class RideService {
           '[RideService] ✅ POST /v1/rides code ${response.statusCode}: ${response.data}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
+        lastCreateRideError = null;
         final data = response.data is String
             ? jsonDecode(response.data as String) as Map<String, dynamic>
             : response.data as Map<String, dynamic>;
@@ -143,6 +147,17 @@ class RideService {
       if (e is DioException) {
         debugPrint(
             '[RideService] ⚠️ Erreur POST /v1/rides [${e.response?.statusCode}]: ${e.response?.data}');
+        try {
+          final resData = e.response?.data;
+          if (resData is Map) {
+            lastCreateRideError = Map<String, dynamic>.from(resData);
+          } else if (resData is String && resData.isNotEmpty) {
+            final decoded = jsonDecode(resData);
+            if (decoded is Map) {
+              lastCreateRideError = Map<String, dynamic>.from(decoded);
+            }
+          }
+        } catch (_) {}
       } else {
         debugPrint('[RideService] ⚠️ Erreur inattendue POST /v1/rides: $e');
       }

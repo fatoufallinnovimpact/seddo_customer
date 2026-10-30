@@ -1,4 +1,3 @@
-import 'dart:io';
 
 /// Configuration constants for Google Maps & Places API.
 abstract class MapConfig {
@@ -17,15 +16,8 @@ abstract class MapConfig {
   /// Default search radius around Dakar in meters (35 km)
   static const int dakarSearchRadiusMeters = 35000;
 
-  /// Active API key depending on current platform
-  static String get apiKey {
-    try {
-      if (Platform.isIOS) {
-        return googleMapsApiKeyIos;
-      }
-    } catch (_) {
-      // Non-mobile or test environment
-    }
-    return googleMapsApiKeyAndroid;
-  }
+  /// Active API key for Places & Geocoding HTTP requests from Dart.
+  /// Uses googleMapsApiKeyAndroid which is authorized for HTTP requests,
+  /// while googleMapsApiKeyIos is dedicated to native iOS GMSServices SDK.
+  static String get apiKey => googleMapsApiKeyAndroid;
 }

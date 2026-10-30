@@ -25,6 +25,8 @@ import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart'
 import 'package:seddo/features/ride/presentation/widgets/no_driver_found_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/services/route_service.dart';
@@ -42,6 +44,7 @@ class DriverSearchPage extends StatefulWidget {
   final PlaceSearchResult destination;
   final RideOptionModel rideOption;
   final List<LatLng> polylinePoints;
+  final List<TrafficSegmentModel> traffic;
   final String? pickupLandmark;
   final bool? autoMatchDriver;
   final String? rideId;
@@ -54,6 +57,7 @@ class DriverSearchPage extends StatefulWidget {
     required this.destination,
     required this.rideOption,
     this.polylinePoints = const [],
+    this.traffic = const [],
     this.pickupLandmark,
     this.autoMatchDriver,
     this.rideId,
@@ -89,8 +93,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   List<NearbyCarModel> _nearbyCars = [];
   int? _nearbyDriversCount;
   late List<LatLng> _polylinePoints = List<LatLng>.from(widget.polylinePoints);
+  late List<TrafficSegmentModel> _traffic;
   String? _paymentUrl;
+  String? _paymentMessage;
   String _paymentStatus = 'PENDING';
+  String _currentRideStatus = 'PAYMENT_PENDING';
+
+  bool get _isPaymentConfirmed {
+    if (widget.paymentMethod == PaymentMethodType.cash) return true;
+    return _paymentStatus == 'SUCCESS' ||
+        _paymentStatus == 'PAID' ||
+        _currentRideStatus == 'SEARCHING' ||
+        _currentRideStatus == 'ACCEPTED' ||
+        _currentRideStatus == 'DRIVER_ARRIVED' ||
+        _currentRideStatus == 'IN_PROGRESS';
+  }
 
   final GlobalKey _bottomSheetKey = GlobalKey();
   double _bottomSheetHeight = 410.0;
@@ -100,13 +117,38 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     super.initState();
     _rideService = widget.rideService ?? RideService();
 
+    _traffic = widget.traffic.isNotEmpty
+        ? List<TrafficSegmentModel>.from(widget.traffic)
+        : List<TrafficSegmentModel>.from(widget.rideOption.traffic);
+
+    final rawPlannedTraffic = (RideService.lastCreatedRideData?['plannedTraffic'] ??
+        RideService.lastCreatedRideData?['traffic']) as List<dynamic>?;
+    if (rawPlannedTraffic != null && rawPlannedTraffic.isNotEmpty) {
+      final parsed = rawPlannedTraffic
+          .whereType<Map<String, dynamic>>()
+          .map((item) => TrafficSegmentModel.fromJson(item))
+          .toList();
+      if (parsed.isNotEmpty) {
+        _traffic = parsed;
+      }
+    }
+
     final initialPayment =
         RideService.lastCreatedRideData?['payment'] as Map<String, dynamic>?;
     _paymentUrl = initialPayment?['paymentUrl'] as String?;
+    _paymentMessage = initialPayment?['message'] as String?;
     final initialPStatus = initialPayment?['status'] as String?;
+    final initialRideStatus =
+        (RideService.lastCreatedRideData?['status'] as String? ?? '').toUpperCase();
+    if (initialRideStatus.isNotEmpty) {
+      _currentRideStatus = initialRideStatus;
+    }
+
     if (initialPStatus != null && initialPStatus.isNotEmpty) {
       _paymentStatus = initialPStatus.toUpperCase();
-    } else if (widget.paymentMethod == PaymentMethodType.cash) {
+    } else if (widget.paymentMethod == PaymentMethodType.cash ||
+        initialRideStatus == 'SEARCHING' ||
+        initialRideStatus == 'ACCEPTED') {
       _paymentStatus = 'SUCCESS';
     }
 
@@ -135,12 +177,49 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
-    // True pulsating radar waves expanding outward continuously via GPU overlay
+    if (!isTest &&
+        widget.paymentMethod == PaymentMethodType.cash &&
+        _paymentMessage != null &&
+        _paymentMessage!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.payments_outlined,
+                      color: AppColors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _paymentMessage!,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF16A34A),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+              ),
+            ),
+          );
+        }
+      });
+    }
+
+    // Radar pulsatile actif UNIQUEMENT si le paiement est confirmé (ou espèces)
     _radarController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     );
-    if (!isTest) {
+    if (!isTest && _isPaymentConfirmed) {
       _radarController.repeat();
     }
 
@@ -150,9 +229,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       _loadFallbackPolyline();
     }
 
+    // La recherche / matching de chauffeur ne démarre qu'après confirmation du paiement
     final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
-
-    if (shouldAutoMatch) {
+    if (shouldAutoMatch && _isPaymentConfirmed) {
       _autoMatchTimer = Timer(const Duration(seconds: 5), () {
         if (mounted) {
           onDriverFound();
@@ -192,10 +271,14 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
         if (!mounted) return;
         if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
-          if (event.status == 'ACCEPTED' ||
+          if (event.status == 'SEARCHING') {
+            // Confirmation du paiement reçue du backend : début de la recherche
+            _onPaymentConfirmed();
+          } else if (event.status == 'ACCEPTED' ||
               event.status == 'DRIVER_ARRIVED' ||
               event.status == 'IN_PROGRESS' ||
               event.driver != null) {
+            _onPaymentConfirmed();
             _rideStatusPollTimer?.cancel();
             final driver = event.driver ??
                 DriverModel.fromRideJson(
@@ -230,6 +313,33 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             }
           },
         );
+      }
+    }
+  }
+
+  void _onPaymentConfirmed() {
+    if (!mounted) return;
+    final wasConfirmed = _isPaymentConfirmed;
+    setState(() {
+      _paymentStatus = 'SUCCESS';
+      _currentRideStatus = 'SEARCHING';
+    });
+
+    if (!wasConfirmed) {
+      final bool isTest =
+          WidgetsBinding.instance.runtimeType.toString().contains('Test');
+      if (!isTest && !_radarController.isAnimating) {
+        _radarController.repeat();
+      }
+
+      final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
+      if (shouldAutoMatch &&
+          (_autoMatchTimer == null || !_autoMatchTimer!.isActive)) {
+        _autoMatchTimer = Timer(const Duration(seconds: 5), () {
+          if (mounted) {
+            onDriverFound();
+          }
+        });
       }
     }
   }
@@ -273,10 +383,13 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       final data = await _rideService.getRideDetails(rideId);
       if (data != null && mounted) {
         final status = (data['status'] as String? ?? '').toUpperCase();
-        if (status == 'ACCEPTED' ||
+        if (status == 'SEARCHING') {
+          _onPaymentConfirmed();
+        } else if (status == 'ACCEPTED' ||
             status == 'DRIVER_ARRIVED' ||
             status == 'IN_PROGRESS' ||
             data['driver'] != null) {
+          _onPaymentConfirmed();
           final driver = DriverModel.fromRideJson(
             data,
             defaultRideType: widget.rideOption.type,
@@ -300,6 +413,20 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             }
           }
 
+          final rawPlannedTraffic =
+              (rideObj['plannedTraffic'] ?? rideObj['traffic']) as List<dynamic>?;
+          if (rawPlannedTraffic != null && rawPlannedTraffic.isNotEmpty && mounted) {
+            final parsed = rawPlannedTraffic
+                .whereType<Map<String, dynamic>>()
+                .map((item) => TrafficSegmentModel.fromJson(item))
+                .toList();
+            if (parsed.isNotEmpty) {
+              setState(() {
+                _traffic = parsed;
+              });
+            }
+          }
+
           onDriverFound(
             driver,
             code,
@@ -317,13 +444,24 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         if (payment != null) {
           final pStatus = payment['status'] as String?;
           if (pStatus != null && pStatus.isNotEmpty && mounted) {
-            setState(() {
-              _paymentStatus = pStatus.toUpperCase();
-            });
+            if (pStatus.toUpperCase() == 'SUCCESS' ||
+                pStatus.toUpperCase() == 'PAID') {
+              _onPaymentConfirmed();
+            } else {
+              setState(() {
+                _paymentStatus = pStatus.toUpperCase();
+              });
+            }
           }
           final pUrl = payment['paymentUrl'] as String?;
           if (pUrl != null && pUrl.isNotEmpty) {
             _paymentUrl = pUrl;
+          }
+          final pMessage = payment['message'] as String?;
+          if (pMessage != null && pMessage.isNotEmpty && mounted) {
+            setState(() {
+              _paymentMessage = pMessage;
+            });
           }
         }
       }
@@ -642,17 +780,17 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         ? _polylinePoints
         : widget.polylinePoints;
     if (effectivePoints.isEmpty) return {};
-    return {
-      Polyline(
-        polylineId: const PolylineId('route_polyline'),
-        points: effectivePoints,
-        color: AppColors.yangoRouteGreen,
-        width: 4,
-        jointType: JointType.round,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-      ),
-    };
+
+    final effectiveTraffic = _traffic.isNotEmpty
+        ? _traffic
+        : (widget.traffic.isNotEmpty ? widget.traffic : widget.rideOption.traffic);
+
+    return RideEtaCalculator.buildTrafficPolylines(
+      baseId: 'route_polyline',
+      points: effectivePoints,
+      traffic: effectiveTraffic,
+      width: 5,
+    );
   }
 
   double get _collapsedSheetHeight {
@@ -713,13 +851,16 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   }
 
   Widget _buildLiveSearchPill({bool compact = false}) {
+    final isConfirmed = _isPaymentConfirmed;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
         vertical: compact ? 4 : 5,
       ),
       decoration: BoxDecoration(
-        color: AppColors.primary.withAlpha(25),
+        color: isConfirmed
+            ? AppColors.primary.withAlpha(25)
+            : const Color(0xFFFEF3C7),
         borderRadius: BorderRadius.circular(AppConstants.radiusPill),
       ),
       child: Row(
@@ -728,18 +869,22 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           Container(
             width: 8,
             height: 8,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
+            decoration: BoxDecoration(
+              color: isConfirmed
+                  ? AppColors.primary
+                  : const Color(0xFFD97706),
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 6),
           Text(
-            'ride.live_search'.tr(),
+            isConfirmed ? 'ride.live_search'.tr() : 'PAIEMENT EN ATTENTE',
             style: GoogleFonts.inter(
               fontSize: compact ? 10 : 11,
               fontWeight: FontWeight.w800,
-              color: AppColors.primary,
+              color: isConfirmed
+                  ? AppColors.primary
+                  : const Color(0xFFB45309),
               letterSpacing: 0.5,
             ),
           ),
@@ -762,12 +907,28 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   Widget _buildProgressBar() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(2),
-      child: const LinearProgressIndicator(
-        color: AppColors.primary,
+      child: LinearProgressIndicator(
+        color: _isPaymentConfirmed ? AppColors.primary : const Color(0xFFF59E0B),
         backgroundColor: AppColors.surfaceGrey,
         minHeight: 3.5,
       ),
     );
+  }
+
+  String _getPaymentSubtitle() {
+    if (widget.paymentMethod == PaymentMethodType.cash) {
+      return _paymentMessage ??
+          'Vous paierez ${widget.rideOption.formattedPrice} en espèces au chauffeur à l\'arrivée.';
+    }
+    if (_paymentStatus == 'PENDING' &&
+        _paymentUrl != null &&
+        _paymentUrl!.isNotEmpty) {
+      if (widget.paymentMethod == PaymentMethodType.wave) {
+        return _paymentMessage ?? 'Toucher pour ouvrir Wave et payer';
+      }
+      return _paymentMessage ?? 'Toucher pour ouvrir Orange Money';
+    }
+    return _paymentMessage ?? 'ride.refund_guarantee'.tr();
   }
 
   @override
@@ -845,6 +1006,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                     child: AnimatedBuilder(
                       animation: _radarController,
                       builder: (context, _) {
+                        if (!_isPaymentConfirmed) {
+                          return const SizedBox.shrink();
+                        }
                         return CustomPaint(
                           painter: _RadarWavePainter(
                             progress: _radarController.value,
@@ -1005,7 +1169,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                     Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        'ride.searching'.tr(),
+                                        _isPaymentConfirmed
+                                            ? 'ride.searching'.tr()
+                                            : 'En attente du paiement...',
                                         style: GoogleFonts.inter(
                                           fontSize: 22,
                                           fontWeight: FontWeight.w900,
@@ -1027,7 +1193,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
-                                            'ride.searching'.tr(),
+                                            _isPaymentConfirmed
+                                                ? 'ride.searching'.tr()
+                                                : 'En attente du paiement...',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: GoogleFonts.inter(
@@ -1144,14 +1312,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                widget.paymentMethod ==
-                                                        PaymentMethodType.cash
-                                                    ? 'ride.pay_driver_on_arrival'.tr()
-                                                    : (_paymentStatus == 'PENDING' &&
-                                                            _paymentUrl != null &&
-                                                            _paymentUrl!.isNotEmpty
-                                                        ? 'Toucher pour ouvrir Wave et payer'
-                                                        : 'ride.refund_guarantee'.tr()),
+                                                _getPaymentSubtitle(),
                                                 style: GoogleFonts.inter(
                                                   fontSize: 12.5,
                                                   color: _paymentStatus == 'PENDING' &&
@@ -1170,6 +1331,54 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                       ],
                                     ),
                                   ),
+
+                                  if (!_isPaymentConfirmed &&
+                                      _paymentUrl != null &&
+                                      _paymentUrl!.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 44,
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: widget.paymentMethod ==
+                                                  PaymentMethodType.wave
+                                              ? const Color(0xFF0284C7)
+                                              : AppColors.primary,
+                                          foregroundColor: AppColors.white,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                        onPressed: () async {
+                                          final uri =
+                                              Uri.tryParse(_paymentUrl!);
+                                          if (uri != null) {
+                                            try {
+                                              await launchUrl(uri,
+                                                  mode: LaunchMode
+                                                      .externalApplication);
+                                            } catch (_) {}
+                                          }
+                                        },
+                                        icon: const Icon(
+                                            Icons.open_in_new_rounded,
+                                            size: 18),
+                                        label: Text(
+                                          widget.paymentMethod ==
+                                                  PaymentMethodType.wave
+                                              ? 'Ouvrir Wave pour payer'
+                                              : 'Ouvrir Orange Money pour payer',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
 
                                   const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 12),

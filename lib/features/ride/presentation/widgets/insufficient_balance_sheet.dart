@@ -15,17 +15,20 @@ import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 class InsufficientBalanceSheet extends StatelessWidget {
   final RideOptionModel rideOption;
   final int missingAmount;
+  final String? customMessage;
 
   const InsufficientBalanceSheet({
     super.key,
     required this.rideOption,
     this.missingAmount = 1200,
+    this.customMessage,
   });
 
   static Future<void> show(
     BuildContext context, {
     required RideOptionModel rideOption,
     int missingAmount = 1200,
+    String? customMessage,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -34,6 +37,7 @@ class InsufficientBalanceSheet extends StatelessWidget {
       builder: (ctx) => InsufficientBalanceSheet(
         rideOption: rideOption,
         missingAmount: missingAmount,
+        customMessage: customMessage,
       ),
     );
   }
@@ -111,12 +115,13 @@ class InsufficientBalanceSheet extends StatelessWidget {
           ),
           const SizedBox(height: 6),
 
-          // Subtitle: "Rien n'a été débité de votre Orange Money."
+          // Subtitle: API message or fallback
           Text(
-            'insufficient_balance.subtitle'.tr(),
+            customMessage ?? 'insufficient_balance.subtitle'.tr(),
             style: GoogleFonts.inter(
               fontSize: 14,
               color: AppColors.textSecondary,
+              height: 1.35,
             ),
             textAlign: TextAlign.center,
           ),

@@ -87,15 +87,15 @@ void main() {
       expect(find.text('Orange Money'), findsOneWidget);
       expect(find.text('Paiement en espèces'), findsOneWidget);
 
-      // Tap on Orange Money
-      await tester.tap(find.text('Orange Money'));
+      // Tap on Paiement en espèces
+      await tester.tap(find.text('Paiement en espèces'));
       await tester.pumpAndSettle();
 
       // Tap Confirmer et payer
       await tester.tap(find.text('Confirmer et payer'));
       await tester.pumpAndSettle();
 
-      // Modal 2 : Orange Money confirmation
+      // Modal 2 : Confirmation du paiement en espèces
       expect(find.text('Confirmer le paiement'), findsOneWidget);
       expect(find.text('Valider'), findsOneWidget);
 

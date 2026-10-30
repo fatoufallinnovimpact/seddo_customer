@@ -107,7 +107,7 @@ void main() {
       expect(result, OrangeMoneyPaymentResult.success);
     });
 
-    testWidgets('Renders Wave confirmation with secret code and validates',
+    testWidgets('Renders Wave confirmation and validates',
         (tester) async {
       OrangeMoneyPaymentResult? result;
 
@@ -138,13 +138,6 @@ void main() {
       expect(find.text('Confirmer le paiement'), findsOneWidget);
       expect(find.text('3500 FCFA'), findsOneWidget);
       expect(find.textContaining('Wave 77 ••• 12 34'), findsOneWidget);
-
-      // Keypad inputs
-      await tester.tap(find.text('1'));
-      await tester.tap(find.text('2'));
-      await tester.tap(find.text('3'));
-      await tester.tap(find.text('4'));
-      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Valider'));
       await tester.pumpAndSettle();

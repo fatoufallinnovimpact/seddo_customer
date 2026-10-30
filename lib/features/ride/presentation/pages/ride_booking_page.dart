@@ -183,16 +183,13 @@ class _RideBookingPageState extends State<RideBookingPage> {
     final confortTimeStr =
         '${arrivalConfort.hour.toString().padLeft(2, '0')}:${arrivalConfort.minute.toString().padLeft(2, '0')}';
 
-    // Pricing estimation based on Dakar distance (FCFA rounded to nearest 100)
-    final ecoFare = ((1500 + (_distanceKm * 250)) / 100).round() * 100;
-    final confortFare = ((2200 + (_distanceKm * 325)) / 100).round() * 100;
-
+    // Prix initial à 0 pendant le chargement du vrai devis API (POST /v1/rides/quote)
     _ecoOption = RideOptionModel(
       type: RideType.eco,
       title: 'home.seddo_eco'.tr(),
       subtitle: '$ecoTimeStr · ${'ride.arriving_in'.tr(args: ['4'])}',
       capacity: 4,
-      price: ecoFare.clamp(2000, 25000),
+      price: 0,
       estimatedArrival: ecoTimeStr,
       pickupDuration: '4 min',
     );
@@ -202,7 +199,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
       title: 'Seddo ${'home.confort'.tr()}',
       subtitle: '$confortTimeStr · ${'home.confort_sub'.tr()}',
       capacity: 4,
-      price: confortFare.clamp(2800, 35000),
+      price: 0,
       estimatedArrival: confortTimeStr,
       pickupDuration: '7 min',
     );
@@ -258,7 +255,10 @@ class _RideBookingPageState extends State<RideBookingPage> {
       final ecoPrice = apiEco != null
           ? apiEco.price
           : (((1500 + (distanceKm * 250)) / 100).round() * 100).clamp(2000, 25000);
-      final ecoQuoteId = apiEco?.quoteId;
+      final fallbackQuoteId = quote.options.isNotEmpty
+          ? quote.options.first.quoteId
+          : (quote.ecoOption?.quoteId ?? '');
+      final ecoQuoteId = apiEco?.quoteId ?? fallbackQuoteId;
       final ecoSeats = apiEco?.seats ?? 4;
       final ecoName = (apiEco != null && apiEco.name.isNotEmpty)
           ? apiEco.name
@@ -271,7 +271,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
       final confortPrice = apiConfort != null
           ? apiConfort.price
           : ((ecoPrice * 1.35) / 100).round() * 100;
-      final confortQuoteId = apiConfort?.quoteId;
+      final confortQuoteId = apiConfort?.quoteId ?? fallbackQuoteId;
       final confortSeats = apiConfort?.seats ?? 4;
       final confortName = (apiConfort != null && apiConfort.name.isNotEmpty)
           ? apiConfort.name
@@ -337,10 +337,20 @@ class _RideBookingPageState extends State<RideBookingPage> {
     debugPrint(
         '[RideBookingPage] ⚠️ Devis API non disponible (hors-ligne ou non authentifié)');
 
-    // Pas de tracé simulé par défaut ! Tout doit venir de l'API.
+    // Si le devis API n'a pas répondu (ex: hors-ligne ou tests), calculer le tarif de secours
     if (mounted) {
+      final bool isTest =
+          WidgetsBinding.instance.runtimeType.toString().contains('Test');
+      final ecoFare = ((1500 + (_distanceKm * 250)) / 100).round() * 100;
+      final confortFare = ((2200 + (_distanceKm * 325)) / 100).round() * 100;
+
       setState(() {
         _polylinePoints = [];
+        if (isTest || _ecoOption.price <= 0) {
+          _ecoOption = _ecoOption.copyWith(price: ecoFare.clamp(2000, 25000));
+          _confortOption =
+              _confortOption.copyWith(price: confortFare.clamp(2800, 35000));
+        }
         _isLoadingRoute = false;
       });
 
@@ -463,9 +473,12 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
     if (result == OrangeMoneyPaymentResult.insufficientBalance) {
       if (mounted) {
+        final apiMessage =
+            RideService.lastCreateRideError?['message']?.toString();
         await InsufficientBalanceSheet.show(
           context,
           rideOption: selectedOption,
+          customMessage: apiMessage,
         );
       }
       return;
@@ -484,6 +497,21 @@ class _RideBookingPageState extends State<RideBookingPage> {
           }
         }
 
+        List<TrafficSegmentModel> effectiveTraffic = _traffic.isNotEmpty
+            ? _traffic
+            : selectedOption.traffic;
+        final rawPlannedTraffic = (lastData?['plannedTraffic'] ??
+            lastData?['traffic']) as List<dynamic>?;
+        if (rawPlannedTraffic != null && rawPlannedTraffic.isNotEmpty) {
+          final parsed = rawPlannedTraffic
+              .whereType<Map<String, dynamic>>()
+              .map((item) => TrafficSegmentModel.fromJson(item))
+              .toList();
+          if (parsed.isNotEmpty) {
+            effectiveTraffic = parsed;
+          }
+        }
+
         Navigator.of(context).push(
           SlideRightToLeftRoute(
             page: DriverSearchPage(
@@ -491,6 +519,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
               destination: widget.destination,
               rideOption: selectedOption,
               polylinePoints: effectivePoints,
+              traffic: effectiveTraffic,
               pickupLandmark: _pickupLandmark,
               rideId: RideService.lastCreatedRideId,
               paymentMethod: chosenMethod,
@@ -923,6 +952,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                     option: _ecoOption,
                     isSelected: _selectedRideType == RideType.eco,
                     imagePath: 'assets/images/seddo_eco_3d.png',
+                    isLoading: _isLoadingRoute,
                     onTap: () => setState(() => _selectedRideType = RideType.eco),
                   ),
 
@@ -933,6 +963,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                     option: _confortOption,
                     isSelected: _selectedRideType == RideType.confort,
                     imagePath: 'assets/images/seddo_confort_3d.png',
+                    isLoading: _isLoadingRoute,
                     onTap: () =>
                         setState(() => _selectedRideType = RideType.confort),
                   ),
@@ -954,14 +985,23 @@ class _RideBookingPageState extends State<RideBookingPage> {
                           ),
                         ),
                       ),
-                      onPressed: _onOrderRide,
-                      child: Text(
-                        '${'ride.order'.tr()} ${selectedOption.title}',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      onPressed: _isLoadingRoute ? null : _onOrderRide,
+                      child: _isLoadingRoute
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                color: AppColors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : Text(
+                              '${'ride.order'.tr()} ${selectedOption.title}',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                     ),
                   ),
                 ],

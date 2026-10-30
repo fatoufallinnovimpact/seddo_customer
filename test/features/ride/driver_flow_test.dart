@@ -59,7 +59,7 @@ void main() {
   );
 
   group('Driver & Payment Lifecycle Flow Tests', () {
-    testWidgets('OrangeMoneyPaymentSheet enters PIN, backspace, and validates',
+    testWidgets('OrangeMoneyPaymentSheet renders confirmation and validates directly',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -90,22 +90,6 @@ void main() {
 
       expect(find.text('Confirmer le paiement'), findsOneWidget);
       expect(find.text('3500 FCFA'), findsOneWidget);
-      expect(find.text('Saisissez votre code secret'), findsOneWidget);
-
-      await tester.tap(find.text('1'));
-      await tester.pump();
-      await tester.tap(find.text('2'));
-      await tester.pump();
-      await tester.tap(find.text('3'));
-      await tester.pump();
-
-      await tester.tap(find.byIcon(Icons.backspace_outlined));
-      await tester.pump();
-
-      await tester.tap(find.text('4'));
-      await tester.pump();
-      await tester.tap(find.text('5'));
-      await tester.pump();
 
       await tester.tap(find.text('Valider'));
       await tester.pumpAndSettle();

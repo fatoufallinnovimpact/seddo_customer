@@ -11,6 +11,7 @@ class RideOptionCardWidget extends StatelessWidget {
   final bool isSelected;
   final String imagePath;
   final VoidCallback onTap;
+  final bool isLoading;
 
   const RideOptionCardWidget({
     super.key,
@@ -18,6 +19,7 @@ class RideOptionCardWidget extends StatelessWidget {
     required this.isSelected,
     required this.imagePath,
     required this.onTap,
+    this.isLoading = false,
   });
 
   @override
@@ -129,16 +131,25 @@ class RideOptionCardWidget extends StatelessWidget {
                 ),
               ),
 
-              // Price
-              Text(
-                option.formattedPrice,
-                style: GoogleFonts.inter(
-                  fontSize: 17.5,
-                  fontWeight: FontWeight.w900,
-                  color: isSelected ? AppColors.primary : AppColors.textPrimary,
-                  letterSpacing: -0.2,
-                ),
-              ),
+              // Price: Affiche le vrai prix de l'API dès réception, ou un loader discret pendant le chargement
+              (isLoading || option.price <= 0)
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    )
+                  : Text(
+                      option.formattedPrice,
+                      style: GoogleFonts.inter(
+                        fontSize: 17.5,
+                        fontWeight: FontWeight.w900,
+                        color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
             ],
           ),
         ),
