@@ -820,7 +820,7 @@ class _HomePageContentState extends State<_HomePageContent> {
                     ),
                     const SizedBox(height: AppConstants.spacingXs),
 
-                    // Sous-titre "TER, BRT, bus AFTU et DDD : planifiez vos déplacements à Dakar"
+                    // Sous-titre "TER, BRT, bus AFTU et DDD : planifiez vos déplacements"
                     Text(
                       'home.tcu_banner_subtitle'.tr(),
                       maxLines: 2,

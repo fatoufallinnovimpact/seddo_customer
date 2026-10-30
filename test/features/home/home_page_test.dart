@@ -35,7 +35,7 @@ class MockHomeTestAssetLoader extends AssetLoader {
         'tcu_sub': 'Bus, BRT & TER',
         'tcu_banner_badge': 'TRANSPORTS URBAINS',
         'tcu_banner_title': 'Voyagez en toute simplicité',
-        'tcu_banner_subtitle': 'TER, BRT, bus AFTU et DDD :\nplanifiez vos déplacements à Dakar',
+        'tcu_banner_subtitle': 'TER, BRT, bus AFTU et DDD :\nplanifiez vos déplacements',
         'tcu_banner_button': 'Itinéraires',
         'see_all': 'Voir tout',
         'drivers_around': '{} chauffeurs autour · {} min',
