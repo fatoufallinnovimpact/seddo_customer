@@ -33,6 +33,7 @@ class _SafetyAddContactDialogState extends State<SafetyAddContactDialog> {
   final _nameController = TextEditingController();
   final _relationController = TextEditingController();
   final _phoneController = TextEditingController();
+  String? _inlineError;
 
   @override
   void dispose() {
@@ -47,7 +48,19 @@ class _SafetyAddContactDialogState extends State<SafetyAddContactDialog> {
     final relation = _relationController.text.trim();
     final phone = _phoneController.text.trim();
 
-    if (name.isEmpty || phone.isEmpty) return;
+    if (name.length < 2) {
+      setState(() {
+        _inlineError = 'safety.validation_name'.tr();
+      });
+      return;
+    }
+
+    if (phone.length < 9) {
+      setState(() {
+        _inlineError = 'safety.validation_phone'.tr();
+      });
+      return;
+    }
 
     final newContact = SafetyContactModel(
       id: 'contact_${DateTime.now().millisecondsSinceEpoch}',
@@ -71,54 +84,70 @@ class _SafetyAddContactDialogState extends State<SafetyAddContactDialog> {
           top: Radius.circular(AppConstants.radiusCardContainer),
         ),
       ),
-      padding: EdgeInsets.fromLTRB(22, 16, 22, 22 + bottomInset),
+      padding: EdgeInsets.fromLTRB(
+        AppConstants.spacingLg,
+        AppConstants.spacingMd,
+        AppConstants.spacingLg,
+        AppConstants.spacingLg + bottomInset,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
             child: Container(
-              width: 42,
-              height: 4,
+              width: AppConstants.handleWidth,
+              height: AppConstants.handleHeight,
               decoration: BoxDecoration(
                 color: AppColors.dashedBorderGrey,
-                borderRadius: BorderRadius.circular(2),
+                borderRadius: BorderRadius.circular(AppConstants.radiusXs),
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppConstants.spacingMd),
           Text(
             'safety.add_contact_title'.tr(),
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 18,
+              fontSize: AppConstants.fontXl,
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppConstants.spacingXs),
           Text(
             'safety.add_contact_desc'.tr(),
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
+              fontSize: AppConstants.fontSm,
               fontWeight: FontWeight.w500,
               color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 18),
+          if (_inlineError != null) ...[
+            const SizedBox(height: AppConstants.spacingSm),
+            Text(
+              _inlineError!,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: AppConstants.fontSm,
+                fontWeight: FontWeight.w600,
+                color: AppColors.error,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppConstants.spacingUnitXl),
           _buildField(
             label: 'safety.name_label'.tr(),
             hint: 'safety.name_hint'.tr(),
             controller: _nameController,
             icon: Icons.person_outline,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppConstants.spacingUnitLg),
           _buildField(
             label: 'safety.relationship_label'.tr(),
             hint: 'safety.relationship_hint'.tr(),
             controller: _relationController,
             icon: Icons.people_outline,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppConstants.spacingUnitLg),
           _buildField(
             label: 'safety.phone_label'.tr(),
             hint: '77 123 45 67',
@@ -126,24 +155,24 @@ class _SafetyAddContactDialogState extends State<SafetyAddContactDialog> {
             icon: Icons.phone_outlined,
             keyboardType: TextInputType.phone,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppConstants.spacingTwenty),
           SizedBox(
             width: double.infinity,
-            height: 50,
+            height: AppConstants.buttonHeight,
             child: ElevatedButton(
               onPressed: _submit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: AppColors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
                 ),
-                elevation: 0,
+                elevation: AppConstants.elevationNone,
               ),
               child: Text(
                 'safety.save_contact'.tr(),
                 style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
+                  fontSize: AppConstants.fontBase,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -167,30 +196,36 @@ class _SafetyAddContactDialogState extends State<SafetyAddContactDialog> {
         Text(
           label,
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 12,
+            fontSize: AppConstants.fontSm,
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: AppConstants.spacingS),
         Container(
-          height: 48,
+          height: AppConstants.circularPickerSize,
           decoration: BoxDecoration(
             color: AppColors.inputBackground,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
             border: Border.all(color: AppColors.border),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingUnitXl,
+          ),
           child: Row(
             children: [
-              Icon(icon, size: 20, color: AppColors.textSecondary),
-              const SizedBox(width: 10),
+              Icon(
+                icon,
+                size: AppConstants.iconSizeMd,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: AppConstants.spacingUnit),
               Expanded(
                 child: TextField(
                   controller: controller,
                   keyboardType: keyboardType,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
+                    fontSize: AppConstants.fontMd,
                     color: AppColors.textPrimary,
                   ),
                   decoration: InputDecoration(
@@ -198,7 +233,7 @@ class _SafetyAddContactDialogState extends State<SafetyAddContactDialog> {
                     isDense: true,
                     hintText: hint,
                     hintStyle: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
+                      fontSize: AppConstants.fontSm,
                       color: AppColors.textSecondary,
                     ),
                   ),

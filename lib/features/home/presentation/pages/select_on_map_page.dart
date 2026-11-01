@@ -195,30 +195,36 @@ class _SelectOnMapPageState extends State<SelectOnMapPage> {
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Fullscreen Google Map
-          GoogleMap(
-            style: MapStyleService.style,
-            initialCameraPosition: CameraPosition(
-              target: _currentCenter,
-              zoom: 16.2,
+          // 1. Fullscreen Google Map (clipped at bottom to remove Google logo)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
+            child: GoogleMap(
+              style: MapStyleService.style,
+              initialCameraPosition: CameraPosition(
+                target: _currentCenter,
+                zoom: 16.2,
+              ),
+              onMapCreated: (controller) {
+                _mapController = controller;
+                MapStyleService.applyStyle(controller);
+              },
+              onCameraMoveStarted: _onCameraMoveStarted,
+              onCameraMove: _onCameraMove,
+              onCameraIdle: _onCameraIdle,
+              buildingsEnabled: false,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              tiltGesturesEnabled: false,
+              zoomGesturesEnabled: true,
             ),
-            onMapCreated: (controller) {
-              _mapController = controller;
-              MapStyleService.applyStyle(controller);
-            },
-            onCameraMoveStarted: _onCameraMoveStarted,
-            onCameraMove: _onCameraMove,
-            onCameraIdle: _onCameraIdle,
-            buildingsEnabled: false,
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
-            rotateGesturesEnabled: true,
-            scrollGesturesEnabled: true,
-            tiltGesturesEnabled: false,
-            zoomGesturesEnabled: true,
           ),
 
           // 2. Interactive Map Center Pin avec effet qui sautille au déplacement et à l'arrêt

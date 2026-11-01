@@ -266,8 +266,12 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Map
-          Positioned.fill(
+          // 1. Map (clipped at bottom to remove Google logo)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
             child: GoogleMap(
               style: MapStyleService.style,
               initialCameraPosition: CameraPosition(

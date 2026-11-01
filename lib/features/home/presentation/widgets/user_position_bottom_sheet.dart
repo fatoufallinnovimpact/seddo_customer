@@ -224,13 +224,22 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                     SizedBox(
                       height: AppConstants.userPositionMapHeight,
                       width: double.infinity,
-                      child: Stack(
-                        children: [
-                          // Fond beige doux pour garantir un affichage beige instantané
-                          Container(color: AppColors.mapBeige),
+                      child: ClipRect(
+                        child: Stack(
+                          children: [
+                            // Fond beige doux pour garantir un affichage beige instantané
+                            Container(color: AppColors.mapBeige),
 
-                          GoogleMap(
-                            key: const ValueKey('preview_mini_google_map'),
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              bottom: AppConstants.mapLogoClipOffset,
+                              child: SizedBox(
+                                height: AppConstants.userPositionMapHeight +
+                                    AppConstants.mapLogoClipExtraHeight,
+                                child: GoogleMap(
+                                  key: const ValueKey('preview_mini_google_map'),
                             style: MapStyleService.style,
                             initialCameraPosition: CameraPosition(
                               target: widget.userLocation,
@@ -250,6 +259,8 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                             gestureRecognizers:
                                 <Factory<OneSequenceGestureRecognizer>>{},
                           ),
+                        ),
+                      ),
 
                           // Overlay translucide pour rendre toute la carte cliquable
                           Positioned.fill(
@@ -363,6 +374,7 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                         ],
                       ),
                     ),
+                  ),
 
                     // Textes de l'adresse sous la carte
                     Padding(

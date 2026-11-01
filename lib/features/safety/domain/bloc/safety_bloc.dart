@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/safety/data/repositories/safety_repository.dart';
 import 'package:seddo/features/safety/domain/bloc/safety_event.dart';
 import 'package:seddo/features/safety/domain/bloc/safety_state.dart';
@@ -30,7 +31,7 @@ class SafetyBloc extends Bloc<SafetyEvent, SafetyState> {
     SafetyLoadRequested event,
     Emitter<SafetyState> emit,
   ) async {
-    emit(state.copyWith(status: SafetyStatus.loading));
+    emit(state.copyWith(status: SafetyStatus.loading, clearError: true));
     try {
       final contacts = await _repository.getEmergencyContacts();
       emit(state.copyWith(
@@ -49,11 +50,23 @@ class SafetyBloc extends Bloc<SafetyEvent, SafetyState> {
     SafetySosTriggered event,
     Emitter<SafetyState> emit,
   ) async {
+    emit(state.copyWith(isSendingSos: true, clearError: true));
     try {
-      await _repository.triggerSosAlert();
-      emit(state.copyWith(sosTriggered: true));
+      await _repository.triggerSosAlert(
+        rideId: event.rideId,
+        latitude: event.latitude,
+        longitude: event.longitude,
+      );
+      emit(state.copyWith(
+        isSendingSos: false,
+        sosTriggered: true,
+        userFeedbackMessage: 'safety.sos_sent_success',
+      ));
     } catch (e) {
-      emit(state.copyWith(errorMessage: e.toString()));
+      emit(state.copyWith(
+        isSendingSos: false,
+        errorMessage: e.toString(),
+      ));
     }
   }
 
@@ -68,15 +81,29 @@ class SafetyBloc extends Bloc<SafetyEvent, SafetyState> {
     SafetyContactAdded event,
     Emitter<SafetyState> emit,
   ) async {
-    try {
-      final added = await _repository.addEmergencyContact(event.contact);
-      final updatedList = List.of(state.contacts)..add(added);
+    if (state.contacts.length >= AppConstants.maxEmergencyContacts) {
       emit(state.copyWith(
+        errorMessage: 'safety.max_contacts_reached',
+      ));
+      return;
+    }
+
+    emit(state.copyWith(isUpdatingContacts: true, clearError: true));
+    try {
+      final updatedList = await _repository.addEmergencyContact(
+        event.contact,
+        state.contacts,
+      );
+      emit(state.copyWith(
+        isUpdatingContacts: false,
         contacts: updatedList,
-        userFeedbackMessage: added.name,
+        userFeedbackMessage: event.contact.name,
       ));
     } catch (e) {
-      emit(state.copyWith(errorMessage: e.toString()));
+      emit(state.copyWith(
+        isUpdatingContacts: false,
+        errorMessage: e.toString(),
+      ));
     }
   }
 
@@ -84,13 +111,21 @@ class SafetyBloc extends Bloc<SafetyEvent, SafetyState> {
     SafetyContactRemoved event,
     Emitter<SafetyState> emit,
   ) async {
+    emit(state.copyWith(isUpdatingContacts: true, clearError: true));
     try {
-      await _repository.deleteEmergencyContact(event.contactId);
-      final updatedList =
-          state.contacts.where((c) => c.id != event.contactId).toList();
-      emit(state.copyWith(contacts: updatedList));
+      final updatedList = await _repository.deleteEmergencyContact(
+        event.contactId,
+        state.contacts,
+      );
+      emit(state.copyWith(
+        isUpdatingContacts: false,
+        contacts: updatedList,
+      ));
     } catch (e) {
-      emit(state.copyWith(errorMessage: e.toString()));
+      emit(state.copyWith(
+        isUpdatingContacts: false,
+        errorMessage: e.toString(),
+      ));
     }
   }
 

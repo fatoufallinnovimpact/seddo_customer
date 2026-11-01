@@ -31,44 +31,140 @@ class SafetyContactsSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'safety.section_contacts'.tr(),
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textSecondary,
-                letterSpacing: 0.8,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'safety.section_contacts'.tr(),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: AppConstants.fontSm,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary,
+                    letterSpacing: AppConstants.searchLetterSpacing,
+                  ),
+                ),
+                Row(
+                  children: [
+                    if (state.isUpdatingContacts) ...[
+                      const SizedBox(
+                        width: AppConstants.iconSizeSm,
+                        height: AppConstants.iconSizeSm,
+                        child: CircularProgressIndicator(
+                          strokeWidth: AppConstants.strokeWidthBorder,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spacingSm),
+                    ],
+                    Text(
+                      '${state.contacts.length}/${AppConstants.maxEmergencyContacts}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: AppConstants.fontSm,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            ...state.contacts.map((contact) => _buildContactCard(context, contact)),
-            _buildAddContactButton(context),
+            const SizedBox(height: AppConstants.spacingUnitLg),
+            if (state.status == SafetyStatus.loading && state.contacts.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppConstants.spacingLg),
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: AppConstants.strokeWidthBorder,
+                  ),
+                ),
+              )
+            else if (state.contacts.isEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: AppConstants.spacingUnit),
+                padding: const EdgeInsets.all(AppConstants.spacingMd),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(AppConstants.radiusCardContainer),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: AppColors.cardShadow,
+                      blurRadius: AppConstants.spacingUnit,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    'safety.empty_contacts'.tr(),
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: AppConstants.fontMd,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              )
+            else
+              ...state.contacts.map(
+                (contact) => _buildContactCard(
+                  context,
+                  contact,
+                  state.isUpdatingContacts,
+                ),
+              ),
+            if (state.canAddContact)
+              _buildAddContactButton(context, state.isUpdatingContacts)
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppConstants.spacingSm,
+                ),
+                child: Center(
+                  child: Text(
+                    'safety.limit_reached'.tr(),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: AppConstants.fontSm,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
           ],
         );
       },
     );
   }
 
-  Widget _buildContactCard(BuildContext context, SafetyContactModel contact) {
+  Widget _buildContactCard(
+    BuildContext context,
+    SafetyContactModel contact,
+    bool isUpdating,
+  ) {
     final colors = _getAvatarColors(contact.avatarThemeIndex);
     final relationDisplay = contact.relationship.startsWith('safety.')
         ? contact.relationship.tr()
         : contact.relationship;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: AppConstants.spacingUnit),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(AppConstants.radiusCardContainer),
         boxShadow: const [
           BoxShadow(
             color: AppColors.cardShadow,
-            blurRadius: 10,
+            blurRadius: AppConstants.spacingUnit,
             offset: Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingMd,
+        vertical: AppConstants.spacingUnitXl,
+      ),
       child: Row(
         children: [
           Container(
@@ -82,14 +178,14 @@ class SafetyContactsSection extends StatelessWidget {
               child: Text(
                 contact.initials,
                 style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
+                  fontSize: AppConstants.fontBase,
                   fontWeight: FontWeight.w800,
                   color: colors.$2,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: AppConstants.spacingUnitXl),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,16 +193,18 @@ class SafetyContactsSection extends StatelessWidget {
                 Text(
                   contact.name,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
+                    fontSize: AppConstants.fontBase,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: AppConstants.spacingXxs),
                 Text(
-                  '$relationDisplay · ${contact.phone}',
+                  relationDisplay.isNotEmpty
+                      ? '$relationDisplay · ${contact.phone}'
+                      : contact.phone,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
+                    fontSize: AppConstants.fontSm,
                     fontWeight: FontWeight.w500,
                     color: AppColors.textSecondary,
                   ),
@@ -117,21 +215,23 @@ class SafetyContactsSection extends StatelessWidget {
           IconButton(
             icon: const Icon(
               Icons.delete_outline,
-              size: 20,
+              size: AppConstants.iconSizeMd,
               color: AppColors.textSecondary,
             ),
-            onPressed: () {
-              context
-                  .read<SafetyBloc>()
-                  .add(SafetyContactRemoved(contact.id));
-            },
+            onPressed: isUpdating
+                ? null
+                : () {
+                    context
+                        .read<SafetyBloc>()
+                        .add(SafetyContactRemoved(contact.id));
+                  },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildAddContactButton(BuildContext context) {
+  Widget _buildAddContactButton(BuildContext context, bool isUpdating) {
     return CustomPaint(
       painter: const DashedRRectPainter(
         color: AppColors.dashedBorderGrey,
@@ -140,16 +240,18 @@ class SafetyContactsSection extends StatelessWidget {
         color: AppColors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppConstants.dashedRadius),
-          onTap: () {
-            SafetyAddContactDialog.show(
-              context,
-              onSave: (newContact) {
-                context
-                    .read<SafetyBloc>()
-                    .add(SafetyContactAdded(newContact));
-              },
-            );
-          },
+          onTap: isUpdating
+              ? null
+              : () {
+                  SafetyAddContactDialog.show(
+                    context,
+                    onSave: (newContact) {
+                      context
+                          .read<SafetyBloc>()
+                          .add(SafetyContactAdded(newContact));
+                    },
+                  );
+                },
           child: Container(
             width: double.infinity,
             height: AppConstants.heightDashedButton,
@@ -159,14 +261,14 @@ class SafetyContactsSection extends StatelessWidget {
               children: [
                 const Icon(
                   Icons.add,
-                  size: 18,
+                  size: AppConstants.iconSizeDefault,
                   color: AppColors.textPrimary,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppConstants.spacingS),
                 Text(
                   'safety.add_contact'.tr(),
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
+                    fontSize: AppConstants.fontMd,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
                   ),

@@ -14,16 +14,33 @@ class SafetyRepository {
     return _safetyService.fetchEmergencyContacts();
   }
 
-  Future<SafetyContactModel> addEmergencyContact(SafetyContactModel contact) {
-    return _safetyService.addEmergencyContact(contact);
+  Future<List<SafetyContactModel>> setEmergencyContacts(
+    List<SafetyContactModel> contacts,
+  ) {
+    return _safetyService.setEmergencyContacts(contacts);
   }
 
-  Future<bool> deleteEmergencyContact(String id) {
-    return _safetyService.deleteEmergencyContact(id);
+  Future<List<SafetyContactModel>> addEmergencyContact(
+    SafetyContactModel contact, [
+    List<SafetyContactModel> currentList = const [],
+  ]) {
+    return _safetyService.addEmergencyContact(contact, currentList);
   }
 
-  Future<bool> triggerSosAlert({double? latitude, double? longitude}) {
+  Future<List<SafetyContactModel>> deleteEmergencyContact(
+    String id, [
+    List<SafetyContactModel> currentList = const [],
+  ]) {
+    return _safetyService.deleteEmergencyContact(id, currentList);
+  }
+
+  Future<bool> triggerSosAlert({
+    String? rideId,
+    double? latitude,
+    double? longitude,
+  }) {
     return _safetyService.triggerSosAlert(
+      rideId: rideId,
       latitude: latitude,
       longitude: longitude,
     );

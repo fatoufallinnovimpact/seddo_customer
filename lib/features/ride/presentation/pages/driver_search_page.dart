@@ -70,7 +70,7 @@ class DriverSearchPage extends StatefulWidget {
 }
 
 class _DriverSearchPageState extends State<DriverSearchPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final RideService _rideService;
   GoogleMapController? _mapController;
   Timer? _autoMatchTimer;
@@ -83,6 +83,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       ValueNotifier<Offset?>(null);
 
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
+  StreamSubscription<RealtimePaymentStatusEvent>? _realtimePaymentSub;
   StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
   StreamSubscription<void>? _realtimeReconnectSub;
 
@@ -98,11 +99,13 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   String? _paymentMessage;
   String _paymentStatus = 'PENDING';
   String _currentRideStatus = 'PAYMENT_PENDING';
+  bool _isCheckingPayment = false;
 
   bool get _isPaymentConfirmed {
     if (widget.paymentMethod == PaymentMethodType.cash) return true;
     return _paymentStatus == 'SUCCESS' ||
         _paymentStatus == 'PAID' ||
+        _paymentStatus == 'COMPLETED' ||
         _currentRideStatus == 'SEARCHING' ||
         _currentRideStatus == 'ACCEPTED' ||
         _currentRideStatus == 'DRIVER_ARRIVED' ||
@@ -115,6 +118,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
 
     _traffic = widget.traffic.isNotEmpty
@@ -296,6 +300,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         }
       });
 
+      // Écoute des événements de statut de paiement via WebSocket
+      _realtimePaymentSub = RealtimeService().paymentStatusStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null || event.rideId!.isEmpty || event.rideId == effectiveRideId) {
+          final pStatus = event.status.toUpperCase();
+          if (pStatus == 'SUCCESS' || pStatus == 'PAID' || pStatus == 'COMPLETED') {
+            _onPaymentConfirmed();
+          } else if (pStatus.isNotEmpty) {
+            setState(() {
+              _paymentStatus = pStatus;
+            });
+          }
+        }
+      });
+
       // Resynchronisation REST automatique dès la reconnexion (PDF page 7 & 8)
       _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
         if (mounted) {
@@ -303,16 +322,32 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         }
       });
 
-      // Si le WebSocket n'est pas encore connecté, conserver un polling de secours passif
+      // Polling actif : tant que le paiement est en attente (ex: Wave), interroger toutes les 3s.
+      // Une fois le paiement validé, interroger uniquement si le WebSocket est déconnecté.
       if (!isTest) {
         _rideStatusPollTimer = Timer.periodic(
-          const Duration(seconds: 5),
+          const Duration(seconds: 3),
           (_) {
-            if (!RealtimeService().isConnected) {
+            if (!_isPaymentConfirmed || !RealtimeService().isConnected) {
               _checkRideStatus(effectiveRideId);
             }
           },
         );
+      }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+      if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+        if (!RealtimeService().isConnected) {
+          RealtimeService().connect();
+          RealtimeService().joinRide(effectiveRideId);
+        }
+        _checkRideStatus(effectiveRideId);
       }
     }
   }
@@ -346,7 +381,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _realtimeStatusSub?.cancel();
+    _realtimePaymentSub?.cancel();
     _realtimeNearbySub?.cancel();
     _realtimeReconnectSub?.cancel();
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
@@ -382,23 +419,23 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     try {
       final data = await _rideService.getRideDetails(rideId);
       if (data != null && mounted) {
-        final status = (data['status'] as String? ?? '').toUpperCase();
+        final rideObj = data['ride'] is Map<String, dynamic>
+            ? data['ride'] as Map<String, dynamic>
+            : data;
+        final status = (rideObj['status'] as String? ?? data['status'] as String? ?? '').toUpperCase();
         if (status == 'SEARCHING') {
           _onPaymentConfirmed();
         } else if (status == 'ACCEPTED' ||
             status == 'DRIVER_ARRIVED' ||
             status == 'IN_PROGRESS' ||
-            data['driver'] != null) {
+            data['driver'] != null ||
+            rideObj['driver'] != null) {
           _onPaymentConfirmed();
           final driver = DriverModel.fromRideJson(
             data,
             defaultRideType: widget.rideOption.type,
           );
           final code = DriverModel.extractDepartureCode(data);
-
-          final rideObj = data['ride'] is Map<String, dynamic>
-              ? data['ride'] as Map<String, dynamic>
-              : data;
           List<LatLng>? updatedTripPolyline;
           final plannedPolyStr = rideObj['plannedPolyline'] as String?;
           if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
@@ -445,7 +482,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           final pStatus = payment['status'] as String?;
           if (pStatus != null && pStatus.isNotEmpty && mounted) {
             if (pStatus.toUpperCase() == 'SUCCESS' ||
-                pStatus.toUpperCase() == 'PAID') {
+                pStatus.toUpperCase() == 'PAID' ||
+                pStatus.toUpperCase() == 'COMPLETED') {
               _onPaymentConfirmed();
             } else {
               setState(() {
@@ -952,43 +990,46 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
           return Stack(
             children: [
-              // 1. Google Map interactif (pan, zoom, rotation et inclinaison libres)
-              GoogleMap(
-                style: MapStyleService.style,
-                initialCameraPosition: _currentCameraPosition,
-                padding: EdgeInsets.only(
-                  bottom: isExpanded ? expandedH : collapsedH,
-                ),
-                buildingsEnabled: false,
-                onMapCreated: (ctrl) {
-                  _mapController = ctrl;
-                  MapStyleService.applyStyle(ctrl);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
+              // 1. Google Map interactif (clipped at bottom to remove Google logo)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: AppConstants.mapLogoClipOffset,
+                child: GoogleMap(
+                  style: MapStyleService.style,
+                  initialCameraPosition: _currentCameraPosition,
+                  buildingsEnabled: false,
+                  onMapCreated: (ctrl) {
+                    _mapController = ctrl;
+                    MapStyleService.applyStyle(ctrl);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _syncDepartureScreenOffsetFromController();
+                    });
+                  },
+                  onCameraMove: (position) {
+                    _updateDepartureScreenOffset(position);
+                  },
+                  onCameraIdle: () {
                     _syncDepartureScreenOffsetFromController();
-                  });
-                },
-                onCameraMove: (position) {
-                  _updateDepartureScreenOffset(position);
-                },
-                onCameraIdle: () {
-                  _syncDepartureScreenOffsetFromController();
-                },
-                markers: _buildMarkers(),
-                polylines: _buildPolylines(),
-                scrollGesturesEnabled: true,
-                zoomGesturesEnabled: true,
-                rotateGesturesEnabled: true,
-                tiltGesturesEnabled: true,
-                myLocationEnabled: false,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                compassEnabled: false,
-                mapToolbarEnabled: false,
-                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                  Factory<OneSequenceGestureRecognizer>(
-                    () => EagerGestureRecognizer(),
-                  ),
-                },
+                  },
+                  markers: _buildMarkers(),
+                  polylines: _buildPolylines(),
+                  scrollGesturesEnabled: true,
+                  zoomGesturesEnabled: true,
+                  rotateGesturesEnabled: true,
+                  tiltGesturesEnabled: true,
+                  myLocationEnabled: false,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  compassEnabled: false,
+                  mapToolbarEnabled: false,
+                  gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                    Factory<OneSequenceGestureRecognizer>(
+                      () => EagerGestureRecognizer(),
+                    ),
+                  },
+                ),
               ),
 
               // 2. Ondes radar pulsantes ultra-fluides centrées sur le point de départ
@@ -1343,7 +1384,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: widget.paymentMethod ==
                                                   PaymentMethodType.wave
-                                              ? const Color(0xFF0284C7)
+                                              ? AppColors.skyBlue
                                               : AppColors.primary,
                                           foregroundColor: AppColors.white,
                                           elevation: 0,
@@ -1373,6 +1414,97 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                               : 'Ouvrir Orange Money pour payer',
                                           style: GoogleFonts.inter(
                                             fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 40,
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: widget.paymentMethod ==
+                                                  PaymentMethodType.wave
+                                              ? AppColors.skyBlue
+                                              : AppColors.primary,
+                                          side: BorderSide(
+                                            color: widget.paymentMethod ==
+                                                    PaymentMethodType.wave
+                                                ? AppColors.skyBlue
+                                                : AppColors.primary,
+                                            width: 1.2,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                        ),
+                                        onPressed: _isCheckingPayment
+                                            ? null
+                                            : () async {
+                                                final messenger =
+                                                    ScaffoldMessenger.of(context);
+                                                setState(() {
+                                                  _isCheckingPayment = true;
+                                                });
+                                                final effectiveRideId =
+                                                    widget.rideId ??
+                                                        RideService.lastCreatedRideId;
+                                                if (effectiveRideId != null &&
+                                                    effectiveRideId.isNotEmpty) {
+                                                  await _checkRideStatus(effectiveRideId);
+                                                }
+                                                if (mounted) {
+                                                  setState(() {
+                                                    _isCheckingPayment = false;
+                                                  });
+                                                  if (!_isPaymentConfirmed) {
+                                                    messenger.showSnackBar(
+                                                      SnackBar(
+                                                        content: Text(
+                                                          'Paiement en cours de validation par l\'opérateur...',
+                                                          style: GoogleFonts.inter(
+                                                            color: AppColors.white,
+                                                            fontSize: 13,
+                                                          ),
+                                                        ),
+                                                        backgroundColor: widget.paymentMethod ==
+                                                                PaymentMethodType.wave
+                                                            ? AppColors.skyBlue
+                                                            : AppColors.primary,
+                                                        duration: const Duration(seconds: 3),
+                                                        behavior: SnackBarBehavior.floating,
+                                                      ),
+                                                    );
+                                                  }
+                                                }
+                                              },
+                                        icon: _isCheckingPayment
+                                            ? SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                                    widget.paymentMethod ==
+                                                            PaymentMethodType.wave
+                                                        ? AppColors.skyBlue
+                                                        : AppColors.primary,
+                                                  ),
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.refresh_rounded,
+                                                size: 18,
+                                              ),
+                                        label: Text(
+                                          _isCheckingPayment
+                                              ? 'Vérification en cours...'
+                                              : 'J\'ai déjà payé (Vérifier)',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13.5,
                                             fontWeight: FontWeight.w700,
                                           ),
                                         ),

@@ -1265,8 +1265,13 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             ),
           ),
 
-          // 1. Fullscreen Google Map with multi-touch gestures enabled
-          Listener(
+          // 1. Fullscreen Google Map with multi-touch gestures enabled (clipped to remove Google logo)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
+            child: Listener(
             onPointerDown: (_) {
               if (_followCar) {
                 setState(() {
@@ -1288,7 +1293,6 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                 zoom: 15.2,
               ),
               padding: const EdgeInsets.only(
-                bottom: 240,
                 top: 70,
                 left: 16,
                 right: 16,
@@ -1325,6 +1329,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               },
             ),
           ),
+        ),
 
           // 2. Bottom Sheet Draggable & Collapsible : glissement direct ultra-fluide
           Align(

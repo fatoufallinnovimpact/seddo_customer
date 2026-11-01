@@ -542,8 +542,9 @@ class _RideBookingPageState extends State<RideBookingPage> {
     return Scaffold(
       backgroundColor: AppColors.white,
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // 1. Fullscreen Google Map
+          // 1. Fullscreen Google Map (logo hidden under bottom sheet)
           GoogleMap(
             style: MapStyleService.style,
             initialCameraPosition: CameraPosition(
@@ -553,7 +554,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
               ),
               zoom: 14.5,
             ),
-            padding: EdgeInsets.only(top: 80, bottom: _bottomSheetHeight + 10),
+            padding: const EdgeInsets.only(top: 80),
             onMapCreated: (controller) {
               _mapController = controller;
               MapStyleService.applyStyle(controller);

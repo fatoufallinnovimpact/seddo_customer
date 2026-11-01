@@ -528,14 +528,26 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Top half: Map Trajectory Preview
+              // Top half: Map Trajectory Preview (clipped to remove Google logo)
               SizedBox(
                 height: AppConstants.activityMapPreviewHeight,
-                child: Stack(
-                  children: [
-                    // Embedded Map with route polyline
-                    IgnorePointer(
-                      child: GoogleMap(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(AppConstants.radiusCardContainer),
+                  ),
+                  child: Stack(
+                    children: [
+                      // Embedded Map with route polyline
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: AppConstants.mapLogoClipOffset,
+                        child: SizedBox(
+                          height: AppConstants.activityMapPreviewHeight +
+                              AppConstants.mapLogoClipExtraHeight,
+                          child: IgnorePointer(
+                            child: GoogleMap(
                         style: MapStyleService.style,
                         initialCameraPosition: CameraPosition(
                           target: LatLng(
@@ -594,6 +606,8 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                         compassEnabled: false,
                       ),
                     ),
+                  ),
+                ),
 
                     // Date/time tag on top left
                     Positioned(
@@ -629,6 +643,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                   ],
                 ),
               ),
+            ),
 
               // Bottom half: Details
               Padding(

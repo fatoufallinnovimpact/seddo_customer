@@ -702,7 +702,11 @@ class _PublicTransportStopRoutePageState
           ),
 
           // 2. GoogleMap view directly mounted as primary map
-          Positioned.fill(
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
             child: GoogleMap(
               key: const Key('tcu_stop_route_google_map'),
               style: MapStyleService.style,

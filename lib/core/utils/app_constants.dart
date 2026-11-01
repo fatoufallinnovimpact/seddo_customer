@@ -83,6 +83,8 @@ abstract class AppConstants {
   static const double strokeWidthSelected = 1.8;
   static const double elevationNone = 0.0;
   static const double mapPolylineWidth = 4.0;
+  static const double mapLogoClipOffset = -36.0;
+  static const double mapLogoClipExtraHeight = 36.0;
   static const int helpMaxCharacters = 300;
 
   // Activity Component Dimensions & Tokens
@@ -105,6 +107,7 @@ abstract class AppConstants {
   static const double tcuBadgeSize = 28.0;
 
   // Safety, Privacy & Help Feature Constants (Innov & Impact Africa)
+  static const int maxEmergencyContacts = 3;
   static const int sosHoldDurationSeconds = 3;
   static const String emergencyPoliceNumber = '17';
   static const String emergencyPompiersNumber = '18';

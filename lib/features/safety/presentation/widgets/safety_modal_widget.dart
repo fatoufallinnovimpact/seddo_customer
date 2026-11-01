@@ -11,6 +11,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/widgets/safety_incident_report_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_sos_bottom_sheet.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 
 /// Modal de sécurité et d'assistance d'urgence 24h/24 et 7j/7 :
 /// - Vivid Seddo orange header with decorative wave arcs
@@ -22,17 +24,23 @@ import 'package:seddo/features/ride/presentation/widgets/safety_incident_report_
 class SafetyModalWidget extends StatelessWidget {
   final PlaceSearchResult destination;
   final DriverModel driver;
+  final String? rideId;
+  final LatLng? currentPosition;
 
   const SafetyModalWidget({
     super.key,
     required this.destination,
     required this.driver,
+    this.rideId,
+    this.currentPosition,
   });
 
   static Future<void> show(
     BuildContext context, {
     required PlaceSearchResult destination,
     required DriverModel driver,
+    String? rideId,
+    LatLng? currentPosition,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -41,6 +49,8 @@ class SafetyModalWidget extends StatelessWidget {
       builder: (ctx) => SafetyModalWidget(
         destination: destination,
         driver: driver,
+        rideId: rideId,
+        currentPosition: currentPosition,
       ),
     );
   }
@@ -340,6 +350,41 @@ class SafetyModalWidget extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Action 0: Bouton SOS : Alerte immédiate au backoffice
+                  _buildModernActionTile(
+                    iconWidget: const Icon(
+                      Icons.crisis_alert_rounded,
+                      color: AppColors.sirenRed,
+                      size: AppConstants.iconSizeLg,
+                    ),
+                    iconBgColor: AppColors.sirenRed.withValues(alpha: 0.12),
+                    title: _safeTr(
+                      'safety.sos_backoffice_title',
+                      'Bouton SOS : Alerte immédiate',
+                    ),
+                    subtitleText: _safeTr(
+                      'safety.sos_backoffice_desc',
+                      'Alerte immédiate au backoffice avec votre position.',
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      final effectiveRideId = rideId ??
+                          RideService.lastCreatedRideId ??
+                          'current';
+                      final pos = currentPosition ??
+                          LatLng(destination.latitude, destination.longitude);
+                      RideSosBottomSheet.show(
+                        context,
+                        rideId: effectiveRideId,
+                        currentPosition: pos,
+                        destination: destination,
+                        driver: driver,
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: AppConstants.spacingUnitLg),
+
                   // Action 1: Partager ma position d'urgence
                   _buildModernActionTile(
                     iconWidget: SvgPicture.asset(

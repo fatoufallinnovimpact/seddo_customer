@@ -29,16 +29,21 @@ class SafetyContactModel extends Equatable {
         : '';
   }
 
-  factory SafetyContactModel.fromJson(Map<String, dynamic> json) {
+  factory SafetyContactModel.fromJson(Map<String, dynamic> json, {int index = 0}) {
+    final rawPhone = (json['phone'] ?? '').toString();
+    final rawId = (json['id'] ?? '').toString();
     return SafetyContactModel(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      relationship: json['relationship'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
-      avatarThemeIndex: json['avatar_theme_index'] as int? ?? 0,
+      id: rawId.isNotEmpty
+          ? rawId
+          : (rawPhone.isNotEmpty ? rawPhone : 'contact_$index'),
+      name: (json['name'] ?? '').toString(),
+      relationship: (json['relationship'] ?? '').toString(),
+      phone: rawPhone,
+      avatarThemeIndex: json['avatar_theme_index'] as int? ?? (index % 3),
     );
   }
 
+  /// Full representation for local cache (SharedPreferences).
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -46,6 +51,14 @@ class SafetyContactModel extends Equatable {
       'relationship': relationship,
       'phone': phone,
       'avatar_theme_index': avatarThemeIndex,
+    };
+  }
+
+  /// API DTO representation conforming to ContactDto: { name, phone }.
+  Map<String, dynamic> toApiJson() {
+    return {
+      'name': name.trim(),
+      'phone': phone.trim(),
     };
   }
 

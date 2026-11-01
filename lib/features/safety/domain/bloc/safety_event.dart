@@ -15,7 +15,18 @@ class SafetyLoadRequested extends SafetyEvent {
 
 /// User triggered the SOS button
 class SafetySosTriggered extends SafetyEvent {
-  const SafetySosTriggered();
+  final String? rideId;
+  final double? latitude;
+  final double? longitude;
+
+  const SafetySosTriggered({
+    this.rideId,
+    this.latitude,
+    this.longitude,
+  });
+
+  @override
+  List<Object?> get props => [rideId, latitude, longitude];
 }
 
 /// User dismissed the active SOS alert banner

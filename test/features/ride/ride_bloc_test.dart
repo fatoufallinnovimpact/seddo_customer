@@ -149,6 +149,15 @@ class MockRideRepository implements RideRepository {
   }
 
   @override
+  Future<bool> sendSosAlert({
+    required String rideId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    return true;
+  }
+
+  @override
   DriverModel getDemoDriver(RideOptionModel rideOption) {
     return dummyDriver;
   }

@@ -379,8 +379,12 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
       backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Zoomable & Interactive Map in Background
-          Positioned.fill(
+          // 1. Zoomable & Interactive Map in Background (clipped at bottom to remove Google logo)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
             child: GoogleMap(
               style: MapStyleService.style,
               initialCameraPosition: CameraPosition(

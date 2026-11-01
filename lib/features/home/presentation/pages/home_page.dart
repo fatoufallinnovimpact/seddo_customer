@@ -917,13 +917,22 @@ class _HomePageContentState extends State<_HomePageContent> {
           SizedBox(
             height: AppConstants.userPositionMapHeight,
             width: double.infinity,
-            child: Stack(
-              children: [
-                // Fond beige doux pour garantir un affichage beige instantané
-                Container(color: AppColors.mapBeige),
+            child: ClipRect(
+              child: Stack(
+                children: [
+                  // Fond beige doux pour garantir un affichage beige instantané
+                  Container(color: AppColors.mapBeige),
 
-                GoogleMap(
-                  key: const ValueKey('home_current_location_mini_map'),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: AppConstants.mapLogoClipOffset,
+                    child: SizedBox(
+                      height: AppConstants.userPositionMapHeight +
+                          AppConstants.mapLogoClipExtraHeight,
+                      child: GoogleMap(
+                        key: const ValueKey('home_current_location_mini_map'),
                   style: MapStyleService.style,
                   initialCameraPosition: CameraPosition(
                     target: loc,
@@ -946,6 +955,8 @@ class _HomePageContentState extends State<_HomePageContent> {
                   gestureRecognizers:
                       const <Factory<OneSequenceGestureRecognizer>>{},
                 ),
+              ),
+            ),
 
                 // Overlay cliquable pour ouvrir la carte plein écran
                 Positioned.fill(
@@ -1059,6 +1070,7 @@ class _HomePageContentState extends State<_HomePageContent> {
               ],
             ),
           ),
+        ),
 
           // 2. Bande blanche : Titre du lieu et adresse à gauche, Bouton "Partager" à droite du titre
           Container(

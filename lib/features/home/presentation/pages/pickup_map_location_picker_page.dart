@@ -197,40 +197,45 @@ class _PickupMapLocationPickerPageState
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.white,
       body: Stack(
         children: [
-          // 1. Google Map plein écran
-          GoogleMap(
-            key: const ValueKey('pickup_picker_google_map'),
-            style: MapStyleService.style,
-            initialCameraPosition: CameraPosition(
-              target: _currentLocation,
-              zoom: 16.5,
-            ),
-            onMapCreated: (ctrl) {
-              _mapController = ctrl;
-              MapStyleService.applyStyle(ctrl);
-            },
-            onCameraMoveStarted: _onCameraMoveStarted,
-            onCameraMove: _onCameraMove,
-            onCameraIdle: _onCameraIdle,
-            buildingsEnabled: false,
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
-            rotateGesturesEnabled: true,
-            scrollGesturesEnabled: true,
-            tiltGesturesEnabled: false,
-            zoomGesturesEnabled: true,
-            padding: const EdgeInsets.only(bottom: 230),
-            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-              Factory<OneSequenceGestureRecognizer>(
-                () => EagerGestureRecognizer(),
+          // 1. Google Map plein écran (clipped to remove Google logo)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
+            child: GoogleMap(
+              key: const ValueKey('pickup_picker_google_map'),
+              style: MapStyleService.style,
+              initialCameraPosition: CameraPosition(
+                target: _currentLocation,
+                zoom: 16.5,
               ),
-            },
+              onMapCreated: (ctrl) {
+                _mapController = ctrl;
+                MapStyleService.applyStyle(ctrl);
+              },
+              onCameraMoveStarted: _onCameraMoveStarted,
+              onCameraMove: _onCameraMove,
+              onCameraIdle: _onCameraIdle,
+              buildingsEnabled: false,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              tiltGesturesEnabled: false,
+              zoomGesturesEnabled: true,
+              gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                Factory<OneSequenceGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                ),
+              },
+            ),
           ),
 
           // 2. Marqueur central personnalisé animé

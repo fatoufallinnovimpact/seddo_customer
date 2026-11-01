@@ -143,6 +143,19 @@ class RideRepository {
     );
   }
 
+  /// Bouton SOS : alerte immédiate au backoffice avec la position
+  Future<bool> sendSosAlert({
+    required String rideId,
+    required double latitude,
+    required double longitude,
+  }) {
+    return _service.sendSosAlert(
+      rideId: rideId,
+      latitude: latitude,
+      longitude: longitude,
+    );
+  }
+
   DriverModel getDemoDriver(RideOptionModel rideOption) {
     return _service.getDemoDriver(rideOption);
   }

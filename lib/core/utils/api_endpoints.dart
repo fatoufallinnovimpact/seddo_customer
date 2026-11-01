@@ -34,6 +34,7 @@ abstract class ApiEndpoints {
   static String receiptDownload(String token) => '$baseUrl/v1/receipts/$token';
   static String rideShare(String id) => '$baseUrl/v1/rides/$id/share';
   static String shareView(String token) => '$baseUrl/v1/share/$token';
+  static String rideSos(String id) => '$baseUrl/v1/rides/$id/sos';
 
   // Drivers nearby endpoint (GET /v1/drivers/nearby?lat={lat}&lng={lng})
   static String get driversNearby => '$baseUrl/v1/drivers/nearby';
@@ -44,4 +45,7 @@ abstract class ApiEndpoints {
 
   // User home suggestions endpoint (GET /v1/users/me/suggestions)
   static String get userSuggestions => '$baseUrl/v1/users/me/suggestions';
+
+  // User emergency contacts endpoints (GET /v1/users/me/emergency-contacts, PUT /v1/users/me/emergency-contacts)
+  static String get emergencyContacts => '$baseUrl/v1/users/me/emergency-contacts';
 }

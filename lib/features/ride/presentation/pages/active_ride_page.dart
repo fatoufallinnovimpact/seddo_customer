@@ -32,6 +32,7 @@ import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart'
 import 'package:seddo/features/ride/presentation/widgets/offline_emergency_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_action_tile_widget.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_sos_bottom_sheet.dart';
 
 /// Écran de suivi du trajet en cours avec chauffeur :
 /// - Floating top bar with back button, center status, and red safety siren button
@@ -804,11 +805,36 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     );
   }
 
+  bool _isSosActive = false;
+
+  void _openSosAlertSheet() {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+    RideSosBottomSheet.show(
+      context,
+      rideId: effectiveRideId,
+      currentPosition: _currentCarPosition,
+      destination: widget.destination,
+      driver: widget.driver,
+      onSosTriggered: () {
+        if (mounted) {
+          setState(() {
+            _isSosActive = true;
+          });
+        }
+      },
+    );
+  }
+
   void _openSafetyModal() {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
     SafetyModalWidget.show(
       context,
       destination: widget.destination,
       driver: widget.driver,
+      rideId: effectiveRideId,
+      currentPosition: _currentCarPosition,
     );
   }
 
@@ -936,8 +962,13 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             ),
           ),
 
-          // 1. Fullscreen Google Map avec pinch-to-zoom et contrôle gestuel fluide
-          Listener(
+          // 1. Fullscreen Google Map avec pinch-to-zoom et contrôle gestuel fluide (clipped to remove Google logo)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
+            child: Listener(
             onPointerDown: (_) {
               if (_followCar) {
                 setState(() {
@@ -956,7 +987,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                 zoom: 13.8,
               ),
               padding: const EdgeInsets.only(
-                bottom: 300,
                 top: 70,
                 left: 16,
                 right: 16,
@@ -1000,6 +1030,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               },
             ),
           ),
+        ),
 
           // 2. Floating Offline Banner (when offline) or Top Bar (when online)
           if (_isOffline) ...[
@@ -1141,12 +1172,67 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                         ],
                       ),
                       child: IconButton(
-                        icon: const Icon(
-                          Icons.notifications_active_rounded,
+                        icon: Icon(
+                          _isSosActive
+                              ? Icons.crisis_alert_rounded
+                              : Icons.notifications_active_rounded,
                           color: AppColors.white,
                           size: 20,
                         ),
-                        onPressed: _openSafetyModal,
+                        onPressed: _openSosAlertSheet,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 2.bis Floating Active SOS Alert Banner
+          if (_isSosActive)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 70,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.sirenRed,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: AppColors.shadowMarker,
+                      blurRadius: 14,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.crisis_alert_rounded,
+                      color: AppColors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: AppConstants.spacingSm),
+                    Expanded(
+                      child: Text(
+                        'safety.sos_active_banner'.tr(),
+                        style: GoogleFonts.inter(
+                          color: AppColors.white,
+                          fontSize: AppConstants.fontSm,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => setState(() => _isSosActive = false),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: AppColors.white,
+                        size: 20,
                       ),
                     ),
                   ],

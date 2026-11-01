@@ -450,6 +450,46 @@ class RideService {
     return null;
   }
 
+  /// POST /v1/rides/{id}/sos
+  /// Bouton SOS : alerte immédiate au backoffice avec la position GPS.
+  Future<bool> sendSosAlert({
+    required String rideId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final url = ApiEndpoints.rideSos(rideId);
+      final body = {
+        'lat': latitude,
+        'lng': longitude,
+      };
+      debugPrint('[RideService] 🚀 POST $url (sendSosAlert) payload=$body');
+      final response = await _dio.post(
+        url,
+        data: body,
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint(
+            '[RideService] ✅ POST $url (sendSosAlert) -> Alerte SOS transmise avec succès');
+        return true;
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ⚠️ Erreur POST SOS [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[RideService] ⚠️ Erreur inattendue POST SOS: $e');
+      }
+      rethrow;
+    }
+    return false;
+  }
+
   /// GET /v1/share/{token}
   /// Page de suivi d’un trajet partagé (vu par un proche sans connexion ni application) :
   /// Statut, chauffeur, véhicule, position.

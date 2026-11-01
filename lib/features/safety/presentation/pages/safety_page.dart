@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/safety/domain/bloc/safety_bloc.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_contacts_section.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_hero_banner.dart';
@@ -40,8 +41,10 @@ class _SafetyPageView extends StatelessWidget {
 
     return BlocListener<SafetyBloc, SafetyState>(
       listenWhen: (previous, current) =>
-          current.userFeedbackMessage != null &&
-          current.userFeedbackMessage != previous.userFeedbackMessage,
+          (current.userFeedbackMessage != null &&
+              current.userFeedbackMessage != previous.userFeedbackMessage) ||
+          (current.errorMessage != null &&
+              current.errorMessage != previous.errorMessage),
       listener: (context, state) {
         if (state.userFeedbackMessage != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -56,7 +59,27 @@ class _SafetyPageView extends StatelessWidget {
               backgroundColor: AppColors.textPrimary,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+              ),
+            ),
+          );
+        } else if (state.errorMessage != null) {
+          final errorText = state.errorMessage!.startsWith('safety.')
+              ? state.errorMessage!.tr()
+              : state.errorMessage!;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                errorText,
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.white,
+                ),
+              ),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
               ),
             ),
           );
@@ -71,17 +94,22 @@ class _SafetyPageView extends StatelessWidget {
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(18, 8, 18, 30),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppConstants.spacingLg,
+                    AppConstants.spacingSm,
+                    AppConstants.spacingLg,
+                    AppConstants.spacingXl,
+                  ),
                   child: Column(
                     children: const [
                       SafetyHeroBanner(),
-                      SizedBox(height: 18),
+                      SizedBox(height: AppConstants.spacingLg),
                       SafetySosCard(),
-                      SizedBox(height: 22),
+                      SizedBox(height: AppConstants.spacingLg),
                       SafetyContactsSection(),
-                      SizedBox(height: 22),
+                      SizedBox(height: AppConstants.spacingLg),
                       SafetySettingsSection(),
-                      SizedBox(height: 22),
+                      SizedBox(height: AppConstants.spacingLg),
                       SafetyUsefulNumbersSection(),
                     ],
                   ),
@@ -96,19 +124,22 @@ class _SafetyPageView extends StatelessWidget {
 
   Widget _buildTopBar(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingLg,
+        vertical: AppConstants.spacingUnitLg,
+      ),
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: AppConstants.circularButtonSize,
+            height: AppConstants.circularButtonSize,
             decoration: const BoxDecoration(
               color: AppColors.white,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
                   color: AppColors.cardShadow,
-                  blurRadius: 8,
+                  blurRadius: AppConstants.spacingSm,
                   offset: Offset(0, 2),
                 ),
               ],
@@ -116,21 +147,23 @@ class _SafetyPageView extends StatelessWidget {
             child: Material(
               color: AppColors.transparent,
               child: InkWell(
-                borderRadius: BorderRadius.circular(21),
+                borderRadius: BorderRadius.circular(
+                  AppConstants.circularButtonSize / 2,
+                ),
                 onTap: () => Navigator.of(context).pop(),
                 child: const Icon(
                   Icons.arrow_back,
-                  size: 20,
+                  size: AppConstants.iconSizeMd,
                   color: AppColors.textPrimary,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: AppConstants.spacingUnitXl),
           Text(
             'safety.page_title'.tr(),
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
+              fontSize: AppConstants.fontTitle,
               fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
             ),
