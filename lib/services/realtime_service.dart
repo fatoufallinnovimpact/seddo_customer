@@ -410,6 +410,15 @@ class RealtimeService {
       return;
     }
 
+    // Si le socket est déjà connecté ou en cours de connexion, on le réutilise sans le détruire
+    if (_socket != null && (_socket!.connected || _connectionStatus == RealtimeConnectionStatus.connecting)) {
+      debugPrint('[RealtimeService] ⚡ Socket déjà connecté ou en cours, réutilisation');
+      if (_currentActiveRideId != null && _currentActiveRideId!.isNotEmpty) {
+        joinRide(_currentActiveRideId!);
+      }
+      return;
+    }
+
     final token = customToken ?? await AuthRepository().getAccessToken();
     if (token == null || token.isEmpty) {
       debugPrint('[RealtimeService] ⚠️ Aucun token disponible pour connecter le WebSocket');
@@ -425,13 +434,22 @@ class RealtimeService {
     try {
       _socket?.dispose();
 
-      // Configuration Socket.IO conforme aux spécifications Seddo
+      // Configuration Socket.IO robuste et tolérante aux pannes
       _socket = io.io(
         baseUrl,
         io.OptionBuilder()
-            .setTransports(['websocket'])
+            .setTransports(['websocket', 'polling'])
             .setPath('/v1/realtime')
-            .setAuth({'token': token})
+            .setAuth({
+              'token': token,
+              'authorization': 'Bearer $token',
+            })
+            .setQuery({
+              'token': token,
+            })
+            .setExtraHeaders({
+              'Authorization': 'Bearer $token',
+            })
             .enableAutoConnect()
             .enableReconnection()
             .setReconnectionAttempts(999999)
@@ -464,8 +482,13 @@ class RealtimeService {
     _currentActiveRideId = rideId;
     if (_socket != null && _socket!.connected) {
       debugPrint('[RealtimeService] 🚪 Rejoindre canal ride:$rideId');
-      _socket?.emit('join_ride', {'rideId': rideId});
       _socket?.emit('join', 'ride:$rideId');
+      _socket?.emit('join', {'room': 'ride:$rideId', 'rideId': rideId});
+      _socket?.emit('join_ride', {'rideId': rideId});
+      _socket?.emit('joinRide', {'rideId': rideId});
+      _socket?.emit('ride:join', {'rideId': rideId});
+      _socket?.emit('subscribe', {'channel': 'ride:$rideId', 'rideId': rideId});
+      _socket?.emit('subscribe', 'ride:$rideId');
     }
   }
 
@@ -477,8 +500,12 @@ class RealtimeService {
     }
     if (_socket != null && _socket!.connected) {
       debugPrint('[RealtimeService] 🚪 Quitter canal ride:$rideId');
-      _socket?.emit('leave_ride', {'rideId': rideId});
       _socket?.emit('leave', 'ride:$rideId');
+      _socket?.emit('leave', {'room': 'ride:$rideId', 'rideId': rideId});
+      _socket?.emit('leave_ride', {'rideId': rideId});
+      _socket?.emit('leaveRide', {'rideId': rideId});
+      _socket?.emit('ride:leave', {'rideId': rideId});
+      _socket?.emit('unsubscribe', 'ride:$rideId');
     }
   }
 
@@ -498,9 +525,14 @@ class RealtimeService {
       }
     });
 
-    s.onDisconnect((_) {
-      debugPrint('[RealtimeService] 🔌 Déconnecté du WebSocket Seddo');
+    s.onDisconnect((reason) {
+      debugPrint('[RealtimeService] 🔌 Déconnecté du WebSocket Seddo: $reason');
       _setConnectionStatus(RealtimeConnectionStatus.disconnected);
+      if (reason == 'io server disconnect') {
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          s.connect();
+        });
+      }
     });
 
     s.onConnectError((err) {
@@ -523,6 +555,12 @@ class RealtimeService {
       _setConnectionStatus(RealtimeConnectionStatus.reconnecting);
     });
 
+    // Écouteur universel catch-all onAny
+    s.onAny((event, data) {
+      debugPrint('[RealtimeService] ⚡ Reçu onAny: $event');
+      _handleAnyEvent(event.toString(), data);
+    });
+
     // 1. Statut de la course (ride.status / ride:status)
     s.on('ride.status', (data) => _handleRideStatus(data));
     s.on('ride:status', (data) => _handleRideStatus(data));
@@ -539,9 +577,15 @@ class RealtimeService {
     s.on('ride.route.updated', (data) => _handleRideRoute(data));
     s.on('ride:route:updated', (data) => _handleRideRoute(data));
 
-    // 5. Paiement (payment.status / payment:status)
+    // 5. Paiement (payment.status, payment.success, payment.confirmed, etc.)
     s.on('payment.status', (data) => _handlePaymentStatus(data));
     s.on('payment:status', (data) => _handlePaymentStatus(data));
+    s.on('payment.success', (data) => _handlePaymentStatus(data, defaultStatus: 'SUCCESS'));
+    s.on('payment:success', (data) => _handlePaymentStatus(data, defaultStatus: 'SUCCESS'));
+    s.on('payment.confirmed', (data) => _handlePaymentStatus(data, defaultStatus: 'SUCCESS'));
+    s.on('payment:confirmed', (data) => _handlePaymentStatus(data, defaultStatus: 'SUCCESS'));
+    s.on('payment.paid', (data) => _handlePaymentStatus(data, defaultStatus: 'PAID'));
+    s.on('payment:paid', (data) => _handlePaymentStatus(data, defaultStatus: 'PAID'));
 
     // 6. Chauffeurs proches sur l'accueil (nearby.drivers / nearby:drivers)
     s.on('nearby.drivers', (data) => _handleNearbyDrivers(data));
@@ -551,6 +595,135 @@ class RealtimeService {
     s.on('ride.message', (data) => _handleChatMessage(data));
     s.on('chat.message', (data) => _handleChatMessage(data));
     s.on('chat:message', (data) => _handleChatMessage(data));
+  }
+
+  void _handleAnyEvent(String event, dynamic data) {
+    final lower = event.toLowerCase();
+
+    // Statut de course
+    if (lower == 'ride.status' ||
+        lower == 'ride:status' ||
+        lower == 'ride_status' ||
+        lower == 'ride.accepted' ||
+        lower == 'ride:accepted' ||
+        lower == 'offer.accepted' ||
+        lower == 'offer:accepted' ||
+        lower == 'driver.accepted' ||
+        lower == 'driver:accepted' ||
+        lower == 'driver.arrived' ||
+        lower == 'driver:arrived' ||
+        lower == 'ride.arrived' ||
+        lower == 'ride:arrived' ||
+        lower == 'ride.started' ||
+        lower == 'ride:started' ||
+        lower == 'ride.in_progress' ||
+        lower == 'ride:in_progress' ||
+        lower == 'ride.completed' ||
+        lower == 'ride:completed' ||
+        lower == 'ride.finished' ||
+        lower == 'ride.cancelled' ||
+        lower == 'ride:cancelled' ||
+        lower == 'ride.cancel' ||
+        lower == 'ride.no_driver' ||
+        lower == 'ride:no_driver' ||
+        lower == 'ride.update' ||
+        lower == 'ride:update' ||
+        lower == 'ride') {
+      _dispatchRideStatusFromEvent(event, data);
+      return;
+    }
+
+    // Position du chauffeur
+    if (lower == 'driver.location' ||
+        lower == 'driver:location' ||
+        lower == 'driver_location' ||
+        lower == 'location.update' ||
+        lower == 'driver:position' ||
+        lower == 'driver.position') {
+      _handleDriverLocation(data);
+      return;
+    }
+
+    // ETA
+    if (lower == 'ride.eta' ||
+        lower == 'ride:eta' ||
+        lower == 'ride_eta' ||
+        lower == 'eta.update') {
+      _handleRideEta(data);
+      return;
+    }
+
+    // Route
+    if (lower == 'ride.route.updated' ||
+        lower == 'ride:route:updated' ||
+        lower == 'ride.route' ||
+        lower == 'route.updated') {
+      _handleRideRoute(data);
+      return;
+    }
+
+    // Paiement
+    if (lower == 'payment.status' ||
+        lower == 'payment:status' ||
+        lower == 'payment_status' ||
+        lower == 'payment.success' ||
+        lower == 'payment:success' ||
+        lower == 'payment.confirmed' ||
+        lower == 'payment:confirmed' ||
+        lower == 'payment.paid' ||
+        lower == 'payment:paid' ||
+        lower == 'payment.completed' ||
+        lower == 'payment:completed') {
+      final defaultStatus = (lower.contains('success') ||
+              lower.contains('confirm') ||
+              lower.contains('paid') ||
+              lower.contains('complet'))
+          ? 'SUCCESS'
+          : '';
+      _handlePaymentStatus(data, defaultStatus: defaultStatus);
+      return;
+    }
+
+    // Chauffeurs proches
+    if (lower == 'nearby.drivers' ||
+        lower == 'nearby:drivers' ||
+        lower == 'drivers:nearby') {
+      _handleNearbyDrivers(data);
+      return;
+    }
+
+    // Chat
+    if (lower == 'ride.message' ||
+        lower == 'chat.message' ||
+        lower == 'chat:message') {
+      _handleChatMessage(data);
+      return;
+    }
+  }
+
+  void _dispatchRideStatusFromEvent(String event, dynamic data) {
+    if (data is! Map) return;
+    final map = Map<String, dynamic>.from(data);
+    final lower = event.toLowerCase();
+
+    // Déduire le statut du nom de l'événement si non fourni
+    if (map['status'] == null || map['status'].toString().isEmpty) {
+      if (lower.contains('accept')) {
+        map['status'] = 'ACCEPTED';
+      } else if (lower.contains('arrive')) {
+        map['status'] = 'DRIVER_ARRIVED';
+      } else if (lower.contains('start') || lower.contains('in_progress')) {
+        map['status'] = 'IN_PROGRESS';
+      } else if (lower.contains('complet') || lower.contains('finish')) {
+        map['status'] = 'COMPLETED';
+      } else if (lower.contains('cancel')) {
+        map['status'] = 'CANCELLED';
+      } else if (lower.contains('no_driver')) {
+        map['status'] = 'NO_DRIVER';
+      }
+    }
+
+    _handleRideStatus(map);
   }
 
   void _handleRideStatus(dynamic data) {
@@ -635,9 +808,18 @@ class RealtimeService {
     }
   }
 
-  void _handlePaymentStatus(dynamic data) {
+  void _handlePaymentStatus(dynamic data, {String defaultStatus = ''}) {
     try {
-      final event = RealtimePaymentStatusEvent.fromJson(data);
+      dynamic payload = data;
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        if (defaultStatus.isNotEmpty &&
+            (map['status'] == null || map['status'].toString().isEmpty)) {
+          map['status'] = defaultStatus;
+        }
+        payload = map;
+      }
+      final event = RealtimePaymentStatusEvent.fromJson(payload);
       _paymentStatusController.add(event);
     } catch (e) {
       debugPrint('[RealtimeService] ⚠️ Erreur parsing payment.status: $e');
@@ -718,6 +900,9 @@ class RealtimeService {
       case 'chat.message':
       case 'chat:message':
         _handleChatMessage(data);
+        break;
+      default:
+        _handleAnyEvent(eventName, data);
         break;
     }
   }

@@ -11,7 +11,9 @@ import 'package:seddo/features/activity/data/models/activity_item_model.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_bloc.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_event.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_state.dart';
+import 'package:seddo/features/activity/presentation/utils/ride_status_style_helper.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/services/map_style_service.dart';
 
@@ -101,14 +103,20 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
 
   void _onScroll() {
     final state = context.read<ActivityBloc>().state;
-    if (state is ActivityLoadedState &&
-        state.currentTab == ActivityTab.courses &&
-        !state.isLoadingMore &&
-        state.hasMore &&
-        _scrollController.hasClients &&
-        _scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 80) {
-      context.read<ActivityBloc>().add(const ActivityLoadMorePastRidesEvent());
+    if (state is! ActivityLoadedState || !_scrollController.hasClients) return;
+
+    final isNearBottom = _scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 80;
+    if (!isNearBottom) return;
+
+    if (state.currentTab == ActivityTab.courses) {
+      if (!state.isLoadingMore && state.hasMore) {
+        context.read<ActivityBloc>().add(const ActivityLoadMorePastRidesEvent());
+      }
+    } else if (state.currentTab == ActivityTab.remboursements) {
+      if (!state.isLoadingMoreRefunds && state.hasMoreRefunds) {
+        context.read<ActivityBloc>().add(const ActivityLoadMoreRefundsEvent());
+      }
     }
   }
 
@@ -116,6 +124,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: RideReceiptPage(
+          rideId: ride.id,
           departure: ride.departure,
           destination: ride.destination,
           driver: ride.driver,
@@ -129,6 +138,21 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
           distanceText: ride.distanceText,
           dateText: ride.dateText,
           orangeRef: ride.orangeRef,
+        ),
+      ),
+    );
+  }
+
+  void _openReceiptForRefund(ActivityRefundItem refund) {
+    Navigator.of(context).push(
+      SlideRightToLeftRoute(
+        page: RideReceiptPage(
+          rideId: refund.rideId,
+          priceText: refund.amountText.replaceAll('+', ''),
+          dateText: refund.subtitle.split('·').first.trim(),
+          statusText: refund.status,
+          orangeRef: refund.providerRef ?? 'CI270415.1819.A3F2',
+          isRefunded: true,
         ),
       ),
     );
@@ -561,15 +585,13 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                           zoom: 12.8,
                         ),
                         buildingsEnabled: false,
-                        onMapCreated: MapStyleService.applyStyle,
-                        polylines: {
-                          Polyline(
-                            polylineId: const PolylineId('recent_preview_line'),
-                            points: ride.polylinePoints,
-                            color: AppColors.slateDark,
-                            width: AppConstants.mapPolylineWidth.toInt(),
-                          ),
+                        onMapCreated: (controller) {
+                          MapStyleService.applyStyle(controller);
+                          if (ride.polylinePoints.isNotEmpty) {
+                            _fitPreviewBounds(controller, ride.polylinePoints);
+                          }
                         },
+                        polylines: _buildRecentPreviewPolylines(ride),
                         markers: {
                           Marker(
                             markerId: const MarkerId('preview_origin'),
@@ -720,24 +742,45 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                           const SizedBox(height: AppConstants.spacingXs),
                           Row(
                             children: [
-                              Container(
-                                width: AppConstants.iconSizeLg,
-                                height: AppConstants.iconSizeLg,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.grayBgLight,
-                                  shape: BoxShape.circle,
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  ride.driverInitials,
-                                  style: GoogleFonts.inter(
-                                    fontSize: AppConstants.fontXs,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.slateDark,
+                              if (ride.driverInitials != null &&
+                                  ride.driverInitials!.isNotEmpty) ...[
+                                Container(
+                                  width: AppConstants.iconSizeLg,
+                                  height: AppConstants.iconSizeLg,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.grayBgLight,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    ride.driverInitials!,
+                                    style: GoogleFonts.inter(
+                                      fontSize: AppConstants.fontXs,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.slateDark,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: AppConstants.spacingS),
+                                const SizedBox(width: AppConstants.spacingS),
+                              ] else ...[
+                                Container(
+                                  width: AppConstants.iconSizeLg,
+                                  height: AppConstants.iconSizeLg,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.grayBgLight,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    ride.status == 'Sans chauffeur'
+                                        ? Icons.person_off_outlined
+                                        : Icons.directions_car_rounded,
+                                    size: AppConstants.iconSizeSm,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                const SizedBox(width: AppConstants.spacingS),
+                              ],
                               Expanded(
                                 child: Text(
                                   ride.subtitle,
@@ -766,24 +809,32 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                           ),
                         ),
                         const SizedBox(height: AppConstants.spacingXs),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppConstants.spacingUnit,
-                            vertical: AppConstants.spacingXs,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.receiptPaidBadgeBg,
-                            borderRadius:
-                                BorderRadius.circular(AppConstants.radiusFull),
-                          ),
-                          child: Text(
-                            ride.status,
-                            style: GoogleFonts.inter(
-                              fontSize: AppConstants.fontXs,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.receiptPaidBadgeText,
-                            ),
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final statusStyle = RideStatusStyle.forStatus(
+                              ride.status,
+                              isRefunded: ride.isRefunded,
+                            );
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppConstants.spacingUnit,
+                                vertical: AppConstants.spacingXs,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusStyle.backgroundColor,
+                                borderRadius:
+                                    BorderRadius.circular(AppConstants.radiusFull),
+                              ),
+                              child: Text(
+                                ride.status,
+                                style: GoogleFonts.inter(
+                                  fontSize: AppConstants.fontXs,
+                                  fontWeight: FontWeight.w700,
+                                  color: statusStyle.textColor,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -795,6 +846,53 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
         ),
       ),
     );
+  }
+
+  Set<Polyline> _buildRecentPreviewPolylines(ActivityRideItem ride) {
+    if (ride.polylinePoints.isEmpty) return {};
+    if (ride.trafficSegments.isNotEmpty) {
+      return RideEtaCalculator.buildTrafficPolylines(
+        baseId: 'recent_preview_line',
+        points: ride.polylinePoints,
+        traffic: ride.trafficSegments,
+        width: AppConstants.mapPolylineWidth.toInt(),
+      );
+    }
+    return {
+      Polyline(
+        polylineId: const PolylineId('recent_preview_line'),
+        points: ride.polylinePoints,
+        color: AppColors.trafficNormal,
+        width: AppConstants.mapPolylineWidth.toInt(),
+      ),
+    };
+  }
+
+  void _fitPreviewBounds(GoogleMapController controller, List<LatLng> points) {
+    if (points.isEmpty) return;
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final point in points) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    try {
+      controller.moveCamera(
+        CameraUpdate.newLatLngBounds(
+          LatLngBounds(
+            southwest: LatLng(minLat, minLng),
+            northeast: LatLng(maxLat, maxLng),
+          ),
+          AppConstants.spacingLg,
+        ),
+      );
+    } catch (_) {}
   }
 
   Widget _buildPastRideTile(ActivityRideItem ride) {
@@ -893,28 +991,32 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                     ),
                   ),
                   const SizedBox(height: AppConstants.spacingXs),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppConstants.spacingUnit,
-                      vertical: AppConstants.spacingXxs,
-                    ),
-                    decoration: BoxDecoration(
-                      color: ride.isRefunded
-                          ? AppColors.grayBgLight
-                          : AppColors.receiptPaidBadgeBg,
-                      borderRadius:
-                          BorderRadius.circular(AppConstants.radiusFull),
-                    ),
-                    child: Text(
-                      ride.status,
-                      style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontXs,
-                        fontWeight: FontWeight.w700,
-                        color: ride.isRefunded
-                            ? AppColors.slateDark
-                            : AppColors.receiptPaidBadgeText,
-                      ),
-                    ),
+                  Builder(
+                    builder: (context) {
+                      final statusStyle = RideStatusStyle.forStatus(
+                        ride.status,
+                        isRefunded: ride.isRefunded,
+                      );
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppConstants.spacingUnit,
+                          vertical: AppConstants.spacingXxs,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusStyle.backgroundColor,
+                          borderRadius:
+                              BorderRadius.circular(AppConstants.radiusFull),
+                        ),
+                        child: Text(
+                          ride.status,
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontXs,
+                            fontWeight: FontWeight.w700,
+                            color: statusStyle.textColor,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -957,6 +1059,24 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
               ),
               child: _buildRefundItemCard(refund),
             )),
+
+        // Loader during pagination
+        if (state.isLoadingMoreRefunds)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              vertical: AppConstants.spacingMd,
+            ),
+            child: Center(
+              child: SizedBox(
+                width: AppConstants.iconSizeXl,
+                height: AppConstants.iconSizeXl,
+                child: const CircularProgressIndicator(
+                  strokeWidth: AppConstants.strokeWidthSelected,
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
+              ),
+            ),
+          ),
 
         const SizedBox(height: AppConstants.spacingLg),
 
@@ -1037,7 +1157,10 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                       textBaseline: TextBaseline.alphabetic,
                       children: [
                         Text(
-                          '2 900',
+                          summary.totalRefundedFormatted
+                              .replaceAll(' F', '')
+                              .replaceAll('F', '')
+                              .trim(),
                           style: GoogleFonts.inter(
                             fontSize: AppConstants.fontHero,
                             fontWeight: FontWeight.w900,
@@ -1059,26 +1182,17 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                   ],
                 ),
 
-                // Orange Money account indicator
+                // Orange Money account indicator with official logo
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppConstants.spacingS,
-                        vertical: AppConstants.spacingXxs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.white,
-                        borderRadius:
-                            BorderRadius.circular(AppConstants.radiusXs),
-                      ),
-                      child: Text(
-                        'OM',
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontXs,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.drawerDark,
-                        ),
+                    ClipRRect(
+                      borderRadius:
+                          BorderRadius.circular(AppConstants.radiusXs),
+                      child: Image.asset(
+                        AppConstants.assetOrangeMoneyLogo,
+                        width: AppConstants.iconSizeMd,
+                        height: AppConstants.iconSizeMd,
+                        fit: BoxFit.cover,
                       ),
                     ),
                     const SizedBox(width: AppConstants.spacingSm),
@@ -1107,9 +1221,13 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
     return Material(
       color: AppColors.transparent,
       child: InkWell(
-        onTap: refund.associatedRide != null
-            ? () => _openReceipt(refund.associatedRide!)
-            : null,
+        onTap: () {
+          if (refund.associatedRide != null) {
+            _openReceipt(refund.associatedRide!);
+          } else if (refund.rideId != null && refund.rideId!.isNotEmpty) {
+            _openReceiptForRefund(refund);
+          }
+        },
         borderRadius: BorderRadius.circular(AppConstants.radiusCard),
         child: Container(
           padding: const EdgeInsets.all(AppConstants.spacingMd),

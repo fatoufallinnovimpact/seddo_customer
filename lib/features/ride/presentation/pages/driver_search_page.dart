@@ -29,8 +29,8 @@ import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
+import 'package:app_links/app_links.dart';
 import 'package:seddo/services/route_service.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Screen displayed while searching for nearby drivers:
 /// - Interactive map with pickup marker, silky smooth GPU-rendered radar waves, real nearby cars
@@ -86,6 +86,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   StreamSubscription<RealtimePaymentStatusEvent>? _realtimePaymentSub;
   StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
   StreamSubscription<void>? _realtimeReconnectSub;
+  AppLinks? _appLinks;
+  StreamSubscription<Uri>? _appLinksSub;
 
   BitmapDescriptor? _destPinIcon;
   BitmapDescriptor? _pickupPinIcon;
@@ -95,11 +97,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   int? _nearbyDriversCount;
   late List<LatLng> _polylinePoints = List<LatLng>.from(widget.polylinePoints);
   late List<TrafficSegmentModel> _traffic;
-  String? _paymentUrl;
   String? _paymentMessage;
   String _paymentStatus = 'PENDING';
   String _currentRideStatus = 'PAYMENT_PENDING';
-  bool _isCheckingPayment = false;
 
   bool get _isPaymentConfirmed {
     if (widget.paymentMethod == PaymentMethodType.cash) return true;
@@ -139,7 +139,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
     final initialPayment =
         RideService.lastCreatedRideData?['payment'] as Map<String, dynamic>?;
-    _paymentUrl = initialPayment?['paymentUrl'] as String?;
     _paymentMessage = initialPayment?['message'] as String?;
     final initialPStatus = initialPayment?['status'] as String?;
     final initialRideStatus =
@@ -218,12 +217,32 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       });
     }
 
-    // Radar pulsatile actif UNIQUEMENT si le paiement est confirmé (ou espèces)
+    // Écoute des liens profonds (retour de paiement Wave / return URL)
+    try {
+      _appLinks = AppLinks();
+      _appLinksSub = _appLinks?.uriLinkStream.listen((uri) {
+        debugPrint('[DriverSearchPage] 🔗 Deep link reçu: $uri');
+        final uriStr = uri.toString().toLowerCase();
+        if (uriStr.contains('payment') ||
+            uriStr.contains('return') ||
+            uriStr.contains('seddo')) {
+          _onPaymentConfirmed();
+          final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+          if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+            _checkRideStatus(effectiveRideId);
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('[DriverSearchPage] ⚠️ Erreur init AppLinks: $e');
+    }
+
+    // Radar pulsatile actif immédiatement dès l'arrivée sur l'écran de recherche
     _radarController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
     );
-    if (!isTest && _isPaymentConfirmed) {
+    if (!isTest) {
       _radarController.repeat();
     }
 
@@ -233,9 +252,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       _loadFallbackPolyline();
     }
 
-    // La recherche / matching de chauffeur ne démarre qu'après confirmation du paiement
+    // La recherche / matching démarre dès la commande
     final bool shouldAutoMatch = widget.autoMatchDriver ?? isTest;
-    if (shouldAutoMatch && _isPaymentConfirmed) {
+    if (shouldAutoMatch) {
       _autoMatchTimer = Timer(const Duration(seconds: 5), () {
         if (mounted) {
           onDriverFound();
@@ -322,15 +341,14 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         }
       });
 
-      // Polling actif : tant que le paiement est en attente (ex: Wave), interroger toutes les 3s.
-      // Une fois le paiement validé, interroger uniquement si le WebSocket est déconnecté.
+      // Polling actif continu : interroger toutes les 3s tant qu'on recherche un chauffeur.
+      // Cela garantit une transition immédiate dès qu'un chauffeur accepte sur le backend,
+      // en parallèle du WebSocket temps réel.
       if (!isTest) {
         _rideStatusPollTimer = Timer.periodic(
           const Duration(seconds: 3),
           (_) {
-            if (!_isPaymentConfirmed || !RealtimeService().isConnected) {
-              _checkRideStatus(effectiveRideId);
-            }
+            _checkRideStatus(effectiveRideId);
           },
         );
       }
@@ -341,6 +359,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
+      // Dès le retour de Wave ou du navigateur, on active la recherche et on interroge l'API
+      _onPaymentConfirmed();
       final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
       if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
         if (!RealtimeService().isConnected) {
@@ -382,6 +402,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _appLinksSub?.cancel();
     _realtimeStatusSub?.cancel();
     _realtimePaymentSub?.cancel();
     _realtimeNearbySub?.cancel();
@@ -490,10 +511,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                 _paymentStatus = pStatus.toUpperCase();
               });
             }
-          }
-          final pUrl = payment['paymentUrl'] as String?;
-          if (pUrl != null && pUrl.isNotEmpty) {
-            _paymentUrl = pUrl;
           }
           final pMessage = payment['message'] as String?;
           if (pMessage != null && pMessage.isNotEmpty && mounted) {
@@ -889,16 +906,13 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   }
 
   Widget _buildLiveSearchPill({bool compact = false}) {
-    final isConfirmed = _isPaymentConfirmed;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
         vertical: compact ? 4 : 5,
       ),
       decoration: BoxDecoration(
-        color: isConfirmed
-            ? AppColors.primary.withAlpha(25)
-            : const Color(0xFFFEF3C7),
+        color: AppColors.primary.withAlpha(25),
         borderRadius: BorderRadius.circular(AppConstants.radiusPill),
       ),
       child: Row(
@@ -907,22 +921,18 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           Container(
             width: 8,
             height: 8,
-            decoration: BoxDecoration(
-              color: isConfirmed
-                  ? AppColors.primary
-                  : const Color(0xFFD97706),
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 6),
           Text(
-            isConfirmed ? 'ride.live_search'.tr() : 'PAIEMENT EN ATTENTE',
+            'ride.live_search'.tr(),
             style: GoogleFonts.inter(
               fontSize: compact ? 10 : 11,
               fontWeight: FontWeight.w800,
-              color: isConfirmed
-                  ? AppColors.primary
-                  : const Color(0xFFB45309),
+              color: AppColors.primary,
               letterSpacing: 0.5,
             ),
           ),
@@ -945,28 +955,12 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   Widget _buildProgressBar() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(2),
-      child: LinearProgressIndicator(
-        color: _isPaymentConfirmed ? AppColors.primary : const Color(0xFFF59E0B),
+      child: const LinearProgressIndicator(
+        color: AppColors.primary,
         backgroundColor: AppColors.surfaceGrey,
         minHeight: 3.5,
       ),
     );
-  }
-
-  String _getPaymentSubtitle() {
-    if (widget.paymentMethod == PaymentMethodType.cash) {
-      return _paymentMessage ??
-          'Vous paierez ${widget.rideOption.formattedPrice} en espèces au chauffeur à l\'arrivée.';
-    }
-    if (_paymentStatus == 'PENDING' &&
-        _paymentUrl != null &&
-        _paymentUrl!.isNotEmpty) {
-      if (widget.paymentMethod == PaymentMethodType.wave) {
-        return _paymentMessage ?? 'Toucher pour ouvrir Wave et payer';
-      }
-      return _paymentMessage ?? 'Toucher pour ouvrir Orange Money';
-    }
-    return _paymentMessage ?? 'ride.refund_guarantee'.tr();
   }
 
   @override
@@ -1210,9 +1204,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                     Align(
                                       alignment: Alignment.centerLeft,
                                       child: Text(
-                                        _isPaymentConfirmed
-                                            ? 'ride.searching'.tr()
-                                            : 'En attente du paiement...',
+                                        'ride.searching'.tr(),
                                         style: GoogleFonts.inter(
                                           fontSize: 22,
                                           fontWeight: FontWeight.w900,
@@ -1234,9 +1226,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
-                                            _isPaymentConfirmed
-                                                ? 'ride.searching'.tr()
-                                                : 'En attente du paiement...',
+                                            'ride.searching'.tr(),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: GoogleFonts.inter(
@@ -1274,243 +1264,67 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                 children: [
                                   const SizedBox(height: 18),
 
-                                  // Tile 1: Paiement reçu, en attente ou en espèces
-                                  GestureDetector(
-                                    onTap: () async {
-                                      if (_paymentStatus == 'PENDING' &&
-                                          _paymentUrl != null &&
-                                          _paymentUrl!.isNotEmpty) {
-                                        final uri = Uri.tryParse(_paymentUrl!);
-                                        if (uri != null) {
-                                          try {
-                                            await launchUrl(uri,
-                                                mode: LaunchMode.externalApplication);
-                                          } catch (_) {}
-                                        }
-                                      }
-                                    },
-                                    behavior: HitTestBehavior.opaque,
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            color: widget.paymentMethod ==
-                                                    PaymentMethodType.cash
-                                                ? AppColors.refundContainerBg
-                                                : (_paymentStatus == 'PENDING'
-                                                    ? AppColors.primary.withAlpha(25)
-                                                    : AppColors.refundContainerBg),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          alignment: Alignment.center,
-                                          child: Icon(
-                                            widget.paymentMethod ==
-                                                    PaymentMethodType.cash
-                                                ? Icons.payments_outlined
-                                                : (_paymentStatus == 'PENDING'
-                                                    ? Icons.account_balance_wallet_outlined
-                                                    : Icons.check_rounded),
-                                            color: widget.paymentMethod ==
-                                                    PaymentMethodType.cash
-                                                ? AppColors.refundGreen
-                                                : (_paymentStatus == 'PENDING'
-                                                    ? AppColors.primary
-                                                    : AppColors.refundGreen),
-                                            size: 22,
-                                          ),
+                                  // Tile 1: Paiement reçu ou en espèces
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 40,
+                                        height: 40,
+                                        decoration: const BoxDecoration(
+                                          color: AppColors.refundContainerBg,
+                                          shape: BoxShape.circle,
                                         ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                widget.paymentMethod ==
-                                                        PaymentMethodType.cash
-                                                    ? 'ride.payment_cash_due'.tr(
-                                                        args: [
-                                                            widget.rideOption
-                                                                .formattedPrice
-                                                          ])
-                                                    : (_paymentStatus == 'PENDING'
-                                                        ? (widget.paymentMethod ==
-                                                                PaymentMethodType.wave
-                                                            ? 'Paiement Wave en attente · ${widget.rideOption.formattedPrice}'
-                                                            : 'Paiement en attente · ${widget.rideOption.formattedPrice}')
-                                                        : 'ride.payment_received'.tr(
-                                                            args: [
-                                                                widget.rideOption
-                                                                    .formattedPrice
-                                                              ])),
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 14.5,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: AppColors.textPrimary,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                _getPaymentSubtitle(),
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 12.5,
-                                                  color: _paymentStatus == 'PENDING' &&
-                                                          _paymentUrl != null
-                                                      ? AppColors.primary
-                                                      : AppColors.textSecondary,
-                                                  fontWeight: _paymentStatus == 'PENDING' &&
-                                                          _paymentUrl != null
-                                                      ? FontWeight.w600
-                                                      : FontWeight.normal,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  if (!_isPaymentConfirmed &&
-                                      _paymentUrl != null &&
-                                      _paymentUrl!.isNotEmpty) ...[
-                                    const SizedBox(height: 12),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 44,
-                                      child: ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: widget.paymentMethod ==
-                                                  PaymentMethodType.wave
-                                              ? AppColors.skyBlue
-                                              : AppColors.primary,
-                                          foregroundColor: AppColors.white,
-                                          elevation: 0,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                        onPressed: () async {
-                                          final uri =
-                                              Uri.tryParse(_paymentUrl!);
-                                          if (uri != null) {
-                                            try {
-                                              await launchUrl(uri,
-                                                  mode: LaunchMode
-                                                      .externalApplication);
-                                            } catch (_) {}
-                                          }
-                                        },
-                                        icon: const Icon(
-                                            Icons.open_in_new_rounded,
-                                            size: 18),
-                                        label: Text(
+                                        alignment: Alignment.center,
+                                        child: Icon(
                                           widget.paymentMethod ==
-                                                  PaymentMethodType.wave
-                                              ? 'Ouvrir Wave pour payer'
-                                              : 'Ouvrir Orange Money pour payer',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                                  PaymentMethodType.cash
+                                              ? Icons.payments_outlined
+                                              : Icons.check_rounded,
+                                          color: AppColors.refundGreen,
+                                          size: 22,
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      height: 40,
-                                      child: OutlinedButton.icon(
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: widget.paymentMethod ==
-                                                  PaymentMethodType.wave
-                                              ? AppColors.skyBlue
-                                              : AppColors.primary,
-                                          side: BorderSide(
-                                            color: widget.paymentMethod ==
-                                                    PaymentMethodType.wave
-                                                ? AppColors.skyBlue
-                                                : AppColors.primary,
-                                            width: 1.2,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                        ),
-                                        onPressed: _isCheckingPayment
-                                            ? null
-                                            : () async {
-                                                final messenger =
-                                                    ScaffoldMessenger.of(context);
-                                                setState(() {
-                                                  _isCheckingPayment = true;
-                                                });
-                                                final effectiveRideId =
-                                                    widget.rideId ??
-                                                        RideService.lastCreatedRideId;
-                                                if (effectiveRideId != null &&
-                                                    effectiveRideId.isNotEmpty) {
-                                                  await _checkRideStatus(effectiveRideId);
-                                                }
-                                                if (mounted) {
-                                                  setState(() {
-                                                    _isCheckingPayment = false;
-                                                  });
-                                                  if (!_isPaymentConfirmed) {
-                                                    messenger.showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          'Paiement en cours de validation par l\'opérateur...',
-                                                          style: GoogleFonts.inter(
-                                                            color: AppColors.white,
-                                                            fontSize: 13,
-                                                          ),
-                                                        ),
-                                                        backgroundColor: widget.paymentMethod ==
-                                                                PaymentMethodType.wave
-                                                            ? AppColors.skyBlue
-                                                            : AppColors.primary,
-                                                        duration: const Duration(seconds: 3),
-                                                        behavior: SnackBarBehavior.floating,
-                                                      ),
-                                                    );
-                                                  }
-                                                }
-                                              },
-                                        icon: _isCheckingPayment
-                                            ? SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child: CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                                    widget.paymentMethod ==
-                                                            PaymentMethodType.wave
-                                                        ? AppColors.skyBlue
-                                                        : AppColors.primary,
-                                                  ),
-                                                ),
-                                              )
-                                            : const Icon(
-                                                Icons.refresh_rounded,
-                                                size: 18,
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              widget.paymentMethod ==
+                                                      PaymentMethodType.cash
+                                                  ? 'ride.payment_cash_due'.tr(
+                                                      args: [
+                                                          widget.rideOption
+                                                              .formattedPrice
+                                                        ])
+                                                  : 'ride.payment_received'.tr(
+                                                      args: [
+                                                          widget.rideOption
+                                                              .formattedPrice
+                                                        ]),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 14.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.textPrimary,
                                               ),
-                                        label: Text(
-                                          _isCheckingPayment
-                                              ? 'Vérification en cours...'
-                                              : 'J\'ai déjà payé (Vérifier)',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.w700,
-                                          ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              widget.paymentMethod ==
+                                                      PaymentMethodType.cash
+                                                  ? 'Vous paierez ${widget.rideOption.formattedPrice} en espèces au chauffeur à l\'arrivée.'
+                                                  : 'ride.refund_guarantee'.tr(),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 12.5,
+                                                color: AppColors.textSecondary,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
 
                                   const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 12),

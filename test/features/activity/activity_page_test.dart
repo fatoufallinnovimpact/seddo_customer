@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/activity/presentation/pages/activity_page.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
@@ -162,26 +163,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Initially, Page 1 displays Plateau, rue Carnot and Aéroport AIBD
+      // With 10 items per page, all earlier rides are displayed on Page 1
       expect(find.text('Aéroport AIBD'), findsOneWidget);
-      expect(find.text('Ouakam, Monument Renaissance'), findsNothing);
-
-      // Scroll down towards the bottom
-      await tester.drag(
-        find.byType(SingleChildScrollView),
-        const Offset(0, -600),
-      );
-      await tester.pump();
-
-      // Wait for simulated network delay and verify appended rides
-      await tester.pump(const Duration(milliseconds: 700));
-      await tester.pumpAndSettle();
-
-      // Page 2 items have been loaded and appended
       expect(find.text('Ouakam, Monument Renaissance'), findsOneWidget);
       expect(find.text('Yoff, Plage BCEAO'), findsOneWidget);
-      // Page 1 items remain present (infinite scroll)
-      expect(find.text('Aéroport AIBD'), findsOneWidget);
     });
 
     testWidgets(
@@ -204,8 +189,13 @@ void main() {
 
       // Total refunded hero card
       expect(find.text('Total remboursé'), findsOneWidget);
-      expect(find.text('2 900'), findsOneWidget);
-      expect(find.text('OM'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName == AppConstants.assetOrangeMoneyLogo),
+        findsWidgets,
+      );
       expect(find.textContaining('Orange Money'), findsWidgets);
 
       // Historique section

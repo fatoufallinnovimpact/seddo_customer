@@ -6,9 +6,13 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/activity/data/models/activity_item_model.dart';
+import 'package:seddo/features/activity/presentation/utils/ride_status_style_helper.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_help_page.dart';
@@ -78,8 +82,27 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   late final RideService _rideService;
   GoogleMapController? _mapController;
   List<LatLng> _polylinePoints = [];
+  List<TrafficSegmentModel> _trafficSegments = [];
   BitmapDescriptor? _departurePinMarker;
   BitmapDescriptor? _destinationPinMarker;
+
+  PlaceSearchResult? _departure;
+  PlaceSearchResult? _destination;
+  DriverModel? _driver;
+  String? _priceText;
+  String _statusText = 'Payé';
+  bool _isRefunded = false;
+  String _departureTime = '18:19';
+  String _arrivalTime = '18:41';
+  String _durationText = '22 min';
+  String _distanceText = '7,8 km';
+  String _dateText = 'Jeudi 15 avril';
+  String _paymentPhone = '77 ••• 45 12';
+  String _paymentMethod = 'ORANGE_MONEY';
+  String _orangeRef = 'CI270415.1819.A3F2';
+  String _category = 'ECO';
+  String? _startCode;
+  Map<String, dynamic>? _backendRideData;
 
   static const LatLng _defaultDepartureCoords = LatLng(14.7167, -17.4677); // Sacré-Cœur 3
   static const LatLng _defaultDestinationCoords = LatLng(14.7431, -17.5186); // Almadies
@@ -88,6 +111,30 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   void initState() {
     super.initState();
     _rideService = widget.rideService ?? RideService();
+    _departure = widget.departure;
+    _destination = widget.destination;
+    _driver = widget.driver;
+    if (widget.driver != null &&
+        (widget.driver!.name == 'Chauffeur Seddo' ||
+            widget.statusText == 'Sans chauffeur')) {
+      _driver = null;
+    }
+    _priceText = widget.priceText;
+    _statusText = widget.statusText;
+    _isRefunded = widget.isRefunded;
+    _departureTime = widget.departureTime;
+    _arrivalTime = widget.arrivalTime;
+    _durationText = widget.durationText;
+    _distanceText = widget.distanceText;
+    _dateText = widget.dateText;
+    _paymentPhone = widget.paymentPhone;
+    _orangeRef = widget.orangeRef;
+    if (widget.rideOption != null) {
+      if (widget.rideOption!.type == RideType.confort ||
+          widget.rideOption!.title.toLowerCase().contains('confort')) {
+        _category = 'CONFORT';
+      }
+    }
     _loadCustomMarkers();
     _loadRoute();
   }
@@ -104,13 +151,31 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   Future<void> _loadRoute() async {
+    // 1. Connect to GET /v1/rides/{id} if rideId is provided
+    if (widget.rideId != null && widget.rideId!.isNotEmpty) {
+      try {
+        final data = await _rideService.getRideDetails(widget.rideId!);
+        if (data != null && mounted) {
+          _applyBackendRideDetails(data);
+          return;
+        }
+      } catch (e) {
+        debugPrint('[RideReceiptPage] ⚠️ Erreur getRideDetails(${widget.rideId}): $e');
+      }
+    }
+
+    // 2. Fallback to route calculation
+    await _loadFallbackRoute();
+  }
+
+  Future<void> _loadFallbackRoute() async {
     final origin = LatLng(
-      widget.departure?.latitude ?? _defaultDepartureCoords.latitude,
-      widget.departure?.longitude ?? _defaultDepartureCoords.longitude,
+      _departure?.latitude ?? _defaultDepartureCoords.latitude,
+      _departure?.longitude ?? _defaultDepartureCoords.longitude,
     );
     final destination = LatLng(
-      widget.destination?.latitude ?? _defaultDestinationCoords.latitude,
-      widget.destination?.longitude ?? _defaultDestinationCoords.longitude,
+      _destination?.latitude ?? _defaultDestinationCoords.latitude,
+      _destination?.longitude ?? _defaultDestinationCoords.longitude,
     );
 
     try {
@@ -125,7 +190,6 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
         _fitBounds();
       }
     } catch (_) {
-      // Fallback points
       if (mounted) {
         setState(() {
           _polylinePoints = [origin, destination];
@@ -133,6 +197,214 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
         _fitBounds();
       }
     }
+  }
+
+  void _applyBackendRideDetails(Map<String, dynamic> data) {
+    _backendRideData = data;
+    // Pickup & Dropoff coordinates and addresses
+    final pickupMap = data['pickup'] is Map ? data['pickup'] as Map : null;
+    final dropoffMap = data['dropoff'] is Map ? data['dropoff'] as Map : null;
+
+    final pickupLat = (pickupMap?['lat'] as num?)?.toDouble() ??
+        widget.departure?.latitude ??
+        _defaultDepartureCoords.latitude;
+    final pickupLng = (pickupMap?['lng'] as num?)?.toDouble() ??
+        widget.departure?.longitude ??
+        _defaultDepartureCoords.longitude;
+    final pickupAddr = (pickupMap?['address'] ??
+            widget.departure?.fullAddress ??
+            'Dakar, Sénégal')
+        .toString();
+
+    final dropoffLat = (dropoffMap?['lat'] as num?)?.toDouble() ??
+        widget.destination?.latitude ??
+        _defaultDestinationCoords.latitude;
+    final dropoffLng = (dropoffMap?['lng'] as num?)?.toDouble() ??
+        widget.destination?.longitude ??
+        _defaultDestinationCoords.longitude;
+    final dropoffAddr = (dropoffMap?['address'] ??
+            widget.destination?.fullAddress ??
+            'Almadies')
+        .toString();
+
+    _departure = PlaceSearchResult(
+      id: 'pickup_${data['id']}',
+      mainText: pickupAddr.split(',').first.trim(),
+      secondaryText: pickupAddr,
+      fullAddress: pickupAddr,
+      latitude: pickupLat,
+      longitude: pickupLng,
+    );
+
+    _destination = PlaceSearchResult(
+      id: 'dropoff_${data['id']}',
+      mainText: dropoffAddr.split(',').first.trim(),
+      secondaryText: dropoffAddr,
+      fullAddress: dropoffAddr,
+      latitude: dropoffLat,
+      longitude: dropoffLng,
+    );
+
+    // Polyline & Traffic condition segments (plannedTraffic or route.traffic)
+    final polyStr = data['plannedPolyline'] as String? ??
+        (data['route'] is Map ? (data['route']['polyline'] as String?) : null);
+    if (polyStr != null && polyStr.isNotEmpty) {
+      _polylinePoints = RouteService.decodePolyline(polyStr);
+    } else {
+      _polylinePoints = [
+        LatLng(pickupLat, pickupLng),
+        LatLng(dropoffLat, dropoffLng),
+      ];
+    }
+
+    final trafficList = data['plannedTraffic'] as List? ??
+        (data['route'] is Map ? (data['route']['traffic'] as List?) : null);
+    if (trafficList != null && trafficList.isNotEmpty) {
+      _trafficSegments = trafficList
+          .map((t) => TrafficSegmentModel.fromJson(
+              Map<String, dynamic>.from(t as Map)))
+          .toList();
+    } else {
+      _trafficSegments = [];
+    }
+
+    // Driver information
+    final rawStatus = (data['status'] ?? '').toString().toUpperCase();
+    final driverMap = data['driver'] is Map ? data['driver'] as Map : null;
+    if (driverMap != null && rawStatus != 'NO_DRIVER') {
+      final vMap =
+          driverMap['vehicle'] is Map ? driverMap['vehicle'] as Map : null;
+      final fName = (driverMap['firstName'] ?? '').toString().trim();
+      final lName = (driverMap['lastName'] ?? '').toString().trim();
+      final dName = '$fName $lName'.trim();
+      final rating = (driverMap['rating'] as num?)?.toDouble() ?? 4.9;
+      final cModel = (vMap?['model'] != null && vMap?['make'] != null)
+          ? '${vMap!['make']} ${vMap['model']}'
+          : 'Toyota Corolla';
+      final cPlate = (vMap?['plate'] ?? 'DK 4521 AB').toString();
+
+      if (dName.isNotEmpty && dName != 'Chauffeur Seddo') {
+        _driver = DriverModel(
+          id: 'driver_${data['id']}',
+          name: dName,
+          phone: (driverMap['phone'] ?? '+221 77 123 45 67').toString(),
+          rating: rating,
+          totalRides: 480,
+          carModel: cModel,
+          carColor: (vMap?['color'] ?? 'Gris argent').toString(),
+          licensePlate: cPlate,
+          rideType: RideType.eco,
+          currentLocation: LatLng(pickupLat, pickupLng),
+          etaMinutes: 3,
+          distanceKm: 1.2,
+        );
+      } else {
+        _driver = null;
+      }
+    } else {
+      _driver = null;
+    }
+
+    // Price, Status, Ref & Code de départ
+    if (data['price'] != null) {
+      final p = (data['price'] as num).toInt();
+      _priceText = ActivityRideItem.formatPrice(p);
+    }
+    _isRefunded = data['refund'] != null && data['refund'] != false;
+
+    if (rawStatus.contains('CANCEL')) {
+      _statusText = 'Annulée';
+    } else if (rawStatus == 'NO_DRIVER') {
+      _statusText = 'Sans chauffeur';
+    } else if (rawStatus == 'PAYMENT_FAILED') {
+      _statusText = 'Échec';
+    } else if (rawStatus == 'COMPLETED') {
+      _statusText = 'Terminée';
+    } else if (rawStatus == 'IN_PROGRESS' || rawStatus == 'TRIP') {
+      _statusText = 'En cours';
+    } else if (rawStatus == 'PENDING') {
+      _statusText = 'En attente';
+    } else if (_isRefunded) {
+      _statusText = 'Remboursée';
+    } else {
+      _statusText = 'Terminée';
+    }
+
+    if (data['category'] != null) {
+      _category = data['category'].toString().toUpperCase();
+    }
+
+    if (data['ref'] != null) {
+      _orangeRef = data['ref'].toString();
+    }
+    if (data['startCode'] != null) {
+      _startCode = data['startCode'].toString();
+    }
+
+    // Distance & Duration
+    final distM = (data['distanceM'] as num?)?.toInt();
+    if (distM != null) {
+      _distanceText = distM >= 1000
+          ? '${(distM / 1000.0).toStringAsFixed(1).replaceAll('.', ',')} km'
+          : '$distM m';
+    }
+    final durS = (data['durationS'] as num?)?.toInt();
+    if (durS != null && durS > 0) {
+      _durationText = '${(durS / 60).round()} min';
+    }
+
+    // Date & Time
+    if (data['createdAt'] != null) {
+      final created = DateTime.tryParse(data['createdAt'].toString());
+      if (created != null) {
+        final local = created.toLocal();
+        _departureTime =
+            '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+        _arrivalTime = _departureTime;
+
+        final now = DateTime.now();
+        final diffDays = DateTime(now.year, now.month, now.day)
+            .difference(DateTime(local.year, local.month, local.day))
+            .inDays;
+        if (diffDays == 0) {
+          _dateText = 'Aujourd\'hui';
+        } else if (diffDays == 1) {
+          _dateText = 'Hier';
+        } else {
+          const months = [
+            'janv.',
+            'févr.',
+            'mars',
+            'avr.',
+            'mai',
+            'juin',
+            'juil.',
+            'août',
+            'sept.',
+            'oct.',
+            'nov.',
+            'déc.'
+          ];
+          const days = ['Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.', 'Dim.'];
+          final dayName = days[(local.weekday - 1) % 7];
+          final monthName = months[(local.month - 1) % 12];
+          _dateText = '$dayName ${local.day} $monthName';
+        }
+      }
+    }
+
+    // Payment details
+    final pMap = data['payment'] is Map ? data['payment'] as Map : null;
+    if (pMap != null) {
+      _paymentMethod =
+          (pMap['method'] ?? 'ORANGE_MONEY').toString().toUpperCase();
+      if (pMap['phone'] != null) {
+        _paymentPhone = pMap['phone'].toString();
+      }
+    }
+
+    setState(() {});
+    _fitBounds();
   }
 
   void _fitBounds() {
@@ -164,12 +436,23 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   Set<Polyline> _buildPolylines() {
     if (_polylinePoints.isEmpty) return {};
 
+    // If traffic conditions are provided, render colored route segments
+    // (NORMAL: trafficNormal, SLOW: trafficSlow, TRAFFIC_JAM: trafficJam)
+    if (_trafficSegments.isNotEmpty) {
+      return RideEtaCalculator.buildTrafficPolylines(
+        baseId: 'receipt_route',
+        points: _polylinePoints,
+        traffic: _trafficSegments,
+        width: AppConstants.mapPolylineWidth.toInt(),
+      );
+    }
+
     return {
       Polyline(
         polylineId: const PolylineId('receipt_route'),
         points: _polylinePoints,
-        color: AppColors.receiptRouteLine,
-        width: 4,
+        color: AppColors.trafficNormal,
+        width: AppConstants.mapPolylineWidth.toInt(),
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
@@ -179,12 +462,12 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
 
   Set<Marker> _buildMarkers() {
     final origin = LatLng(
-      widget.departure?.latitude ?? _defaultDepartureCoords.latitude,
-      widget.departure?.longitude ?? _defaultDepartureCoords.longitude,
+      _departure?.latitude ?? _defaultDepartureCoords.latitude,
+      _departure?.longitude ?? _defaultDepartureCoords.longitude,
     );
     final destination = LatLng(
-      widget.destination?.latitude ?? _defaultDestinationCoords.latitude,
-      widget.destination?.longitude ?? _defaultDestinationCoords.longitude,
+      _destination?.latitude ?? _defaultDestinationCoords.latitude,
+      _destination?.longitude ?? _defaultDestinationCoords.longitude,
     );
 
     return {
@@ -195,7 +478,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
             BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
         anchor: const Offset(0.5, 1.0),
         infoWindow: InfoWindow(
-          title: widget.departure?.mainText ?? 'Sacré-Cœur 3',
+          title: _departure?.mainText ?? 'Sacré-Cœur 3',
         ),
       ),
       Marker(
@@ -205,19 +488,19 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
             BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         anchor: const Offset(0.5, 1.0),
         infoWindow: InfoWindow(
-          title: widget.destination?.mainText ?? 'Almadies',
+          title: _destination?.mainText ?? 'Almadies',
         ),
       ),
     };
   }
 
   Future<void> _copyOrangeReference() async {
-    await Clipboard.setData(ClipboardData(text: widget.orangeRef));
+    await Clipboard.setData(ClipboardData(text: _orangeRef));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Référence copiée dans le presse-papier : ${widget.orangeRef}',
+            'Référence copiée dans le presse-papier : $_orangeRef',
             style: GoogleFonts.inter(
               fontWeight: FontWeight.w600,
               color: AppColors.white,
@@ -234,13 +517,17 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   Future<void> _downloadOrSharePdf() async {
-    final departureName = widget.departure?.mainText ?? 'Sacré-Cœur 3';
-    final arrivalName = widget.destination?.mainText ?? 'Almadies';
-    final price = widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
-    final driverName = widget.driver?.name ?? 'Moussa';
-    final carModel = widget.driver?.carModel ?? 'Toyota Corolla';
-    final plate = widget.driver?.licensePlate ?? 'DK 4521 AB';
-    final rating = '${widget.driver?.rating.toInt() ?? 4}';
+    final departureName = _departure?.mainText ?? widget.departure?.mainText ?? 'Sacré-Cœur 3';
+    final arrivalName = _destination?.mainText ?? widget.destination?.mainText ?? 'Almadies';
+    final price = _priceText ?? widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
+    final hasDriver = _driver != null &&
+        _driver!.name.isNotEmpty &&
+        _driver!.name != 'Chauffeur Seddo' &&
+        _statusText != 'Sans chauffeur';
+    final driverName = hasDriver ? _driver!.name : '-';
+    final carModel = hasDriver ? _driver!.carModel : '-';
+    final plate = hasDriver ? _driver!.licensePlate : '-';
+    final rating = hasDriver ? '${_driver!.rating.toInt()}' : '-';
     final rideType = widget.rideOption?.title ?? 'Seddo Eco';
 
     final effectiveRideId = widget.rideId;
@@ -260,19 +547,19 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
       saveResult = await ReceiptPdfService.saveReceiptToDevice(
         departureName: departureName,
         arrivalName: arrivalName,
-        departureTime: widget.departureTime,
-        arrivalTime: widget.arrivalTime,
-        distanceText: widget.distanceText,
-        durationText: widget.durationText,
-        dateText: widget.dateText,
+        departureTime: _departureTime,
+        arrivalTime: _arrivalTime,
+        distanceText: _distanceText,
+        durationText: _durationText,
+        dateText: _dateText,
         priceText: price,
         rideType: rideType,
         driverName: driverName,
         driverCar: carModel,
         driverPlate: plate,
         driverRating: rating,
-        paymentPhone: widget.paymentPhone,
-        orangeRef: widget.orangeRef,
+        paymentPhone: _paymentPhone,
+        orangeRef: _orangeRef,
       );
     }
 
@@ -333,9 +620,16 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   void _openHelpPage() {
+    final effectiveRideId = _backendRideData?['id']?.toString() ??
+        widget.rideId ??
+        RideService.lastCreatedRideId;
+    final effectiveRideRef =
+        _backendRideData?['ref']?.toString() ?? _orangeRef;
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: RideHelpPage(
+          rideId: effectiveRideId,
+          rideRef: effectiveRideRef,
           destination: widget.destination ??
               const PlaceSearchResult(
                 id: 'almadies',
@@ -529,8 +823,12 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   Widget _buildHeaderRow() {
-    final dateDisplay =
-        '${widget.dateText} · ${widget.departureTime} – ${widget.arrivalTime}';
+    final dateDisplay = _departureTime.isNotEmpty
+        ? '$_dateText · $_departureTime'
+        : _dateText;
+
+    final statusStyle =
+        RideStatusStyle.forStatus(_statusText, isRefunded: _isRefunded);
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -552,32 +850,24 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
             vertical: AppConstants.spacingXs,
           ),
           decoration: BoxDecoration(
-            color: widget.isRefunded
-                ? AppColors.grayBgLight
-                : AppColors.receiptPaidBadgeBg,
+            color: statusStyle.backgroundColor,
             borderRadius: BorderRadius.circular(AppConstants.radiusPill),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                widget.isRefunded
-                    ? Icons.refresh_rounded
-                    : Icons.check_circle_rounded,
+                statusStyle.icon,
                 size: AppConstants.iconSizeSm,
-                color: widget.isRefunded
-                    ? AppColors.slateDark
-                    : AppColors.receiptPaidBadgeText,
+                color: statusStyle.textColor,
               ),
               const SizedBox(width: AppConstants.spacingXs),
               Text(
-                widget.statusText,
+                _statusText,
                 style: GoogleFonts.inter(
                   fontSize: AppConstants.fontSm,
                   fontWeight: FontWeight.w700,
-                  color: widget.isRefunded
-                      ? AppColors.slateDark
-                      : AppColors.receiptPaidBadgeText,
+                  color: statusStyle.textColor,
                 ),
               ),
             ],
@@ -589,8 +879,12 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
 
   Widget _buildAmountSection() {
     final amountText =
-        widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
-    final optionTitle = widget.rideOption?.title ?? 'Seddo Eco';
+        _priceText ?? widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
+    final optionTitle = _category == 'CONFORT' ||
+            widget.rideOption?.type == RideType.confort ||
+            widget.rideOption?.title.toLowerCase().contains('confort') == true
+        ? 'Seddo Confort'
+        : (widget.rideOption?.title ?? 'Seddo Éco');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -618,14 +912,18 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   Widget _buildMainCard() {
-    final departureName = widget.departure?.mainText ?? 'Sacré-Cœur 3';
-    final arrivalName = widget.destination?.mainText ?? 'Almadies';
-    final driverName = widget.driver?.name ?? 'Moussa';
-    final carModel = widget.driver?.carModel ?? 'Toyota Corolla';
-    final plate = widget.driver?.licensePlate ?? 'DK 4521 AB';
-    final initials = driverName.length >= 2
+    final departureName = _departure?.mainText ?? widget.departure?.mainText ?? 'Sacré-Cœur 3';
+    final arrivalName = _destination?.mainText ?? widget.destination?.mainText ?? 'Almadies';
+    final hasDriver = _driver != null &&
+        _driver!.name.isNotEmpty &&
+        _driver!.name != 'Chauffeur Seddo' &&
+        _statusText != 'Sans chauffeur';
+    final driverName = hasDriver ? _driver!.name : '';
+    final carModel = hasDriver ? _driver!.carModel : '';
+    final plate = hasDriver ? _driver!.licensePlate : '';
+    final initials = hasDriver && driverName.length >= 2
         ? driverName.substring(0, 2).toUpperCase()
-        : 'MS';
+        : 'MD';
 
     return Container(
       decoration: BoxDecoration(
@@ -660,14 +958,6 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                   ),
                 ),
               ),
-              Text(
-                widget.departureTime,
-                style: GoogleFonts.inter(
-                  fontSize: AppConstants.fontMd,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
             ],
           ),
 
@@ -692,7 +982,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                 ),
                 const SizedBox(width: AppConstants.spacingUnitLg),
                 Text(
-                  '${widget.distanceText} · ${widget.durationText}',
+                  '$_distanceText · $_durationText',
                   style: GoogleFonts.inter(
                     fontSize: AppConstants.fontSm,
                     fontWeight: FontWeight.w500,
@@ -727,14 +1017,6 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                   ),
                 ),
               ),
-              Text(
-                widget.arrivalTime,
-                style: GoogleFonts.inter(
-                  fontSize: AppConstants.fontMd,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
             ],
           ),
 
@@ -745,96 +1027,194 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
 
           const SizedBox(height: AppConstants.spacingMd),
 
-          // 4. Driver Information Row
-          Row(
-            children: [
-              Container(
-                width: AppConstants.circularAvatarSize,
-                height: AppConstants.circularAvatarSize,
-                decoration: const BoxDecoration(
-                  color: AppColors.avatarBeige,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    initials,
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontBase,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.slateDark,
-                    ),
+          // 4. Driver Information Row (or No Driver assigned)
+          if (hasDriver)
+            Row(
+              children: [
+                Container(
+                  width: AppConstants.circularAvatarSize,
+                  height: AppConstants.circularAvatarSize,
+                  decoration: const BoxDecoration(
+                    color: AppColors.avatarBeige,
+                    shape: BoxShape.circle,
                   ),
-                ),
-              ),
-              const SizedBox(width: AppConstants.spacingUnitLg),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      driverName,
+                  child: Center(
+                    child: Text(
+                      initials,
                       style: GoogleFonts.inter(
                         fontSize: AppConstants.fontBase,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.slateDark,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: AppConstants.spacingXs),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            '$carModel · ',
-                            style: GoogleFonts.inter(
-                              fontSize: AppConstants.fontSm,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textSecondary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(
-                          Icons.star_rounded,
-                          size: AppConstants.iconSizeSm,
-                          color: AppColors.starGold,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${widget.driver?.rating.toInt() ?? 4}',
-                          style: GoogleFonts.inter(
-                            fontSize: AppConstants.fontSm,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.slateDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              // License Plate Badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingUnit,
-                  vertical: AppConstants.spacingS,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.licensePlateBg,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
-                ),
-                child: Text(
-                  plate,
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontSm,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.white,
-                    letterSpacing: 0.8,
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: AppConstants.spacingUnitLg),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        driverName,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontBase,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.slateDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppConstants.spacingXs),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              '$carModel · ',
+                              style: GoogleFonts.inter(
+                                fontSize: AppConstants.fontSm,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textSecondary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.star_rounded,
+                            size: AppConstants.iconSizeSm,
+                            color: AppColors.starGold,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '${_driver?.rating.toInt() ?? 4}',
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.fontSm,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.slateDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // License Plate Badge
+                if (plate.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppConstants.spacingUnit,
+                      vertical: AppConstants.spacingS,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.licensePlateBg,
+                      borderRadius:
+                          BorderRadius.circular(AppConstants.radiusSm),
+                    ),
+                    child: Text(
+                      plate,
+                      style: GoogleFonts.inter(
+                        fontSize: AppConstants.fontSm,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.white,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Container(
+                  width: AppConstants.circularAvatarSize,
+                  height: AppConstants.circularAvatarSize,
+                  decoration: const BoxDecoration(
+                    color: AppColors.grayBgLight,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.person_off_outlined,
+                      size: AppConstants.iconSizeMd,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppConstants.spacingUnitLg),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Aucun chauffeur assigné',
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontBase,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.slateDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppConstants.spacingXs),
+                      Text(
+                        _statusText == 'Sans chauffeur'
+                            ? 'Aucun chauffeur disponible lors de la commande'
+                            : 'Course clôturée sans attribution de chauffeur',
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontSm,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+          // Optional: Start Code Row (Code de départ)
+          if (_startCode != null && _startCode!.isNotEmpty) ...[
+            const SizedBox(height: AppConstants.spacingMd),
+            const Divider(
+              height: 1,
+              color: AppColors.grayBorderDivider,
+            ),
+            const SizedBox(height: AppConstants.spacingMd),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Code de départ',
+                  style: GoogleFonts.inter(
+                    fontSize: AppConstants.fontMd,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingUnitLg,
+                    vertical: AppConstants.spacingXxs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.orangeLightBg,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                    border: Border.all(
+                      color: AppColors.peachBorder,
+                      width: AppConstants.strokeWidthBorder,
+                    ),
+                  ),
+                  child: Text(
+                    _startCode!,
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontBase,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.primary,
+                      letterSpacing: 2.0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
 
           const SizedBox(height: AppConstants.spacingMd),
           const Divider(
@@ -859,33 +1239,80 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.pureBlack,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        'OM',
-                        style: GoogleFonts.inter(
-                          color: AppColors.orangeMoneyOrange,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 10,
+                    if (_paymentMethod == 'CASH') ...[
+                      ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.radiusXs),
+                        child: Image.asset(
+                          AppConstants.assetCashLogo,
+                          width: AppConstants.iconSizeLg,
+                          height: AppConstants.iconSizeLg,
+                          fit: BoxFit.cover,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: AppConstants.spacingSm),
-                    Flexible(
-                      child: Text(
-                        'Orange Money ${widget.paymentPhone}',
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontMd,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.slateDark,
+                      const SizedBox(width: AppConstants.spacingSm),
+                      Flexible(
+                        child: Text(
+                          'Au chauffeur à l\'arrivée',
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontMd,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.slateDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
+                    ] else if (_paymentMethod == 'WAVE') ...[
+                      ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.radiusXs),
+                        child: Image.asset(
+                          AppConstants.assetWaveLogo,
+                          width: AppConstants.iconSizeLg,
+                          height: AppConstants.iconSizeLg,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spacingSm),
+                      Flexible(
+                        child: Text(
+                          _paymentPhone.isNotEmpty
+                              ? 'Wave $_paymentPhone'
+                              : 'Wave',
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontMd,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.slateDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ] else ...[
+                      ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.radiusXs),
+                        child: Image.asset(
+                          AppConstants.assetOrangeMoneyLogo,
+                          width: AppConstants.iconSizeLg,
+                          height: AppConstants.iconSizeLg,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spacingSm),
+                      Flexible(
+                        child: Text(
+                          _paymentPhone.isNotEmpty
+                              ? 'Orange Money $_paymentPhone'
+                              : 'Orange Money',
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontMd,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.slateDark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -899,11 +1326,11 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
           ),
           const SizedBox(height: AppConstants.spacingMd),
 
-          // 6. Orange Reference Row with Working Copy Button
+          // 6. Reference Row with Working Copy Button
           Row(
             children: [
               Text(
-                'Réf. Orange',
+                'Référence',
                 style: GoogleFonts.inter(
                   fontSize: AppConstants.fontMd,
                   fontWeight: FontWeight.w500,
@@ -917,7 +1344,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                   children: [
                     Flexible(
                       child: Text(
-                        widget.orangeRef,
+                        _orangeRef,
                         style: GoogleFonts.inter(
                           fontSize: AppConstants.fontMd,
                           fontWeight: FontWeight.w700,
@@ -934,7 +1361,8 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                         height: 28,
                         decoration: BoxDecoration(
                           color: AppColors.white,
-                          borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                          borderRadius:
+                              BorderRadius.circular(AppConstants.radiusSm),
                           border: Border.all(
                             color: AppColors.grayBorderDivider,
                             width: AppConstants.strokeWidthBorder,

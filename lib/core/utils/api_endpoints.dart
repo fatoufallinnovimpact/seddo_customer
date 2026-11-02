@@ -24,6 +24,7 @@ abstract class ApiEndpoints {
   // Rides endpoints (POST /v1/rides/quote, /v1/rides, GET /v1/rides/current)
   static String get ridesQuote => '$baseUrl/v1/rides/quote';
   static String get rides => '$baseUrl/v1/rides';
+  static String ridesHistory({int limit = 20}) => '$rides?limit=$limit';
   static String get ridesCurrent => '$baseUrl/v1/rides/current';
   static String rideDetails(String id) => '$baseUrl/v1/rides/$id';
   static String rideCancel(String id) => '$baseUrl/v1/rides/$id/cancel';
@@ -46,6 +47,14 @@ abstract class ApiEndpoints {
   // User home suggestions endpoint (GET /v1/users/me/suggestions)
   static String get userSuggestions => '$baseUrl/v1/users/me/suggestions';
 
+  // User refunds endpoint (GET /v1/users/me/refunds)
+  static String get userRefunds => '$baseUrl/v1/users/me/refunds';
+
   // User emergency contacts endpoints (GET /v1/users/me/emergency-contacts, PUT /v1/users/me/emergency-contacts)
   static String get emergencyContacts => '$baseUrl/v1/users/me/emergency-contacts';
+
+  // Support & Tickets endpoints (POST /v1/support/tickets, GET /v1/support/tickets, GET /v1/support/tickets/{id}, POST/GET /v1/support/tickets/{id}/messages)
+  static String get supportTickets => '$baseUrl/v1/support/tickets';
+  static String supportTicketDetails(String id) => '$baseUrl/v1/support/tickets/$id';
+  static String supportTicketMessages(String id) => '$baseUrl/v1/support/tickets/$id/messages';
 }

@@ -52,7 +52,8 @@ class SharedRideTrackingPage extends StatefulWidget {
   State<SharedRideTrackingPage> createState() => _SharedRideTrackingPageState();
 }
 
-class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
+class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
+    with WidgetsBindingObserver {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupPinIcon;
@@ -62,6 +63,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   SharedRideDetailsModel? _sharedDetails;
   Timer? _refreshTimer;
   StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocSub;
+  StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
   LatLng? _liveDriverPos;
   String? _effectiveToken;
   late String _displayShareUrl;
@@ -69,6 +71,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
     _liveDriverPos = widget.driver.location;
     _displayShareUrl = widget.shareUrl;
@@ -89,17 +92,38 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
           });
         }
       });
+
+      _realtimeStatusSub =
+          RealtimeService().rideStatusStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+          _fetchSharedDetails();
+        }
+      });
     }
 
     if (_effectiveToken != null && _effectiveToken!.isNotEmpty) {
       _fetchSharedDetails();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-        if (mounted && !RealtimeService().isConnected) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (mounted) {
           _fetchSharedDetails();
         }
       });
     } else if (widget.rideId != null && widget.rideId!.isNotEmpty) {
       _initFromRideId(widget.rideId!);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      final effectiveRideId = widget.rideId ?? '';
+      if (effectiveRideId.isNotEmpty && !RealtimeService().isConnected) {
+        RealtimeService().connect();
+        RealtimeService().joinRide(effectiveRideId);
+      }
+      _fetchSharedDetails();
     }
   }
 
@@ -115,8 +139,8 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
       });
       _fetchSharedDetails();
       _refreshTimer?.cancel();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-        if (mounted && !RealtimeService().isConnected) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        if (mounted) {
           _fetchSharedDetails();
         }
       });
@@ -125,7 +149,9 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _realtimeLocSub?.cancel();
+    _realtimeStatusSub?.cancel();
     final effectiveRideId = widget.rideId ?? '';
     if (effectiveRideId.isNotEmpty) {
       RealtimeService().leaveRide(effectiveRideId);

@@ -34,6 +34,10 @@ class ActivityLoadMorePastRidesEvent extends ActivityEvent {
   const ActivityLoadMorePastRidesEvent();
 }
 
+class ActivityLoadMoreRefundsEvent extends ActivityEvent {
+  const ActivityLoadMoreRefundsEvent();
+}
+
 class ActivityRefreshEvent extends ActivityEvent {
   const ActivityRefreshEvent();
 }

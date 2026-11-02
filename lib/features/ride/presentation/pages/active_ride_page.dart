@@ -73,7 +73,7 @@ class ActiveRidePage extends StatefulWidget {
 }
 
 class _ActiveRidePageState extends State<ActiveRidePage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final RideService _rideService;
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
@@ -111,6 +111,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   DateTime _lastDriverLocationTime = DateTime.now();
   Timer? _stalePositionCheckTimer;
+  Timer? _pollTimer;
   bool _isPositionUpdating = false;
 
   /// Whether to display the simulation toggle button in the bottom sheet.
@@ -120,6 +121,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
     _isOffline = widget.isOffline;
     _currentSheetExtent = _isOffline ? 0.25 : 0.38;
@@ -243,10 +245,102 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           }
         }
       });
+
+      // Synchronisation initiale et resynchronisation dès reconnexion
+      _fetchRideDetails(effectiveRideId);
+
+      _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
+        if (mounted) {
+          RealtimeService().joinRide(effectiveRideId);
+          _fetchRideDetails(effectiveRideId);
+        }
+      });
+
+      // Filet de sécurité: synchronisation continue toutes les 4s pour garantir
+      // la détection en direct de la fin de course ou annulation sans quitter l'application
+      if (!isTest) {
+        _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+          if (mounted) {
+            _fetchRideDetails(effectiveRideId);
+          }
+        });
+      }
+    }
+  }
+
+  /// Récupère l'état actuel de la course via REST pour garantir l'actualisation en temps réel
+  Future<void> _fetchRideDetails(String id) async {
+    try {
+      final data = await _rideService.getRideDetails(id);
+      if (data != null && mounted) {
+        _applyRideDetails(data);
+      }
+    } catch (e) {
+      debugPrint('[ActiveRidePage] ⚠️ Erreur getRideDetails: $e');
+    }
+  }
+
+  /// Applique les données retournées par GET /v1/rides/{id}
+  void _applyRideDetails(Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    final rideObj = data['ride'] is Map<String, dynamic>
+        ? data['ride'] as Map<String, dynamic>
+        : data;
+
+    final status = (rideObj['status'] as String? ?? '').toUpperCase();
+
+    // 1. Course terminée
+    if (status == 'COMPLETED') {
+      _cleanupRealtime();
+      _onTripCompleted();
+      return;
+    }
+
+    // 2. Course annulée
+    if (status.startsWith('CANCELLED') ||
+        status == 'NO_DRIVER' ||
+        status == 'NO_SHOW') {
+      _cleanupRealtime();
+      Navigator.of(context).pushReplacement(
+        SlideRightToLeftRoute(
+          page: RideCancelledPage(
+            rideOption: widget.rideOption,
+            departure: widget.departure,
+            destination: widget.destination,
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 3. Mise à jour de la position GPS du chauffeur si retournée
+    final driverObj = rideObj['driver'] is Map<String, dynamic>
+        ? rideObj['driver'] as Map<String, dynamic>
+        : null;
+    final locObj = driverObj?['location'] is Map<String, dynamic>
+        ? driverObj!['location'] as Map<String, dynamic>
+        : null;
+    if (locObj != null &&
+        locObj['latitude'] != null &&
+        locObj['longitude'] != null) {
+      final lat = (locObj['latitude'] as num).toDouble();
+      final lng = (locObj['longitude'] as num).toDouble();
+      final heading = (locObj['heading'] as num?)?.toDouble() ?? 0.0;
+      if (lat != 0.0 && lng != 0.0) {
+        _lastDriverLocationTime = DateTime.now();
+        if (_isPositionUpdating) {
+          setState(() {
+            _isPositionUpdating = false;
+          });
+        }
+        updateCarLocation(LatLng(lat, lng), heading: heading);
+      }
     }
   }
 
   void _cleanupRealtime() {
+    _pollTimer?.cancel();
     _stalePositionCheckTimer?.cancel();
     _realtimeStatusSub?.cancel();
     _realtimeLocationSub?.cancel();
@@ -256,7 +350,24 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      final effectiveRideId =
+          widget.rideId ?? RideService.lastCreatedRideId ?? '';
+      if (effectiveRideId.isNotEmpty) {
+        if (!RealtimeService().isConnected) {
+          RealtimeService().connect();
+          RealtimeService().joinRide(effectiveRideId);
+        }
+        _fetchRideDetails(effectiveRideId);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _cleanupRealtime();
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? '';

@@ -235,6 +235,38 @@ void main() {
     });
 
     testWidgets(
+        'Floating Seddo card is visible on entrance and dismissed by horizontal swipe (left to right / right to left)',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: const PublicTransportPage(
+            autoSearch: false, // Right when entering TCU without search
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Card is visible right when entering TCU
+      expect(find.byKey(const Key('tcu_seddo_card_dismissible')), findsOneWidget);
+      expect(find.text('En Seddo : 19 min, porte'), findsOneWidget);
+
+      // Swipe card horizontally to dismiss (drag to left or right)
+      await tester.drag(
+        find.byKey(const Key('tcu_seddo_card_dismissible')),
+        const Offset(-400, 0),
+      );
+      await tester.pumpAndSettle();
+
+      // Card is dismissed and no longer visible
+      expect(find.byKey(const Key('tcu_seddo_card_dismissible')), findsNothing);
+      expect(find.text('En Seddo : 19 min, porte'), findsNothing);
+    });
+
+    testWidgets(
         'Tapping Commander on Seddo card navigates to PlaceSearchPage with prefilled fields',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);

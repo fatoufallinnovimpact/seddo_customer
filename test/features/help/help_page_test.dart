@@ -1,7 +1,7 @@
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:seddo/features/help/presentation/pages/help_page.dart';
+import 'package:seddo/features/help/presentation/pages/support_tickets_page.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import '../../test_helpers/test_localization_helper.dart';
 
@@ -13,9 +13,9 @@ void main() {
   });
 
   group('HelpPage Widget Tests', () {
-    testWidgets('HelpPage renders top bar, search bar, contact cards, FAQ and footer note', (
-      tester,
-    ) async {
+    testWidgets(
+        'HelpPage renders top bar, Mes réclamations card, contact cards, FAQ and footer note',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 932));
 
       await tester.pumpWidget(
@@ -27,11 +27,15 @@ void main() {
 
       // 1. Top bar
       expect(find.text('Aide'), findsOneWidget);
-      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
 
-      // 2. Search bar
-      expect(find.text('Rechercher dans l\'aide'), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsOneWidget);
+      // 2. Mes réclamations card (replaced search bar per user request)
+      expect(find.text('Mes réclamations'), findsOneWidget);
+      expect(
+        find.text('Suivi de vos demandes et objets perdus'),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.receipt_long_rounded), findsOneWidget);
 
       // 3. Contact action cards
       expect(find.text('WhatsApp'), findsOneWidget);
@@ -52,9 +56,8 @@ void main() {
       );
     });
 
-    testWidgets('Tapping FAQ accordion item expands and collapses answer', (
-      tester,
-    ) async {
+    testWidgets('Tapping FAQ accordion item expands and collapses answer',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 932));
 
       await tester.pumpWidget(
@@ -86,9 +89,8 @@ void main() {
       );
     });
 
-    testWidgets('Searching in help filters FAQ questions in real time', (
-      tester,
-    ) async {
+    testWidgets('Tapping Mes réclamations card navigates to SupportTicketsPage',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 932));
 
       await tester.pumpWidget(
@@ -98,25 +100,25 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Enter query "remboursement"
-      await tester.enterText(find.byType(TextField), 'remboursement');
+      // Tap "Mes réclamations"
+      final claimsCardFinder = find.text('Mes réclamations');
+      expect(claimsCardFinder, findsOneWidget);
+      await tester.tap(claimsCardFinder);
       await tester.pumpAndSettle();
 
-      // Matches "Mon remboursement n'est pas arrivé"
-      expect(find.text('Mon remboursement n\'est pas arrivé'), findsOneWidget);
-      expect(find.text('Comment annuler une course ?'), findsNothing);
+      // Opened SupportTicketsPage
+      expect(find.byType(SupportTicketsPage), findsOneWidget);
+      expect(find.text('Mes réclamations'), findsWidgets);
 
-      // Clear search
-      await tester.tap(find.byIcon(Icons.cancel));
+      // Back to HelpPage
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
       await tester.pumpAndSettle();
 
-      // All questions are visible again
-      expect(find.text('Comment annuler une course ?'), findsOneWidget);
+      expect(find.byType(HelpPage), findsOneWidget);
     });
 
-    testWidgets('Tapping Aide in drawer navigates to HelpPage', (
-      tester,
-    ) async {
+    testWidgets('Tapping Aide in drawer navigates to HelpPage',
+        (tester) async {
       await tester.binding.setSurfaceSize(const Size(430, 932));
 
       await tester.pumpWidget(
@@ -138,16 +140,15 @@ void main() {
       await tester.tap(find.text('Open Drawer'));
       await tester.pumpAndSettle();
 
-      // Tap Aide menu item
-      final helpItem = find.text('drawer.help'.tr());
-      expect(helpItem, findsOneWidget);
-      await tester.tap(helpItem);
+      // Tap Aide item
+      final aideItemFinder = find.text('Aide');
+      expect(aideItemFinder, findsOneWidget);
+      await tester.tap(aideItemFinder);
       await tester.pumpAndSettle();
 
-      // HelpPage is displayed
+      // HelpPage is opened
       expect(find.byType(HelpPage), findsOneWidget);
-      expect(find.text('WhatsApp'), findsOneWidget);
-      expect(find.text('Appeler'), findsOneWidget);
+      expect(find.text('Comment pouvons-nous vous aider ?'), findsOneWidget);
     });
   });
 }

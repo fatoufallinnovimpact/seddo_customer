@@ -73,7 +73,7 @@ class DriverApproachingPage extends StatefulWidget {
 }
 
 class _DriverApproachingPageState extends State<DriverApproachingPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _rendezVousIciMarkerIcon;
@@ -130,6 +130,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _currentDriver = widget.driver;
     _departureCode = widget.departureCode;
@@ -283,12 +284,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
 
-      // Fallback passif si le WebSocket est temporairement déconnecté (sans polling intensif)
+      // Synchronisation continue toutes les 4s pour garantir la mise à jour temps réel
+      // (ex: arrivée du chauffeur, code validé, démarrage ou annulation)
       if (!isTest) {
-        _ridePollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-          if (!RealtimeService().isConnected) {
-            _fetchRideDetails(effectiveRideId);
-          }
+        _ridePollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+          _fetchRideDetails(effectiveRideId);
         });
       }
     }
@@ -409,7 +409,23 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+      if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+        if (!RealtimeService().isConnected) {
+          RealtimeService().connect();
+          RealtimeService().joinRide(effectiveRideId);
+        }
+        _fetchRideDetails(effectiveRideId);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _cleanupTimersAndSubs();
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
     if (effectiveRideId != null && effectiveRideId.isNotEmpty) {

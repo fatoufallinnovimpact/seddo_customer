@@ -3,18 +3,26 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/help/data/models/support_ticket_model.dart';
+import 'package:seddo/features/help/data/repositories/help_repository.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 
-/// Issue item model for the help page.
+/// Issue item model for the help page with corresponding backend category.
 class HelpIssueOption {
   final String title;
+  final String category;
   final String? svgAsset;
   final IconData? iconData;
+  final String hintText;
+  final List<String> tags;
 
   const HelpIssueOption({
     required this.title,
+    required this.category,
     this.svgAsset,
     this.iconData,
+    required this.hintText,
+    required this.tags,
   });
 }
 
@@ -22,23 +30,29 @@ class HelpIssueOption {
 /// - Top bar: Circular back button and "Aide sur cette course" title
 /// - Summary card with destination pin, date/status, and price
 /// - 4 selectable issue cards with specific SVGs requested by user:
-///   1. "J'ai oublié un objet"
-///   2. "Le trajet ne s'est pas bien passé" (route-svgrepo-com.svg)
-///   3. "Montant ou paiement" (wallet-svgrepo-com.svg)
-///   4. "Remboursement non reçu" (refresh-left-svgrepo-com.svg)
+///   1. "J'ai oublié un objet" (LOST_ITEM)
+///   2. "Le trajet ne s'est pas bien passé" (DRIVER_BEHAVIOR)
+///   3. "Montant ou paiement" (PAYMENT)
+///   4. "Remboursement non reçu" (REFUND)
 /// - "Dites-nous ce qui s'est passé" with multiline text field and counter
 /// - Quick selection tags ("Détour inutile", "Conduite dangereuse", "Chauffeur impoli")
-/// - Primary orange button "Envoyer au support"
+/// - Primary orange button "Envoyer au support" calling POST /v1/support/tickets
 class RideHelpPage extends StatefulWidget {
+  final String? rideId;
+  final String? rideRef;
   final PlaceSearchResult? destination;
   final String priceText;
   final String dateText;
+  final HelpRepository? helpRepository;
 
   const RideHelpPage({
     super.key,
+    this.rideId,
+    this.rideRef,
     this.destination,
     this.priceText = '3 500 F',
     this.dateText = '15 avr. · Course terminée',
+    this.helpRepository,
   });
 
   @override
@@ -50,34 +64,43 @@ class _RideHelpPageState extends State<RideHelpPage> {
   final TextEditingController _notesController = TextEditingController(
     text: 'Le chauffeur a pris un détour par la Corniche...',
   );
+  final FocusNode _notesFocusNode = FocusNode();
+  late final HelpRepository _helpRepository =
+      widget.helpRepository ?? HelpRepository();
+
+  bool _isSubmitting = false;
 
   static const List<HelpIssueOption> _issueOptions = [
     HelpIssueOption(
       title: "J'ai oublié un objet",
+      category: 'LOST_ITEM',
       iconData: Icons.search_rounded,
       svgAsset: 'assets/icons/search-magnifying-glass-svgrepo-com.svg',
+      hintText: 'J’ai oublié mon sac / téléphone sur la banquette arrière...',
+      tags: ['Sac oublié', 'Téléphone', 'Clés', 'Portefeuille'],
     ),
     HelpIssueOption(
       title: "Le trajet ne s'est pas bien passé",
+      category: 'DRIVER_BEHAVIOR',
       svgAsset: 'assets/icons/route-svgrepo-com.svg',
+      hintText: 'Le chauffeur a pris un détour par la Corniche...',
+      tags: ['Détour inutile', 'Conduite dangereuse', 'Chauffeur impoli'],
     ),
     HelpIssueOption(
       title: 'Montant ou paiement',
+      category: 'PAYMENT',
       svgAsset: 'assets/icons/wallet-svgrepo-com.svg',
+      hintText: 'Le montant facturé ne correspond pas au montant prévu...',
+      tags: ['Montant incorrect', 'Double prélèvement', 'Monnaie non rendue'],
     ),
     HelpIssueOption(
       title: 'Remboursement non reçu',
+      category: 'REFUND',
       svgAsset: 'assets/icons/refresh-left-svgrepo-com.svg',
+      hintText: 'Le remboursement de la course annulée n’a pas été reçu...',
+      tags: ['Remboursement Wave', 'Remboursement Orange Money', 'Délai dépassé'],
     ),
   ];
-
-  static const List<String> _quickTags = [
-    'Détour inutile',
-    'Conduite dangereuse',
-    'Chauffeur impoli',
-  ];
-
-  final FocusNode _notesFocusNode = FocusNode();
 
   @override
   void initState() {
@@ -106,30 +129,92 @@ class _RideHelpPageState extends State<RideHelpPage> {
     });
   }
 
-  void _submitSupportRequest() {
-    final selectedIssue = _issueOptions[_selectedIssueIndex].title;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Votre demande ($selectedIssue) a été transmise au support Seddo.',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w600,
-            color: AppColors.white,
+  Future<void> _submitSupportRequest() async {
+    if (_isSubmitting) return;
+
+    final description = _notesController.text.trim();
+    if (description.length < 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Veuillez préciser votre demande (au moins 5 caractères)',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: AppColors.white,
+            ),
+          ),
+          backgroundColor: AppColors.slateDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
           ),
         ),
-        backgroundColor: AppColors.slateDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-        ),
-      ),
-    );
+      );
+      return;
+    }
 
-    Future.delayed(const Duration(milliseconds: 700), () {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+    setState(() {
+      _isSubmitting = true;
     });
+
+    try {
+      final selectedOption = _issueOptions[_selectedIssueIndex];
+      final SupportTicketModel ticket =
+          await _helpRepository.createSupportTicket(
+        rideId: widget.rideId,
+        category: selectedOption.category,
+        description: description,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Votre réclamation (Ticket ${ticket.ref}) a été transmise au support Seddo.',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: AppColors.white,
+            ),
+          ),
+          backgroundColor: AppColors.slateDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+          ),
+        ),
+      );
+
+      Future.delayed(const Duration(milliseconds: 700), () {
+        if (mounted) {
+          Navigator.of(context).pop(ticket);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Impossible d\'enregistrer la réclamation pour le moment.',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: AppColors.white,
+            ),
+          ),
+          backgroundColor: AppColors.slateDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   @override
@@ -156,69 +241,69 @@ class _RideHelpPageState extends State<RideHelpPage> {
                     horizontal: AppConstants.spacingMd,
                   ),
                   child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: AppConstants.spacingSm),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: AppConstants.spacingSm),
 
-                    // Trip Summary Header Card
-                    _buildTripSummaryCard(destinationTitle),
+                      // Trip Summary Header Card
+                      _buildTripSummaryCard(destinationTitle),
 
-                    const SizedBox(height: AppConstants.spacingLg),
+                      const SizedBox(height: AppConstants.spacingLg),
 
-                    // Section 1: "Quel est le problème ?"
-                    Text(
-                      'Quel est le problème ?',
-                      style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontLg,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.slateDark,
+                      // Section 1: "Quel est le problème ?"
+                      Text(
+                        'Quel est le problème ?',
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontLg,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.slateDark,
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: AppConstants.spacingUnitLg),
+                      const SizedBox(height: AppConstants.spacingUnitLg),
 
-                    // Issue list
-                    ...List.generate(
-                      _issueOptions.length,
-                      (index) => _buildIssueOptionCard(index),
-                    ),
-
-                    const SizedBox(height: AppConstants.spacingLg),
-
-                    // Section 2: "Dites-nous ce qui s'est passé"
-                    Text(
-                      'Dites-nous ce qui s\'est passé',
-                      style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontBase,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
+                      // Issue list
+                      ...List.generate(
+                        _issueOptions.length,
+                        (index) => _buildIssueOptionCard(index),
                       ),
-                    ),
 
-                    const SizedBox(height: AppConstants.spacingUnit),
+                      const SizedBox(height: AppConstants.spacingLg),
 
-                    // Multiline Text Box
-                    _buildNotesInput(),
+                      // Section 2: "Dites-nous ce qui s'est passé"
+                      Text(
+                        'Dites-nous ce qui s\'est passé',
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontBase,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
 
-                    const SizedBox(height: AppConstants.spacingUnitLg),
+                      const SizedBox(height: AppConstants.spacingUnit),
 
-                    // Quick Issue Chips
-                    _buildQuickChips(),
+                      // Multiline Text Box
+                      _buildNotesInput(),
 
-                    const SizedBox(height: AppConstants.spacingLg),
-                  ],
+                      const SizedBox(height: AppConstants.spacingUnitLg),
+
+                      // Quick Issue Chips
+                      _buildQuickChips(),
+
+                      const SizedBox(height: AppConstants.spacingLg),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // Bottom Submit Button
-            _buildBottomButton(),
-          ],
+              // Bottom Submit Button
+              _buildBottomButton(),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildTopAppBar() {
     return Padding(
@@ -273,6 +358,10 @@ class _RideHelpPageState extends State<RideHelpPage> {
   }
 
   Widget _buildTripSummaryCard(String destinationTitle) {
+    final dateOrRef = widget.rideRef != null && widget.rideRef!.isNotEmpty
+        ? '${widget.dateText} · Réf. ${widget.rideRef}'
+        : widget.dateText;
+
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spacingMd,
@@ -312,7 +401,7 @@ class _RideHelpPageState extends State<RideHelpPage> {
                 ),
                 const SizedBox(height: AppConstants.spacingXs),
                 Text(
-                  widget.dateText,
+                  dateOrRef,
                   style: GoogleFonts.inter(
                     fontSize: AppConstants.fontSm,
                     fontWeight: FontWeight.w500,
@@ -358,7 +447,8 @@ class _RideHelpPageState extends State<RideHelpPage> {
             color: AppColors.white,
             borderRadius: BorderRadius.circular(AppConstants.radiusCard),
             border: Border.all(
-              color: isSelected ? AppColors.primary : AppColors.grayBorderDivider,
+              color:
+                  isSelected ? AppColors.primary : AppColors.grayBorderDivider,
               width: isSelected
                   ? AppConstants.strokeWidthSelected
                   : AppConstants.strokeWidthBorder,
@@ -437,6 +527,8 @@ class _RideHelpPageState extends State<RideHelpPage> {
   }
 
   Widget _buildNotesInput() {
+    final currentOption = _issueOptions[_selectedIssueIndex];
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.grayBgLight,
@@ -457,7 +549,7 @@ class _RideHelpPageState extends State<RideHelpPage> {
               fontWeight: FontWeight.w500,
             ),
             decoration: InputDecoration(
-              hintText: 'Le chauffeur a pris un détour par la Corniche...',
+              hintText: currentOption.hintText,
               hintStyle: GoogleFonts.inter(
                 color: AppColors.textSecondary,
                 fontSize: AppConstants.fontBase,
@@ -484,10 +576,12 @@ class _RideHelpPageState extends State<RideHelpPage> {
   }
 
   Widget _buildQuickChips() {
+    final currentOption = _issueOptions[_selectedIssueIndex];
+
     return Wrap(
       spacing: AppConstants.spacingSm,
       runSpacing: AppConstants.spacingSm,
-      children: _quickTags.map((tag) {
+      children: currentOption.tags.map((tag) {
         return GestureDetector(
           onTap: () => _onTagPressed(tag),
           child: Container(
@@ -537,15 +631,24 @@ class _RideHelpPageState extends State<RideHelpPage> {
               borderRadius: BorderRadius.circular(AppConstants.radiusCard),
             ),
           ),
-          onPressed: _submitSupportRequest,
-          child: Text(
-            'Envoyer au support',
-            style: GoogleFonts.inter(
-              fontSize: AppConstants.fontLg,
-              fontWeight: FontWeight.w800,
-              color: AppColors.white,
-            ),
-          ),
+          onPressed: _isSubmitting ? null : _submitSupportRequest,
+          child: _isSubmitting
+              ? const SizedBox(
+                  width: AppConstants.iconSizeMd,
+                  height: AppConstants.iconSizeMd,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.white),
+                  ),
+                )
+              : Text(
+                  'Envoyer au support',
+                  style: GoogleFonts.inter(
+                    fontSize: AppConstants.fontLg,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.white,
+                  ),
+                ),
         ),
       ),
     );

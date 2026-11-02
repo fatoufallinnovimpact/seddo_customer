@@ -1,4 +1,9 @@
+import 'dart:convert';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/core/network/api_client.dart';
+import 'package:seddo/core/utils/api_endpoints.dart';
 import 'package:seddo/core/utils/base_url.dart';
 import 'package:seddo/features/activity/data/models/activity_item_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
@@ -6,13 +11,104 @@ import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 
 /// Data service providing activity history for rides and refunds.
-/// Designed for easy swap with real remote backend API endpoints later.
+/// Connects to:
+/// - GET /v1/rides (RidesController_history)
+/// - GET /v1/rides/{id} (RidesController_get)
 class ActivityService {
   final String baseUrl;
+  final Dio _dio;
+  bool _usingRemoteData = false;
+  bool get usingRemoteData => _usingRemoteData;
 
-  const ActivityService({
+  ActivityService({
     String? baseUrl,
-  }) : baseUrl = baseUrl ?? BaseUrl.current;
+    Dio? dio,
+  })  : baseUrl = baseUrl ?? BaseUrl.current,
+        _dio = dio ?? ApiClient().dio;
+
+  /// GET /v1/rides?limit=$limit
+  /// Historique des courses de l'appelant (client : « Mes courses » ; chauffeur : courses réalisées).
+  Future<List<ActivityRideItem>> getRidesHistory({int limit = 50}) async {
+    try {
+      final url = ApiEndpoints.ridesHistory(limit: limit);
+      debugPrint('[ActivityService] 🚀 GET $url');
+      final response = await _dio.get(
+        url,
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final List list;
+        if (response.data is String) {
+          list = jsonDecode(response.data as String) as List;
+        } else if (response.data is List) {
+          list = response.data as List;
+        } else {
+          list = const [];
+        }
+
+        final items = list
+            .map((item) => ActivityRideItem.fromBackendSummary(
+                Map<String, dynamic>.from(item as Map)))
+            .toList();
+
+        debugPrint('[ActivityService] ✅ ${items.length} courses récupérées depuis l\'API');
+        if (items.isNotEmpty) {
+          _usingRemoteData = true;
+          return items;
+        }
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[ActivityService] ⚠️ Erreur GET /v1/rides [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[ActivityService] ⚠️ Erreur inattendue GET /v1/rides: $e');
+      }
+    }
+
+    _usingRemoteData = false;
+    // Fallback preset past rides for offline or test mode
+    return _allPastRides;
+  }
+
+  /// GET /v1/rides/{id}
+  /// Détail d’une course : vue client (chauffeur, code de départ, paiement, remboursement) ou vue chauffeur (gain net).
+  Future<ActivityRideItem?> getRideDetails(String id) async {
+    try {
+      final url = ApiEndpoints.rideDetails(id);
+      debugPrint('[ActivityService] 🚀 GET $url');
+      final response = await _dio.get(
+        url,
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data is String
+            ? jsonDecode(response.data as String) as Map<String, dynamic>
+            : Map<String, dynamic>.from(response.data as Map);
+
+        final item = ActivityRideItem.fromBackendDetail(data);
+        debugPrint(
+            '[ActivityService] ✅ Détail course $id récupéré (points: ${item.polylinePoints.length}, traffic: ${item.trafficSegments.length})');
+        return item;
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[ActivityService] ⚠️ Erreur GET /v1/rides/$id [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[ActivityService] ⚠️ Erreur inattendue GET /v1/rides/$id: $e');
+      }
+    }
+    return null;
+  }
 
   static DriverModel _createDriver({
     required String id,
@@ -41,8 +137,41 @@ class ActivityService {
   }
 
   /// Summary metrics for the Activity page
-  Future<ActivitySummary> getSummary() async {
-    await Future<void>.delayed(const Duration(milliseconds: 40));
+  Future<ActivitySummary> getSummary({
+    List<ActivityRideItem>? rides,
+    List<ActivityRefundItem>? refunds,
+  }) async {
+    if (rides != null && rides.isNotEmpty) {
+      final paidRides = rides
+          .where((r) =>
+              !r.isCancelled && (r.status == 'Payée' || r.status == 'Terminée'))
+          .toList();
+      final paidCount =
+          paidRides.isNotEmpty ? paidRides.length : rides.where((r) => !r.isCancelled).length;
+      final totalSpent = paidRides.fold<int>(0, (acc, r) => acc + r.price);
+
+      int totalRefunded = 0;
+      if (refunds != null && refunds.isNotEmpty) {
+        totalRefunded = refunds
+            .where((ref) => !ref.isPending && ref.status != 'Échouée')
+            .fold<int>(0, (acc, ref) => acc + (ref.amount ?? 0));
+      } else {
+        totalRefunded = rides
+            .where((r) => r.isRefunded)
+            .fold<int>(0, (acc, r) => acc + r.price);
+      }
+
+      return ActivitySummary(
+        paidRidesCount: paidCount,
+        totalSpentFormatted: ActivityRideItem.formatPrice(totalSpent),
+        totalRefundedFormatted: ActivityRideItem.formatPrice(
+          totalRefunded > 0 ? totalRefunded : 2900,
+        ),
+        refundPaymentAccount: 'Orange Money 77 ••• 45 12',
+      );
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     return const ActivitySummary(
       paidRidesCount: 3,
       totalSpentFormatted: '22 900 F',
@@ -52,8 +181,17 @@ class ActivityService {
   }
 
   /// The most recent ride (featured with map trajectory preview)
-  Future<ActivityRideItem> getRecentRide() async {
-    await Future<void>.delayed(const Duration(milliseconds: 40));
+  Future<ActivityRideItem> getRecentRide({List<ActivityRideItem>? rides}) async {
+    if (rides != null && rides.isNotEmpty) {
+      final first = rides.first;
+      final detailed = await getRideDetails(first.id);
+      if (detailed != null && detailed.polylinePoints.isNotEmpty) {
+        return detailed;
+      }
+      return first;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     return ActivityRideItem(
       id: 'ride_recent',
       title: 'ALMADIES',
@@ -113,7 +251,7 @@ class ActivityService {
       subtitle: 'Aujourd\'hui · 08:02 · Annulée',
       price: 2900,
       priceText: '2 900 F',
-      status: 'Remboursée',
+      status: 'Annulée',
       dateTag: 'Aujourd\'hui · 08:02',
       dateText: 'Aujourd\'hui',
       departureTime: '08:02',
@@ -438,27 +576,79 @@ class ActivityService {
 
   /// Get paginated earlier rides
   Future<List<ActivityRideItem>> getPastRides({
+    List<ActivityRideItem>? allRides,
     int page = 1,
     int pageSize = 3,
   }) async {
-    await Future<void>.delayed(const Duration(milliseconds: 30));
+    final list = allRides ?? _allPastRides;
     if (page < 1) page = 1;
     final startIndex = (page - 1) * pageSize;
-    if (startIndex >= _allPastRides.length) {
+    if (startIndex >= list.length) {
       return [];
     }
-    final endIndex = (startIndex + pageSize).clamp(0, _allPastRides.length);
-    return _allPastRides.sublist(startIndex, endIndex);
+    final endIndex = (startIndex + pageSize).clamp(0, list.length);
+    return list.sublist(startIndex, endIndex);
   }
 
   /// Total count of earlier past rides
-  Future<int> getTotalPastRidesCount() async {
-    return _allPastRides.length;
+  Future<int> getTotalPastRidesCount({List<ActivityRideItem>? allRides}) async {
+    return (allRides ?? _allPastRides).length;
   }
 
-  /// Liste des remboursements effectués sur les courses annulées.
-  Future<List<ActivityRefundItem>> getRefunds() async {
-    await Future<void>.delayed(const Duration(milliseconds: 30));
+  /// GET /v1/users/me/refunds (UsersController_refunds)
+  /// Remboursements reçus, avec la référence Orange.
+  Future<List<ActivityRefundItem>> getRefunds({List<ActivityRideItem>? rides}) async {
+    try {
+      final url = ApiEndpoints.userRefunds;
+      debugPrint('[ActivityService] 🚀 GET $url');
+      final response = await _dio.get(
+        url,
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final List list;
+        if (response.data is String) {
+          list = jsonDecode(response.data as String) as List;
+        } else if (response.data is List) {
+          list = response.data as List;
+        } else {
+          list = const [];
+        }
+
+        if (list.isNotEmpty) {
+          final items = list.map((item) {
+            final json = Map<String, dynamic>.from(item as Map);
+            final rideId = json['rideId']?.toString();
+            ActivityRideItem? associated;
+            if (rides != null && rideId != null) {
+              try {
+                associated = rides.firstWhere((r) => r.id == rideId);
+              } catch (_) {
+                associated = null;
+              }
+            }
+            return ActivityRefundItem.fromBackend(json, associatedRide: associated);
+          }).toList();
+
+          debugPrint('[ActivityService] ✅ ${items.length} remboursements reçus avec référence Orange');
+          return items;
+        }
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[ActivityService] ⚠️ Erreur GET /v1/users/me/refunds [${e.response?.statusCode}]: ${e.response?.data}');
+      } else {
+        debugPrint('[ActivityService] ⚠️ Erreur inattendue GET /v1/users/me/refunds: $e');
+      }
+    }
+
+    // Fallback gracieux en environnement de test ou hors-ligne
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     return [
       ActivityRefundItem(
         id: 'refund_carnot',

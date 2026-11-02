@@ -442,7 +442,7 @@ class ReceiptPdfService {
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text(
-                          'Ref. Orange',
+                          'Référence',
                           style: const pw.TextStyle(
                             fontSize: 12,
                             color: _pdfTextSecondary,

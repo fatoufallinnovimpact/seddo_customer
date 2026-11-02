@@ -96,7 +96,7 @@ abstract class AppConstants {
   static const double activityCircleAccentRight = -25.0;
   static const double fontTitleLarge = 26.0;
   static const double fontNumberBig = 30.0;
-  static const int activityItemsPerPage = 3;
+  static const int activityItemsPerPage = 10;
 
   // TCU (Public Transport) Component Tokens
   static const double tcuVehicleImageHeight = 50.0;
@@ -167,5 +167,10 @@ abstract class AppConstants {
   static const double tcuBannerTrainWidth = 150.0;
   static const double tcuBannerTrainRightOffset = -25.0;
   static const double tcuBannerContentRightPadding = 125.0;
+
+  // Payment Method Assets
+  static const String assetWaveLogo = 'assets/images/images.png';
+  static const String assetOrangeMoneyLogo = 'assets/images/unnamed.png';
+  static const String assetCashLogo = 'assets/images/cfa.jpg';
 }
 

@@ -46,7 +46,7 @@ class RideCancelledPage extends StatelessWidget {
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const HomePage()),
+          SlideRightToLeftRoute(page: const HomePage()),
           (route) => false,
         );
       },
@@ -384,7 +384,7 @@ class RideCancelledPage extends StatelessWidget {
                   onPressed: () {
                     // Navigate cleanly to HomePage
                     Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const HomePage()),
+                      SlideRightToLeftRoute(page: const HomePage()),
                       (route) => false,
                     );
                   },

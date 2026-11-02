@@ -550,7 +550,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
 
                     // Bottom padding so bottom route cards are not obscured by floating Seddo card
                     SizedBox(
-                      height: (_showSeddoCard && _hasSearched)
+                      height: _showSeddoCard
                           ? 110
                           : AppConstants.spacingLg,
                     ),
@@ -568,12 +568,22 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                 ),
 
               // Floating Seddo VTC card at bottom (stays above page when scrolling)
-              if (_showSeddoCard && !_showSuggestions && _hasSearched)
+              // Dismissible horizontally (glisser de gauche à droite ou droite à gauche pour faire disparaître)
+              if (_showSeddoCard && !_showSuggestions)
                 Positioned(
                   left: AppConstants.spacingMd,
                   right: AppConstants.spacingMd,
                   bottom: AppConstants.spacingMd,
-                  child: _buildFloatingSeddoCard(),
+                  child: Dismissible(
+                    key: const Key('tcu_seddo_card_dismissible'),
+                    direction: DismissDirection.horizontal,
+                    onDismissed: (_) {
+                      setState(() {
+                        _showSeddoCard = false;
+                      });
+                    },
+                    child: _buildFloatingSeddoCard(),
+                  ),
                 ),
             ],
           ),

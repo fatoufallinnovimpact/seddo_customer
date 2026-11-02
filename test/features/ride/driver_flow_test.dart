@@ -351,7 +351,7 @@ void main() {
       expect(find.text('Reçu PDF'), findsOneWidget);
       expect(find.text('Aide'), findsOneWidget);
       expect(find.text('Recommander ce trajet'), findsOneWidget);
-      expect(find.text('Réf. Orange'), findsOneWidget);
+      expect(find.text('Référence'), findsOneWidget);
       expect(find.text('CI270415.1819.A3F2'), findsOneWidget);
 
       // Tap Aide button to navigate to RideHelpPage

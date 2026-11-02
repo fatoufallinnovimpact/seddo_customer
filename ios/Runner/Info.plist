@@ -24,6 +24,20 @@
 		<string>????</string>
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>sn.innov.seddo</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>seddo</string>
+					<string>sn.innov.seddo</string>
+				</array>
+			</dict>
+		</array>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 		<key>LSApplicationQueriesSchemes</key>

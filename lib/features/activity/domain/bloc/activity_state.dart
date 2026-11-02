@@ -26,6 +26,9 @@ class ActivityLoadedState extends ActivityState {
   final int currentPage;
   final bool hasMore;
   final bool isLoadingMore;
+  final int currentRefundsPage;
+  final bool hasMoreRefunds;
+  final bool isLoadingMoreRefunds;
 
   const ActivityLoadedState({
     required this.currentTab,
@@ -36,6 +39,9 @@ class ActivityLoadedState extends ActivityState {
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.currentRefundsPage = 1,
+    this.hasMoreRefunds = true,
+    this.isLoadingMoreRefunds = false,
   });
 
   ActivityLoadedState copyWith({
@@ -47,6 +53,9 @@ class ActivityLoadedState extends ActivityState {
     int? currentPage,
     bool? hasMore,
     bool? isLoadingMore,
+    int? currentRefundsPage,
+    bool? hasMoreRefunds,
+    bool? isLoadingMoreRefunds,
   }) {
     return ActivityLoadedState(
       currentTab: currentTab ?? this.currentTab,
@@ -57,6 +66,9 @@ class ActivityLoadedState extends ActivityState {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      currentRefundsPage: currentRefundsPage ?? this.currentRefundsPage,
+      hasMoreRefunds: hasMoreRefunds ?? this.hasMoreRefunds,
+      isLoadingMoreRefunds: isLoadingMoreRefunds ?? this.isLoadingMoreRefunds,
     );
   }
 
@@ -70,6 +82,9 @@ class ActivityLoadedState extends ActivityState {
         currentPage,
         hasMore,
         isLoadingMore,
+        currentRefundsPage,
+        hasMoreRefunds,
+        isLoadingMoreRefunds,
       ];
 }
 
