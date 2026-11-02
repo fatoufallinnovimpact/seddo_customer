@@ -13,6 +13,9 @@ class SupportTicketModel {
   final String status;
   final String? resolution;
   final int? refundAmount;
+  final String? ridePickup;
+  final String? rideDropoff;
+  final int? ridePrice;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? resolvedAt;
@@ -22,6 +25,9 @@ class SupportTicketModel {
     required this.ref,
     this.rideId,
     this.rideRef,
+    this.ridePickup,
+    this.rideDropoff,
+    this.ridePrice,
     required this.category,
     required this.description,
     required this.status,
@@ -83,12 +89,53 @@ class SupportTicketModel {
     return '${local.day} $monthName · $h:$m';
   }
 
+  String get formattedDateShort {
+    if (createdAt == null) return '';
+    final local = createdAt!.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    const months = [
+      'janv.', 'nov.', 'mars', 'avr.', 'mai', 'juin',
+      'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'
+    ];
+    final monthName = months[(local.month - 1) % 12];
+    return '${local.day} $monthName · $h:$m';
+  }
+
+  String get formattedRideRoute {
+    if (ridePickup != null && rideDropoff != null) {
+      return '$ridePickup / $rideDropoff';
+    } else if (ridePickup != null) {
+      return ridePickup!;
+    } else if (rideDropoff != null) {
+      return rideDropoff!;
+    }
+    return formattedDate;
+  }
+
+  String get formattedRidePrice {
+    if (ridePrice != null && ridePrice! > 0) {
+      return '$ridePrice F';
+    } else if (refundAmount != null && refundAmount! > 0) {
+      return '$refundAmount F';
+    }
+    return '';
+  }
+
   factory SupportTicketModel.fromJson(Map<String, dynamic> json) {
+    final rideMap = json['ride'] is Map ? json['ride'] as Map : null;
     return SupportTicketModel(
       id: json['id']?.toString() ?? '',
       ref: json['ref']?.toString() ?? '',
-      rideId: json['rideId']?.toString(),
-      rideRef: json['rideRef']?.toString(),
+      rideId: json['rideId']?.toString() ?? rideMap?['id']?.toString(),
+      rideRef: json['rideRef']?.toString() ?? rideMap?['ref']?.toString(),
+      ridePickup: json['ridePickup']?.toString() ??
+          rideMap?['pickupAddress']?.toString(),
+      rideDropoff: json['rideDropoff']?.toString() ??
+          rideMap?['dropoffAddress']?.toString(),
+      ridePrice: json['ridePrice'] is num
+          ? (json['ridePrice'] as num).toInt()
+          : (rideMap?['price'] is num ? (rideMap!['price'] as num).toInt() : null),
       category: json['category']?.toString() ?? 'OTHER',
       description: json['description']?.toString() ?? '',
       status: json['status']?.toString() ?? 'OPEN',

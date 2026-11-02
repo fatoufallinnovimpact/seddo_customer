@@ -99,18 +99,28 @@ class SeddoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Seddo',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      localizationsDelegates: [
-        const WolofMaterialLocalizationsDelegate(),
-        const WolofCupertinoLocalizationsDelegate(),
-        ...context.localizationDelegates,
-      ],
-      supportedLocales: context.supportedLocales,
-      locale: context.locale,
-      home: const SplashPage(),
+    return ColoredBox(
+      color: AppColors.white,
+      child: MaterialApp(
+        title: 'Seddo',
+        color: AppColors.white,
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        builder: (context, child) {
+          return ColoredBox(
+            color: AppColors.white,
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
+        localizationsDelegates: [
+          const WolofMaterialLocalizationsDelegate(),
+          const WolofCupertinoLocalizationsDelegate(),
+          ...context.localizationDelegates,
+        ],
+        supportedLocales: context.supportedLocales,
+        locale: context.locale,
+        home: const SplashPage(),
+      ),
     );
   }
 }

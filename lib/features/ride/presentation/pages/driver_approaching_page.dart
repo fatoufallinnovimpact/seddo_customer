@@ -126,6 +126,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   late final AnimationController _sheetAnimationController;
   BitmapDescriptor? _destinationMarkerIcon;
+  bool _isNavigatingToActiveRide = false;
 
   @override
   void initState() {
@@ -428,7 +429,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     WidgetsBinding.instance.removeObserver(this);
     _cleanupTimersAndSubs();
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+    if (!_isNavigatingToActiveRide &&
+        effectiveRideId != null &&
+        effectiveRideId.isNotEmpty) {
       RealtimeService().leaveRide(effectiveRideId);
     }
     _approachController?.dispose();
@@ -914,10 +917,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   /// Démarre la course vers la destination (transition vers ActiveRidePage)
   void startRide() {
     _cleanupTimersAndSubs();
-    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
-      RealtimeService().leaveRide(effectiveRideId);
-    }
+    _isNavigatingToActiveRide = true;
     final effectiveTripOption = _tripTraffic.isNotEmpty
         ? widget.rideOption.copyWith(traffic: _tripTraffic)
         : widget.rideOption;
@@ -1252,12 +1252,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             .toUpperCase()
         : 'MS';
 
-    final etaDisplay = _isPositionUpdating
-        ? 'ride.position_updating'.tr()
-        : (_driverArrived ||
-                (_remainingDistanceM > 0 && _remainingDistanceM < 50)
-            ? 'ride.arrived'.tr()
-            : _currentEtaLabel);
+    final etaDisplay = (_driverArrived ||
+            (_remainingDistanceM > 0 && _remainingDistanceM < 50))
+        ? 'ride.arrived'.tr()
+        : _currentEtaLabel;
 
     final digits = _departureCode.padRight(4, '0').split('');
 
@@ -1486,6 +1484,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                             children: [
                                               Text(
                                                 titleText,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                                 style: GoogleFonts.inter(
                                                   fontSize: 16.0,
                                                   fontWeight: FontWeight.w800,
@@ -1493,11 +1493,41 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                   letterSpacing: -0.2,
                                                 ),
                                               ),
-                                              if (_remainingDistanceM > 0 &&
+                                              if (_isPositionUpdating && !_driverArrived) ...[
+                                                const SizedBox(height: 3),
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const SizedBox(
+                                                      width: 11,
+                                                      height: 11,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 1.8,
+                                                        color: AppColors.primary,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Flexible(
+                                                      child: Text(
+                                                        'ride.position_updating'.tr(),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 12.0,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: AppColors.primary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ] else if (_remainingDistanceM > 0 &&
                                                   !_driverArrived) ...[
                                                 const SizedBox(height: 2),
                                                 Text(
                                                   '${'ride.approaching'.tr()} · ${RideEtaCalculator.formatRemainingDistance(_remainingDistanceM)}',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
                                                   style: GoogleFonts.inter(
                                                     fontSize: 12.0,
                                                     fontWeight: FontWeight.w600,
@@ -1508,6 +1538,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                             ],
                                           ),
                                         ),
+                                        const SizedBox(width: 10),
 
                                         // Pill: 4 min avec icône horloge
                                         Container(

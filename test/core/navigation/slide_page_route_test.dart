@@ -111,5 +111,69 @@ void main() {
         debugDefaultTargetPlatformOverride = null;
       }
     });
+
+    testWidgets(
+        'On iOS, opening a modal bottom sheet does NOT slide the route (canTransitionTo is false for modals)',
+        (WidgetTester tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) {
+                return Scaffold(
+                  body: Center(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          SlideRightToLeftRoute(
+                            page: Builder(
+                              builder: (sheetContext) {
+                                return Scaffold(
+                                  body: Center(
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        showModalBottomSheet<void>(
+                                          context: sheetContext,
+                                          builder: (_) => const SizedBox(
+                                            height: 200,
+                                            child: Text('Modal Content'),
+                                          ),
+                                        );
+                                      },
+                                      child: const Text('Open Modal Sheet'),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('Go to Page with Modal'),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Go to Page with Modal'));
+        await tester.pumpAndSettle();
+
+        // Open modal bottom sheet
+        await tester.tap(find.text('Open Modal Sheet'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Modal Content'), findsOneWidget);
+
+        // Verify that the page behind is still at its centered x position and not slid away
+        final buttonPos = tester.getTopLeft(find.text('Open Modal Sheet'));
+        expect(buttonPos.dx, greaterThan(0));
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
   });
 }

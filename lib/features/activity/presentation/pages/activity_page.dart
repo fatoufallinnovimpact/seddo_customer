@@ -25,7 +25,6 @@ export 'package:seddo/features/activity/domain/bloc/activity_event.dart'
 /// - Segmented toggle: "COURSES" (default) & "REMBOURSEMENTS"
 ///
 /// Tab "COURSES":
-/// - 2 summary metric cards: "Courses payées" and "Total dépensé"
 /// - "RÉCENT": Only the latest course shows a map trajectory preview card with
 ///   coordinates, tag, Almadies title, driver initials avatar, price and badge.
 ///   Clicking on this card opens its receipt superimposed on the interactive map.
@@ -377,155 +376,118 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
   // ==========================================
 
   Widget _buildCoursesTabContent(ActivityLoadedState state) {
+    if (state.recentRide == null && state.pastRides.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.directions_car_rounded,
+                  color: AppColors.primary,
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Aucune course enregistrée',
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.slateDark,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Vos trajets et reçus apparaîtront ici dès votre première course.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Two Summary Metric Cards
-        _buildMetricCardsRow(state.summary),
-
-        const SizedBox(height: AppConstants.spacingLg),
-
-        // 2. Section "RÉCENT"
-        Text(
-          'activity.recent'.tr(),
-          style: GoogleFonts.inter(
-            fontSize: AppConstants.fontSm,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textSecondary,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: AppConstants.spacingSm),
-
-        // 3. Featured Recent Ride Card with Map preview
-        _buildRecentRideCard(state.recentRide),
-
-        const SizedBox(height: AppConstants.spacingLg),
-
-        // 4. Section "PLUS TÔT"
-        Text(
-          'activity.earlier'.tr(),
-          style: GoogleFonts.inter(
-            fontSize: AppConstants.fontSm,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textSecondary,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: AppConstants.spacingUnitLg),
-
-        // 5. Earlier Rides list (Mobile Infinite Scroll)
-        ...List.generate(state.pastRides.length, (index) {
-          final ride = state.pastRides[index];
-          final isLast = index == state.pastRides.length - 1;
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: isLast ? 0 : AppConstants.spacingUnitLg,
+        // 1. Section "RÉCENT"
+        if (state.recentRide != null) ...[
+          Text(
+            'activity.recent'.tr(),
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.fontSm,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.5,
             ),
-            child: _buildPastRideTile(ride),
-          );
-        }),
+          ),
+          const SizedBox(height: AppConstants.spacingSm),
+          _buildRecentRideCard(state.recentRide!),
+          if (state.pastRides.isNotEmpty)
+            const SizedBox(height: AppConstants.spacingLg),
+        ],
 
-        const SizedBox(height: AppConstants.spacingMd),
-
-        // 6. Mobile Pagination Loader
-        if (state.isLoadingMore)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: AppConstants.spacingMd,
+        // 2. Section "PLUS TÔT"
+        if (state.pastRides.isNotEmpty) ...[
+          Text(
+            'activity.earlier'.tr(),
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.fontSm,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textSecondary,
+              letterSpacing: 0.5,
             ),
-            child: Center(
-              child: SizedBox(
-                width: AppConstants.iconSizeXl,
-                height: AppConstants.iconSizeXl,
-                child: const CircularProgressIndicator(
-                  strokeWidth: AppConstants.strokeWidthSelected,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+          ),
+          const SizedBox(height: AppConstants.spacingUnitLg),
+          ...List.generate(state.pastRides.length, (index) {
+            final ride = state.pastRides[index];
+            final isLast = index == state.pastRides.length - 1;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: isLast ? 0 : AppConstants.spacingUnitLg,
+              ),
+              child: _buildPastRideTile(ride),
+            );
+          }),
+          const SizedBox(height: AppConstants.spacingMd),
+          if (state.isLoadingMore)
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: AppConstants.spacingMd,
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: AppConstants.iconSizeXl,
+                  height: AppConstants.iconSizeXl,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: AppConstants.strokeWidthSelected,
+                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  ),
                 ),
               ),
-            ),
-          )
-        else
-          const SizedBox(height: AppConstants.spacingXl),
+            )
+          else
+            const SizedBox(height: AppConstants.spacingXl),
+        ],
       ],
     );
   }
 
-  Widget _buildMetricCardsRow(ActivitySummary summary) {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spacingMd,
-              vertical: AppConstants.spacingUnitLg,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.grayBgLight,
-              borderRadius: BorderRadius.circular(AppConstants.radiusCard),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'activity.paid_rides'.tr(),
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontSm,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: AppConstants.spacingXs),
-                Text(
-                  '${summary.paidRidesCount}',
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontNumberBig,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.slateDark,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: AppConstants.spacingUnitLg),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spacingMd,
-              vertical: AppConstants.spacingUnitLg,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.grayBgLight,
-              borderRadius: BorderRadius.circular(AppConstants.radiusCard),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'activity.total_spent'.tr(),
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontSm,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: AppConstants.spacingXs),
-                Text(
-                  summary.totalSpentFormatted,
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontTitleLarge,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.slateDark,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+
 
   Widget _buildRecentRideCard(ActivityRideItem ride) {
     return Container(

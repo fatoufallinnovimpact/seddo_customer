@@ -100,6 +100,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   String? _paymentMessage;
   String _paymentStatus = 'PENDING';
   String _currentRideStatus = 'PAYMENT_PENDING';
+  bool _isTransitioningToApproaching = false;
 
   bool get _isPaymentConfirmed {
     if (widget.paymentMethod == PaymentMethodType.cash) return true;
@@ -408,7 +409,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     _realtimeNearbySub?.cancel();
     _realtimeReconnectSub?.cancel();
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+    if (!_isTransitioningToApproaching &&
+        effectiveRideId != null &&
+        effectiveRideId.isNotEmpty) {
       RealtimeService().leaveRide(effectiveRideId);
     }
     _autoMatchTimer?.cancel();
@@ -595,6 +598,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
     final effectiveRideId =
         rideId ?? widget.rideId ?? RideService.lastCreatedRideId;
+
+    _isTransitioningToApproaching = true;
 
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
@@ -905,41 +910,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     );
   }
 
-  Widget _buildLiveSearchPill({bool compact = false}) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 10,
-        vertical: compact ? 4 : 5,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withAlpha(25),
-        borderRadius: BorderRadius.circular(AppConstants.radiusPill),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            'ride.live_search'.tr(),
-            style: GoogleFonts.inter(
-              fontSize: compact ? 10 : 11,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildVehicleImage({required double width, required double height}) {
     return Image.asset(
@@ -1184,34 +1154,25 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
                                       children: [
-                                        _buildLiveSearchPill(),
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            _buildVehicleImage(
-                                                width: 56, height: 38),
-                                            const SizedBox(width: 8),
-                                            _buildChevronButton(
-                                                isExpanded: true),
-                                          ],
+                                        Expanded(
+                                          child: Text(
+                                            'ride.searching'.tr(),
+                                            style: GoogleFonts.inter(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.w900,
+                                              color: AppColors.textPrimary,
+                                              letterSpacing: -0.4,
+                                            ),
+                                          ),
                                         ),
+                                        const SizedBox(width: 8),
+                                        _buildVehicleImage(
+                                            width: 56, height: 38),
+                                        const SizedBox(width: 8),
+                                        _buildChevronButton(
+                                            isExpanded: true),
                                       ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        'ride.searching'.tr(),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w900,
-                                          color: AppColors.textPrimary,
-                                          letterSpacing: -0.5,
-                                        ),
-                                      ),
                                     ),
                                     const SizedBox(height: 12),
                                     _buildProgressBar(),
@@ -1222,8 +1183,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                   children: [
                                     Row(
                                       children: [
-                                        _buildLiveSearchPill(compact: true),
-                                        const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             'ride.searching'.tr(),

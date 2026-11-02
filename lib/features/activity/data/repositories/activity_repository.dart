@@ -9,7 +9,7 @@ abstract class ActivityRepository {
     List<ActivityRideItem>? rides,
     List<ActivityRefundItem>? refunds,
   });
-  Future<ActivityRideItem> getRecentRide({List<ActivityRideItem>? rides});
+  Future<ActivityRideItem?> getRecentRide({List<ActivityRideItem>? rides});
   Future<List<ActivityRideItem>> getPastRides({
     List<ActivityRideItem>? allRides,
     int page = 1,
@@ -45,7 +45,7 @@ class ActivityRepositoryImpl implements ActivityRepository {
       _service.getSummary(rides: rides, refunds: refunds);
 
   @override
-  Future<ActivityRideItem> getRecentRide({List<ActivityRideItem>? rides}) =>
+  Future<ActivityRideItem?> getRecentRide({List<ActivityRideItem>? rides}) =>
       _service.getRecentRide(rides: rides);
 
   @override

@@ -18,6 +18,8 @@ abstract class AppTheme {
         onSurface: AppColors.textPrimary,
       ),
       scaffoldBackgroundColor: AppColors.white,
+      canvasColor: AppColors.white,
+      dialogTheme: const DialogThemeData(backgroundColor: AppColors.white),
       textTheme: GoogleFonts.interTextTheme(),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.white,

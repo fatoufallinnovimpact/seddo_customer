@@ -23,10 +23,16 @@ class SlideRightToLeftRoute<T> extends PageRoute<T>
   bool get maintainState => true;
 
   @override
-  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => true;
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) {
+    return previousRoute is CupertinoRouteTransitionMixin;
+  }
 
   @override
-  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) => true;
+  bool canTransitionTo(TransitionRoute<dynamic> nextRoute) {
+    // Ne pas animer de transition secondaire (slide vers la gauche)
+    // lorsqu'un modal bottom sheet, popup ou dialogue est affiché par-dessus.
+    return nextRoute is CupertinoRouteTransitionMixin && !nextRoute.fullscreenDialog;
+  }
 
   @override
   bool get popGestureEnabled => defaultTargetPlatform == TargetPlatform.iOS;

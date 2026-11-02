@@ -39,19 +39,19 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
       final recent =
           await _repository.getRecentRide(rides: isRemote ? historyRides : null);
 
-      if (isRemote && historyRides.length > 1) {
-        _allPastRides = historyRides.sublist(1);
+      if (isRemote) {
+        _allPastRides = historyRides.length > 1 ? historyRides.sublist(1) : [];
       } else {
         _allPastRides = [];
       }
 
       final past = await _repository.getPastRides(
-        allRides: _allPastRides.isNotEmpty ? _allPastRides : null,
+        allRides: isRemote ? _allPastRides : null,
         page: 1,
         pageSize: AppConstants.activityItemsPerPage,
       );
       final totalPast = await _repository.getTotalPastRidesCount(
-        allRides: _allPastRides.isNotEmpty ? _allPastRides : null,
+        allRides: isRemote ? _allPastRides : null,
       );
 
       final initialRefunds =

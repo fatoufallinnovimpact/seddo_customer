@@ -55,11 +55,10 @@ class ActivityService {
                 Map<String, dynamic>.from(item as Map)))
             .toList();
 
-        debugPrint('[ActivityService] ✅ ${items.length} courses récupérées depuis l\'API');
-        if (items.isNotEmpty) {
-          _usingRemoteData = true;
-          return items;
-        }
+        debugPrint(
+            '[ActivityService] ✅ ${items.length} courses récupérées depuis l\'API pour l\'utilisateur connecté');
+        _usingRemoteData = true;
+        return items;
       }
     } catch (e) {
       if (e is DioException) {
@@ -181,7 +180,7 @@ class ActivityService {
   }
 
   /// The most recent ride (featured with map trajectory preview)
-  Future<ActivityRideItem> getRecentRide({List<ActivityRideItem>? rides}) async {
+  Future<ActivityRideItem?> getRecentRide({List<ActivityRideItem>? rides}) async {
     if (rides != null && rides.isNotEmpty) {
       final first = rides.first;
       final detailed = await getRideDetails(first.id);
@@ -189,6 +188,10 @@ class ActivityService {
         return detailed;
       }
       return first;
+    }
+
+    if (_usingRemoteData) {
+      return null;
     }
 
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -580,7 +583,8 @@ class ActivityService {
     int page = 1,
     int pageSize = 3,
   }) async {
-    final list = allRides ?? _allPastRides;
+    final list = allRides ??
+        (_usingRemoteData ? const <ActivityRideItem>[] : _allPastRides);
     if (page < 1) page = 1;
     final startIndex = (page - 1) * pageSize;
     if (startIndex >= list.length) {
@@ -592,7 +596,9 @@ class ActivityService {
 
   /// Total count of earlier past rides
   Future<int> getTotalPastRidesCount({List<ActivityRideItem>? allRides}) async {
-    return (allRides ?? _allPastRides).length;
+    return (allRides ??
+            (_usingRemoteData ? const <ActivityRideItem>[] : _allPastRides))
+        .length;
   }
 
   /// GET /v1/users/me/refunds (UsersController_refunds)

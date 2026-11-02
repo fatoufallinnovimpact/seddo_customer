@@ -6,19 +6,25 @@ import 'package:seddo/features/help/data/models/support_ticket_message_model.dar
 import 'package:seddo/features/help/data/models/support_ticket_model.dart';
 import 'package:seddo/features/help/data/repositories/help_repository.dart';
 
-/// Screen displaying the detail of a support claim / ticket and its message thread.
-/// Connects to:
-/// - GET /v1/support/tickets/{id} (SupportController_get)
-/// - GET /v1/support/tickets/{id}/messages (SupportController_messages)
-/// - POST /v1/support/tickets/{id}/messages (SupportController_reply)
+/// Modal bottom sheet or full-page view for support ticket details & live chat thread.
+/// Implements the light-mode design matching user requirements:
+/// - Drag handle (when modal sheet)
+/// - Top header with #TK-XXXX pill, category pill and circular close button
+/// - Ticket title / description
+/// - 3-step progress bar (ENREGISTRÉ, EXAMEN EN COURS, RÉSOLU)
+/// - Course card with ride ref, route and green price badge
+/// - Chat thread with orange bubbles for user and support agent cards with 'S' avatar
+/// - Bottom reply input bar fixed above the keyboard
 class SupportTicketDetailPage extends StatefulWidget {
   final SupportTicketModel ticket;
   final HelpRepository? helpRepository;
+  final bool isBottomSheet;
 
   const SupportTicketDetailPage({
     super.key,
     required this.ticket,
     this.helpRepository,
+    this.isBottomSheet = false,
   });
 
   @override
@@ -117,7 +123,7 @@ class _SupportTicketDetailPageState extends State<SupportTicketDetailPage> {
         _scrollToBottom();
       }
 
-      // If ticket was resolved, reload detail because server reopens it
+      // If ticket was resolved, reload detail in case status was updated
       if (_ticket.status.toUpperCase() == 'RESOLVED' ||
           _ticket.status.toUpperCase() == 'CLOSED') {
         final refreshed = await _repository.getTicketDetails(_ticket.id);
@@ -153,184 +159,401 @@ class _SupportTicketDetailPageState extends State<SupportTicketDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: Scaffold(
-        backgroundColor: AppColors.white,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(),
-              Expanded(
-                child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.primary,
-                        ),
-                      )
-                    : SingleChildScrollView(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppConstants.spacingMd,
-                          vertical: AppConstants.spacingSm,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Ticket info summary card
-                            _buildSummaryCard(),
-
-                            const SizedBox(height: AppConstants.spacingLg),
-
-                            // Initial claim section
-                            _buildInitialClaimCard(),
-
-                            const SizedBox(height: AppConstants.spacingLg),
-
-                            // Messages thread header
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.forum_outlined,
-                                  size: AppConstants.iconSizeSm,
-                                  color: AppColors.textSecondary,
-                                ),
-                                const SizedBox(width: AppConstants.spacingXs),
-                                Text(
-                                  'MESSAGES AVEC LE SUPPORT',
-                                  style: GoogleFonts.inter(
-                                    fontSize: AppConstants.fontSm,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.textSecondary,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: AppConstants.spacingSm),
-
-                            // Messages thread list
-                            if (_messages.isEmpty)
-                              _buildNoMessagesPrompt()
-                            else
-                              ...List.generate(
-                                _messages.length,
-                                (index) => _buildMessageBubble(_messages[index]),
-                              ),
-
-                            const SizedBox(height: AppConstants.spacingLg),
-                          ],
-                        ),
-                      ),
-              ),
-
-              // Bottom reply bar
-              _buildBottomReplyBar(),
-            ],
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.isBottomSheet) _buildDragHandle(),
+        _buildHeaderRow(),
+        const SizedBox(height: 12),
+        _buildTitle(),
+        const SizedBox(height: 16),
+        _buildStepProgressBar(),
+        const SizedBox(height: 16),
+        if (_ticket.rideRef != null && _ticket.rideRef!.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _buildCourseCard(),
           ),
+          const SizedBox(height: 16),
+        ],
+        Expanded(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                  ),
+                )
+              : _buildMessagesList(),
+        ),
+        _buildBottomReplyBar(),
+      ],
+    );
+
+    if (widget.isBottomSheet) {
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.90,
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 20,
+              offset: Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: content,
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      body: SafeArea(
+        child: content,
+      ),
+    );
+  }
+
+  Widget _buildDragHandle() {
+    return Center(
+      child: Container(
+        width: 44,
+        height: 4,
+        margin: const EdgeInsets.only(top: 10, bottom: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFCBD5E1),
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
     );
   }
 
-  Widget _buildTopBar() {
-    Color statusBgColor;
-    Color statusTextColor;
-
-    switch (_ticket.status.toUpperCase()) {
-      case 'OPEN':
-        statusBgColor = AppColors.orangeLightBg;
-        statusTextColor = AppColors.primary;
-        break;
-      case 'IN_PROGRESS':
-        statusBgColor = AppColors.peachContainer;
-        statusTextColor = AppColors.primaryDark;
-        break;
-      case 'RESOLVED':
-        statusBgColor = AppColors.refundPillBg;
-        statusTextColor = AppColors.greenSuccess;
-        break;
-      default:
-        statusBgColor = AppColors.grayBgLight;
-        statusTextColor = AppColors.textSecondary;
-    }
-
+  Widget _buildHeaderRow() {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppConstants.spacingMd,
-        vertical: AppConstants.spacingSm,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: AppConstants.circularButtonSize,
-              height: AppConstants.circularButtonSize,
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.grayBorderDivider,
-                  width: AppConstants.strokeWidthBorder,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadowSubtleBlack,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
+          // If not in bottom sheet, provide a back arrow button
+          if (!widget.isBottomSheet) ...[
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.grayBorderDivider,
+                    width: AppConstants.strokeWidthBorder,
                   ),
-                ],
+                ),
+                child: const Icon(
+                  Icons.arrow_back_rounded,
+                  size: 18,
+                  color: AppColors.slateDark,
+                ),
               ),
-              child: const Icon(
-                Icons.arrow_back_rounded,
+            ),
+            const SizedBox(width: 8),
+          ],
+
+          // Ticket Ref pill (e.g. #TK-1024)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFFE2E8F0),
+                width: 1,
+              ),
+            ),
+            child: Text(
+              _ticket.ref.startsWith('#') ? _ticket.ref : '#${_ticket.ref}',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
                 color: AppColors.slateDark,
-                size: AppConstants.iconSizeMd,
               ),
             ),
           ),
-          const SizedBox(width: AppConstants.spacingUnitLg),
+          const SizedBox(width: 8),
+
+          // Category pill (e.g. OBJET PERDU / REMBOURSEMENT)
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFFFFEDD5),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                _ticket.categoryLabel.toUpperCase(),
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                  letterSpacing: 0.3,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Close button on right (circular grey ✕)
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: AppColors.slateDark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTitle() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Text(
+        _ticket.description,
+        style: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: AppColors.slateDark,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepProgressBar() {
+    final statusUpper = _ticket.status.toUpperCase();
+    final isResolved = statusUpper == 'RESOLVED' || statusUpper == 'CLOSED';
+    final isInProgress = statusUpper == 'IN_PROGRESS';
+
+    double progressFraction;
+    if (isResolved) {
+      progressFraction = 1.0;
+    } else if (isInProgress) {
+      progressFraction = 0.66;
+    } else {
+      progressFraction = 0.40;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Step 1: ENREGISTRÉ
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check,
+                      size: 13,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 3),
+                    Flexible(
+                      child: Text(
+                        'ENREGISTRÉ',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+
+              // Step 2: EXAMEN EN COURS
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: (isInProgress || isResolved)
+                            ? AppColors.primary
+                            : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        'EXAMEN EN COURS',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: (isInProgress || isResolved)
+                              ? AppColors.primary
+                              : const Color(0xFF94A3B8),
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+
+              // Step 3: RÉSOLU
+              Text(
+                'RÉSOLU',
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: isResolved
+                      ? AppColors.greenSuccess
+                      : const Color(0xFF94A3B8),
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Underline progress bar
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final totalWidth = constraints.maxWidth;
+              return Stack(
+                children: [
+                  Container(
+                    height: 3.5,
+                    width: totalWidth,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  Container(
+                    height: 3.5,
+                    width: totalWidth * progressFraction,
+                    decoration: BoxDecoration(
+                      color: isResolved
+                          ? AppColors.greenSuccess
+                          : AppColors.primary,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourseCard() {
+    final rideRefText = _ticket.rideRef ?? 'SD-1270';
+    final subtitle = _ticket.ridePickup != null
+        ? '${_ticket.ridePickup} • ${_ticket.formattedDateShort}'
+        : 'Péage VDN / Mermoz • ${_ticket.formattedDateShort}';
+    final priceText = _ticket.formattedRidePrice.isNotEmpty
+        ? _ticket.formattedRidePrice
+        : '3 000 F';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.directions_car_rounded,
+              color: AppColors.primary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Réclamation ${_ticket.ref}',
+                  'Course $rideRefText',
                   style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontTitle,
+                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                     color: AppColors.slateDark,
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  _ticket.formattedDate,
+                  subtitle,
                   style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontSm,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                     color: AppColors.textSecondary,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spacingSm,
-              vertical: AppConstants.spacingXxs,
-            ),
-            decoration: BoxDecoration(
-              color: statusBgColor,
-              borderRadius: BorderRadius.circular(AppConstants.radiusFull),
-            ),
-            child: Text(
-              _ticket.statusLabel,
-              style: GoogleFonts.inter(
-                fontSize: AppConstants.fontXs,
-                fontWeight: FontWeight.w700,
-                color: statusTextColor,
-              ),
+          const SizedBox(width: 8),
+          Text(
+            priceText,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.greenSuccess,
             ),
           ),
         ],
@@ -338,258 +561,198 @@ class _SupportTicketDetailPageState extends State<SupportTicketDetailPage> {
     );
   }
 
-  Widget _buildSummaryCard() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.spacingMd),
-      decoration: BoxDecoration(
-        color: AppColors.grayBgLight,
-        borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+  Widget _buildMessagesList() {
+    final List<Widget> items = [];
+
+    // Initial claim message bubble (shown from client)
+    items.add(_buildUserMessageBubble(
+      body: _ticket.description,
+      timeLabel: 'Client • ${_ticket.formattedDateShort}',
+    ));
+
+    // Message thread replies
+    for (final msg in _messages) {
+      if (msg.isUser) {
+        items.add(_buildUserMessageBubble(
+          body: msg.body,
+          timeLabel: 'Client • ${msg.formattedTime}',
+        ));
+      } else {
+        items.add(_buildSupportMessageBubble(msg));
+      }
+    }
+
+    return ListView(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: items,
+    );
+  }
+
+  Widget _buildUserMessageBubble({
+    required String body,
+    required String timeLabel,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+                bottomLeft: Radius.circular(16),
+                bottomRight: Radius.circular(4),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 4,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              body,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.white,
+                height: 1.35,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            timeLabel,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildSupportMessageBubble(SupportTicketMessageModel message) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: AppConstants.spacingSm,
-            runSpacing: AppConstants.spacingXs,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Circular avatar with 'S'
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spacingSm,
-                  vertical: AppConstants.spacingXxs,
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  color: AppColors.slateDark,
+                  shape: BoxShape.circle,
                 ),
-                decoration: BoxDecoration(
-                  color: AppColors.peachContainer,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusXs),
-                ),
-                child: Text(
-                  _ticket.categoryLabel,
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontSm,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primaryDark,
+                child: Center(
+                  child: Text(
+                    'S',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.white,
+                    ),
                   ),
                 ),
               ),
-              if (_ticket.rideRef != null && _ticket.rideRef!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppConstants.spacingSm,
-                    vertical: AppConstants.spacingXxs,
-                  ),
+              const SizedBox(width: 8),
+
+              // Grey bubble with agent header and message
+              Flexible(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusXs),
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(4),
+                      topRight: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
+                    ),
                     border: Border.all(
-                      color: AppColors.grayBorderDivider,
-                      width: AppConstants.strokeWidthBorder,
+                      color: const Color(0xFFE2E8F0),
+                      width: 1,
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.directions_car_rounded,
-                        size: AppConstants.iconSizeSm,
-                        color: AppColors.slateDark,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Équipe Support Seddo',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.slateDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD1FAE5),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Actif',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF047857),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppConstants.spacingXs),
+                      const SizedBox(height: 6),
                       Text(
-                        'Course ${_ticket.rideRef}',
+                        message.body,
                         style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontSm,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                           color: AppColors.slateDark,
+                          height: 1.4,
                         ),
                       ),
                     ],
                   ),
                 ),
-            ],
-          ),
-          if (_ticket.resolution != null && _ticket.resolution!.isNotEmpty) ...[
-            const SizedBox(height: AppConstants.spacingSm),
-            Container(
-              padding: const EdgeInsets.all(AppConstants.spacingSm),
-              decoration: BoxDecoration(
-                color: AppColors.refundPillBg,
-                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.check_circle_outline_rounded,
-                    color: AppColors.greenSuccess,
-                    size: AppConstants.iconSizeMd,
-                  ),
-                  const SizedBox(width: AppConstants.spacingSm),
-                  Expanded(
-                    child: Text(
-                      'Résolution : ${_ticket.resolution}',
-                      style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontSm,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.greenSuccess,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInitialClaimCard() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.spacingMd),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(AppConstants.radiusCard),
-        border: Border.all(
-          color: AppColors.grayBorderDivider,
-          width: AppConstants.strokeWidthBorder,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: AppConstants.spacingLg,
-                height: AppConstants.spacingLg,
-                decoration: const BoxDecoration(
-                  color: AppColors.peachContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.person_outline_rounded,
-                  size: AppConstants.iconSizeSm,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: AppConstants.spacingSm),
-              Text(
-                'Votre signalement initial',
-                style: GoogleFonts.inter(
-                  fontSize: AppConstants.fontSm,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.slateDark,
-                ),
               ),
             ],
           ),
-          const SizedBox(height: AppConstants.spacingSm),
-          Text(
-            _ticket.description,
-            style: GoogleFonts.inter(
-              fontSize: AppConstants.fontBase,
-              fontWeight: FontWeight.w500,
-              color: AppColors.slateDark,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoMessagesPrompt() {
-    return Container(
-      padding: const EdgeInsets.all(AppConstants.spacingLg),
-      decoration: BoxDecoration(
-        color: AppColors.grayBgLight,
-        borderRadius: BorderRadius.circular(AppConstants.radiusCard),
-      ),
-      child: Center(
-        child: Text(
-          'Notre équipe support traite votre réclamation. Vous pouvez ajouter un message ou des précisions ci-dessous.',
-          textAlign: TextAlign.center,
-          style: GoogleFonts.inter(
-            fontSize: AppConstants.fontSm,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
-            height: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMessageBubble(SupportTicketMessageModel msg) {
-    final isMe = msg.isUser;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppConstants.spacingSm),
-      child: Row(
-        mainAxisAlignment:
-            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isMe) ...[
-            Container(
-              width: AppConstants.spacingUnitXl,
-              height: AppConstants.spacingUnitXl,
-              decoration: const BoxDecoration(
-                color: AppColors.slateDark,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.support_agent_rounded,
-                size: AppConstants.iconSizeSm,
-                color: AppColors.white,
-              ),
-            ),
-            const SizedBox(width: AppConstants.spacingXs),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-                vertical: AppConstants.spacingSm,
-              ),
-              decoration: BoxDecoration(
-                color: isMe ? AppColors.primary : AppColors.grayBgLight,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(AppConstants.radiusCard),
-                  topRight: const Radius.circular(AppConstants.radiusCard),
-                  bottomLeft: Radius.circular(
-                    isMe ? AppConstants.radiusCard : AppConstants.radiusXs,
-                  ),
-                  bottomRight: Radius.circular(
-                    isMe ? AppConstants.radiusXs : AppConstants.radiusCard,
-                  ),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment:
-                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    msg.body,
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontBase,
-                      fontWeight: FontWeight.w500,
-                      color: isMe ? AppColors.white : AppColors.slateDark,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: AppConstants.spacingXxs),
-                  Text(
-                    msg.formattedDate,
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontXs,
-                      fontWeight: FontWeight.w400,
-                      color: isMe
-                          ? AppColors.white.withValues(alpha: 0.8)
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                ],
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 40),
+            child: Text(
+              'Support · ${message.formattedTime}',
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
               ),
             ),
           ),
@@ -600,18 +763,18 @@ class _SupportTicketDetailPageState extends State<SupportTicketDetailPage> {
 
   Widget _buildBottomReplyBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(
-        AppConstants.spacingMd,
-        AppConstants.spacingSm,
-        AppConstants.spacingMd,
-        AppConstants.spacingSm,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.of(context).viewInsets.bottom + 12,
       ),
       decoration: const BoxDecoration(
         color: AppColors.white,
         border: Border(
           top: BorderSide(
-            color: AppColors.grayBorderDivider,
-            width: AppConstants.strokeWidthBorder,
+            color: Color(0xFFE2E8F0),
+            width: 1,
           ),
         ),
       ),
@@ -619,62 +782,68 @@ class _SupportTicketDetailPageState extends State<SupportTicketDetailPage> {
         children: [
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingMd,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: AppColors.grayBgLight,
+                color: const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+                border: Border.all(
+                  color: const Color(0xFFE2E8F0),
+                  width: AppConstants.strokeWidthBorder,
+                ),
               ),
               child: TextField(
                 controller: _replyController,
                 focusNode: _replyFocusNode,
-                textCapitalization: TextCapitalization.sentences,
-                minLines: 1,
-                maxLines: 4,
-                style: GoogleFonts.inter(
-                  fontSize: AppConstants.fontBase,
-                  color: AppColors.slateDark,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Écrire un message...',
-                  hintStyle: GoogleFonts.inter(
-                    fontSize: AppConstants.fontBase,
+                decoration: const InputDecoration(
+                  hintText: 'Répondre à l\'agent...',
+                  hintStyle: TextStyle(
                     color: AppColors.textSecondary,
+                    fontSize: 14,
                   ),
                   border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: AppConstants.spacingSm,
-                  ),
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(vertical: 12),
+                ),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.slateDark,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: AppConstants.spacingSm),
+          const SizedBox(width: 10),
           GestureDetector(
-            onTap: _isSending ? null : _sendMessage,
+            onTap: _sendMessage,
             child: Container(
-              width: AppConstants.buttonHeight,
-              height: AppConstants.buttonHeight,
-              decoration: const BoxDecoration(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
                 color: AppColors.primary,
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: _isSending
                   ? const Center(
                       child: SizedBox(
-                        width: AppConstants.iconSizeSm,
-                        height: AppConstants.iconSizeSm,
+                        width: 20,
+                        height: 20,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2,
                           color: AppColors.white,
+                          strokeWidth: 2,
                         ),
                       ),
                     )
                   : const Icon(
                       Icons.send_rounded,
                       color: AppColors.white,
-                      size: AppConstants.iconSizeMd,
+                      size: 20,
                     ),
             ),
           ),

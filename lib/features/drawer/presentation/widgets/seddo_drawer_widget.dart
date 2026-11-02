@@ -20,7 +20,6 @@ import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart
 
 /// Lateral navigation drawer matching the design mockup:
 /// - User profile: Orange circular avatar (AD), "AWA DIOP", rating (★ 4,8 · 77 123 45 12)
-/// - Modern payment card: Dark background with stylish orange circular curve, wallet icon, Orange Money
 /// - Menu list items:
 ///   - Activité (refresh-ccw-clock-svgrepo-com.svg / Courses et remboursements)
 ///   - TCU (bus-svgrepo-com.svg / Bus, BRT et TER)
@@ -71,13 +70,9 @@ class SeddoDrawerWidget extends StatelessWidget {
                           children: [
                             // 1. User Profile Header
                             _buildProfileHeader(context, user),
-                            const SizedBox(height: 22),
-
-                            // 2. Modern Dark Payment Card with Orange Curve
-                            _buildPaymentCard(context, user),
                             const SizedBox(height: 20),
 
-                        // 3. Navigation List Items
+                        // 2. Navigation List Items
                         _buildMenuItem(
                           context: context,
                           iconPath:
@@ -320,106 +315,7 @@ class SeddoDrawerWidget extends StatelessWidget {
         );
   }
 
-  // Modern Payment Card
-  Widget _buildPaymentCard(BuildContext context, UserModel? user) {
-    final paymentPhone = (user != null && user.maskedPhone.isNotEmpty)
-        ? user.maskedPhone
-        : '77 ••• 45 12';
 
-    return Material(
-      color: AppColors.transparent,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pop();
-          _openPaymentSheet(context, user);
-        },
-        borderRadius: BorderRadius.circular(18),
-        splashColor: AppColors.primary.withValues(alpha: 0.12),
-        child: Container(
-          height: 74,
-          decoration: BoxDecoration(
-            color: AppColors.drawerDark,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [
-              BoxShadow(
-                color: AppColors.shadowDarkBlack,
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              // Stylish orange crescent on the right edge
-              Positioned(
-                right: -24,
-                top: -12,
-                bottom: -12,
-                child: Container(
-                  width: 90,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-              // Card content
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: AppColors.drawerCardBorder,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.credit_card_rounded,
-                        color: AppColors.white,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'drawer.payment'.tr(),
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.white,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Orange Money $paymentPhone',
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.white.withValues(alpha: 0.8),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // Menu item with vector SVG icon or iconWidget, bold title and subtitle
   Widget _buildMenuItem({
@@ -634,166 +530,6 @@ class SeddoDrawerWidget extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-
-  void _openPaymentSheet(BuildContext context, [UserModel? user]) {
-    final effectiveUser = user ?? AuthRepository().currentUser;
-    final sheetPhone = (effectiveUser != null &&
-            effectiveUser.formattedDisplayPhone.isNotEmpty)
-        ? effectiveUser.formattedDisplayPhone
-        : '+221 77 123 45 12';
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'drawer.payment_methods'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'drawer.payment_secure_desc'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.orangeLightBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.primary, width: 1.5),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.phone_android_rounded,
-                      color: AppColors.white,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Orange Money',
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          '$sheetPhone · ${'drawer.default_mode'.tr()}',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: AppColors.primary,
-                    size: 24,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceGrey,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.waveBlue,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.waves_rounded,
-                      color: AppColors.white,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Wave',
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          'drawer.soon'.tr(),
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

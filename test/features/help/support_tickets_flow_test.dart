@@ -111,30 +111,36 @@ void main() {
 
       // Top bar
       expect(find.text('Mes réclamations'), findsOneWidget);
+      expect(find.text('Assistance prioritaire client'), findsOneWidget);
+
+      // Filter tabs are present
+      expect(find.text('Toutes'), findsOneWidget);
+      expect(find.text('En attente'), findsOneWidget);
+      expect(find.text('Résolues'), findsOneWidget);
 
       // List of tickets from GET /v1/support/tickets
-      expect(find.text('TK-1024'), findsOneWidget);
+      expect(find.text('#TK-1024'), findsOneWidget);
       expect(find.text('Objet perdu'), findsOneWidget);
-      expect(find.text('Ouverte'), findsOneWidget);
-      expect(find.text('Course SD-1270'), findsOneWidget);
+      expect(find.text('OUVERT'), findsOneWidget);
+      expect(find.textContaining('Course SD-1270'), findsOneWidget);
       expect(
         find.text('J’ai oublié mon sac noir sur la banquette arrière'),
         findsOneWidget,
       );
 
-      expect(find.text('TK-1009'), findsOneWidget);
+      expect(find.text('#TK-1009'), findsOneWidget);
       expect(find.text('Montant ou paiement'), findsOneWidget);
-      expect(find.text('En cours'), findsOneWidget);
+      expect(find.text('EN COURS'), findsOneWidget);
 
-      // Tap on ticket TK-1024 to open detail
-      await tester.tap(find.text('TK-1024'));
+      // Tap on ticket #TK-1024 to open modal sheet detail
+      await tester.tap(find.text('#TK-1024'));
       await tester.pumpAndSettle();
 
-      // Detail page is opened
+      // Detail bottom sheet is opened
       expect(find.byType(SupportTicketDetailPage), findsOneWidget);
-      expect(find.text('Réclamation TK-1024'), findsOneWidget);
-      expect(find.text('Votre signalement initial'), findsOneWidget);
-      expect(find.text('MESSAGES AVEC LE SUPPORT'), findsOneWidget);
+      expect(find.text('ENREGISTRÉ'), findsOneWidget);
+      expect(find.text('EXAMEN EN COURS'), findsOneWidget);
+      expect(find.text('RÉSOLU'), findsOneWidget);
 
       // Thread messages are visible
       expect(
@@ -173,8 +179,8 @@ void main() {
         findsOneWidget,
       );
 
-      // Back to tickets list
-      await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+      // Close modal sheet back to tickets list
+      await tester.tap(find.byIcon(Icons.close_rounded));
       await tester.pumpAndSettle();
 
       expect(find.byType(SupportTicketsPage), findsOneWidget);
@@ -212,8 +218,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Only first 10 tickets are initially loaded into the displayed list
-      expect(find.text('TK-101'), findsOneWidget);
-      expect(find.text('TK-1011'), findsNothing);
+      expect(find.text('#TK-101'), findsOneWidget);
+      expect(find.text('#TK-1011'), findsNothing);
 
       // Scroll down to trigger pagination and load next batch
       await tester.drag(find.byType(ListView), const Offset(0, -400));
@@ -222,8 +228,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Scroll until ticket 15 is in view
-      await tester.scrollUntilVisible(find.text('TK-1015'), 200);
-      expect(find.text('TK-1015'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('#TK-1015'),
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text('#TK-1015'), findsOneWidget);
     });
   });
 }

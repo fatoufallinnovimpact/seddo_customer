@@ -111,7 +111,8 @@ void main() {
     );
   }
 
-  testWidgets('SeddoDrawerWidget renders user profile, payment card and all menu items',
+  testWidgets(
+      'SeddoDrawerWidget renders user profile and all menu items without payment card',
       (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2.0;
@@ -130,9 +131,9 @@ void main() {
     expect(find.text('4,8'), findsOneWidget);
     expect(find.text('77 123 45 12'), findsOneWidget);
 
-    // 2. Payment card
-    expect(find.text('Paiement'), findsOneWidget);
-    expect(find.text('Orange Money 77 ••• 45 12'), findsOneWidget);
+    // 2. Payment card removed
+    expect(find.text('Paiement'), findsNothing);
+    expect(find.textContaining('Orange Money'), findsNothing);
 
     // 3. Main Menu items
     expect(find.text('Activité'), findsOneWidget);
@@ -234,7 +235,7 @@ void main() {
     // Initially French
     expect(find.text('Activité'), findsOneWidget);
     expect(find.text('Sécurité'), findsOneWidget);
-    expect(find.text('Paiement'), findsOneWidget);
+    expect(find.text('Aide'), findsOneWidget);
     expect(find.text('Se déconnecter'), findsOneWidget);
 
     // Tap on Langue to open LanguageModal
@@ -254,12 +255,12 @@ void main() {
     // Drawer should now be in Wolof!
     expect(find.text('Yëngu-yëngu'), findsOneWidget);
     expect(find.text('Kaaraange'), findsOneWidget);
-    expect(find.text('Fey'), findsOneWidget);
+    expect(find.text('Ndimbal'), findsOneWidget);
     expect(find.text('Génn'), findsOneWidget);
   });
 
   testWidgets(
-      'SeddoDrawerWidget displays authenticated user name, phone and dynamic Orange Money number',
+      'SeddoDrawerWidget displays authenticated user name and phone without payment card',
       (tester) async {
     const testUser = UserModel(
       id: 'usr_771004313',
@@ -292,13 +293,8 @@ void main() {
     expect(find.text('FF'), findsOneWidget);
     expect(find.text('77 100 43 13'), findsOneWidget);
 
-    // 2. Dynamic Orange Money card number
-    expect(find.text('Orange Money 77 ••• 43 13'), findsOneWidget);
-
-    // 3. Tap payment card to open payment sheet and verify real number
-    await tester.tap(find.text('Orange Money 77 ••• 43 13'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('+221 77 100 43 13 · Mode par défaut'), findsOneWidget);
+    // 2. Payment card is removed
+    expect(find.text('Paiement'), findsNothing);
+    expect(find.textContaining('Orange Money'), findsNothing);
   });
 }

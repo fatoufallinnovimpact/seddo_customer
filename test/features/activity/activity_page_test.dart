@@ -63,11 +63,9 @@ void main() {
       expect(find.text('COURSES'), findsOneWidget);
       expect(find.text('REMBOURSEMENTS'), findsOneWidget);
 
-      // Summary metric cards
-      expect(find.text('Courses payées'), findsOneWidget);
-      expect(find.text('3'), findsOneWidget);
-      expect(find.text('Total dépensé'), findsOneWidget);
-      expect(find.text('22 900 F'), findsOneWidget);
+      // Summary metric cards removed
+      expect(find.text('Courses payées'), findsNothing);
+      expect(find.text('Total dépensé'), findsNothing);
 
       // Recent ride section
       expect(find.text('RÉCENT'), findsOneWidget);
@@ -232,7 +230,8 @@ void main() {
       await tester.tap(find.text('COURSES'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Courses payées'), findsOneWidget);
+      expect(find.text('Courses payées'), findsNothing);
+      expect(find.text('RÉCENT'), findsOneWidget);
     });
   });
 }

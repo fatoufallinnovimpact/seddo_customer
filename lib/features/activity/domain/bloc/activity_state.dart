@@ -20,7 +20,7 @@ class ActivityLoadingState extends ActivityState {
 class ActivityLoadedState extends ActivityState {
   final ActivityTab currentTab;
   final ActivitySummary summary;
-  final ActivityRideItem recentRide;
+  final ActivityRideItem? recentRide;
   final List<ActivityRideItem> pastRides;
   final List<ActivityRefundItem> refunds;
   final int currentPage;
@@ -33,7 +33,7 @@ class ActivityLoadedState extends ActivityState {
   const ActivityLoadedState({
     required this.currentTab,
     required this.summary,
-    required this.recentRide,
+    this.recentRide,
     required this.pastRides,
     required this.refunds,
     this.currentPage = 1,
