@@ -156,8 +156,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Aucun chauffeur disponible'), findsOneWidget);
-      expect(find.textContaining('Forte demande en ce moment'), findsOneWidget);
+      expect(find.textContaining('Forte demande autour de Point E'), findsOneWidget);
       expect(find.text('3 500 F remboursés'), findsOneWidget);
+      expect(find.text('Sur votre Orange Money'), findsOneWidget);
       expect(find.text('Plus tard'), findsOneWidget);
       expect(find.text('Réessayer'), findsOneWidget);
 
@@ -165,6 +166,76 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(chosenAction, NoDriverFoundAction.retry);
+    });
+
+    testWidgets('NoDriverFoundSheet displays Sur votre Wave for Wave payment',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () async {
+                  await NoDriverFoundSheet.show(
+                    ctx,
+                    departure: departure,
+                    destination: destination,
+                    rideOption: ecoOption,
+                    paymentMethod: PaymentMethodType.wave,
+                  );
+                },
+                child: const Text('Open Wave No Driver Sheet'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open Wave No Driver Sheet'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('3 500 F remboursés'), findsOneWidget);
+      expect(find.text('Sur votre Wave'), findsOneWidget);
+    });
+
+    testWidgets('NoDriverFoundSheet hides refund card when payment is Cash',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () async {
+                  await NoDriverFoundSheet.show(
+                    ctx,
+                    departure: departure,
+                    destination: destination,
+                    rideOption: ecoOption,
+                    paymentMethod: PaymentMethodType.cash,
+                  );
+                },
+                child: const Text('Open Cash No Driver Sheet'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open Cash No Driver Sheet'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aucun chauffeur disponible'), findsOneWidget);
+      expect(find.textContaining('remboursés'), findsNothing);
+      expect(find.text('Sur votre Orange Money'), findsNothing);
+      expect(find.text('Sur votre Wave'), findsNothing);
     });
 
     testWidgets('RideCancelledPage renders refund info and reorder redirects',

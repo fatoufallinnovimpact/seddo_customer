@@ -679,6 +679,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       departure: widget.departure,
       destination: widget.destination,
       rideOption: widget.rideOption,
+      paymentMethod: widget.paymentMethod,
     );
 
     if (!mounted || action == null) return;

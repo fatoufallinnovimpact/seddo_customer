@@ -98,6 +98,18 @@ abstract class AppConstants {
   static const double fontNumberBig = 30.0;
   static const int activityItemsPerPage = 10;
 
+  // No Driver Found Modal & Refund tokens
+  static const double refundCarCircleSize = 84.0;
+  static const double refundCarSvgSize = 42.0;
+  static const double refundClockBadgeSize = 26.0;
+  static const double refundClockIconSize = 15.0;
+  static const double refundClockBadgeOffset = -2.0;
+  static const double refundRefPillRadius = 10.0;
+  static const double fontTitleDialog = 24.0;
+  static const double fontTitleDialogLetterSpacing = -0.4;
+  static const double refundRefLetterSpacing = 0.5;
+  static const double radiusButtonRound = 26.0;
+
   // TCU (Public Transport) Component Tokens
   static const double tcuVehicleImageHeight = 50.0;
   static const double tcuUnderlineHeight = 3.5;

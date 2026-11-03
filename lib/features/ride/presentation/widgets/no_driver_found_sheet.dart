@@ -1,11 +1,12 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
-import 'package:seddo/features/activity/presentation/widgets/refund_details_card_widget.dart';
+import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 
 enum NoDriverFoundAction {
   later,
@@ -13,15 +14,17 @@ enum NoDriverFoundAction {
 }
 
 /// Feuille modale affichée lorsqu'aucun chauffeur n'est disponible dans la zone :
-/// - "Aucun chauffeur disponible"
-/// - "Forte demande en ce moment autour de [lieu]."
-/// - Refund notification card with green refresh icon, amount, and OM ref
-/// - "Plus tard" button and "Réessayer" button
+/// - Icône de voiture SVG orange avec badge horloge
+/// - Titre "Aucun chauffeur disponible"
+/// - Sous-titre "Forte demande autour de [lieu]. Réessayez dans quelques instants."
+/// - Carte de remboursement (visible uniquement pour Wave ou Orange Money)
+/// - Bouton principal "Réessayer" et lien "Plus tard"
 class NoDriverFoundSheet extends StatelessWidget {
   final PlaceSearchResult departure;
   final PlaceSearchResult destination;
   final RideOptionModel rideOption;
   final String transactionRef;
+  final PaymentMethodType? paymentMethod;
 
   const NoDriverFoundSheet({
     super.key,
@@ -29,6 +32,7 @@ class NoDriverFoundSheet extends StatelessWidget {
     required this.destination,
     required this.rideOption,
     this.transactionRef = 'CI270415.1902.C4D1',
+    this.paymentMethod,
   });
 
   static Future<NoDriverFoundAction?> show(
@@ -37,6 +41,7 @@ class NoDriverFoundSheet extends StatelessWidget {
     required PlaceSearchResult destination,
     required RideOptionModel rideOption,
     String transactionRef = 'CI270415.1902.C4D1',
+    PaymentMethodType? paymentMethod,
   }) {
     return showModalBottomSheet<NoDriverFoundAction>(
       context: context,
@@ -47,6 +52,7 @@ class NoDriverFoundSheet extends StatelessWidget {
         destination: destination,
         rideOption: rideOption,
         transactionRef: transactionRef,
+        paymentMethod: paymentMethod,
       ),
     );
   }
@@ -64,6 +70,17 @@ class NoDriverFoundSheet extends StatelessWidget {
     final _ = context.locale;
     final systemBottom = MediaQuery.of(context).padding.bottom;
 
+    final bool isCash = paymentMethod == PaymentMethodType.cash;
+    final bool shouldShowRefund = !isCash;
+
+    final String paymentProviderText = paymentMethod == PaymentMethodType.wave
+        ? 'Sur votre Wave'
+        : 'Sur votre Orange Money';
+
+    final String locationName = departure.mainText.isNotEmpty
+        ? departure.mainText
+        : 'votre zone';
+
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.white,
@@ -73,122 +90,275 @@ class NoDriverFoundSheet extends StatelessWidget {
       ),
       padding: EdgeInsets.fromLTRB(
         AppConstants.spacingLg,
-        12,
+        AppConstants.spacingUnitLg,
         AppConstants.spacingLg,
-        systemBottom > 0 ? systemBottom + 12 : 24,
+        systemBottom > 0
+            ? systemBottom + AppConstants.spacingUnitLg
+            : AppConstants.spacingLg,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Drag handle
-          Center(
-            child: Container(
-              width: AppConstants.circularIconContainerSize,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.dragHandle,
-                borderRadius: BorderRadius.circular(AppConstants.radiusXs),
-              ),
+          Container(
+            width: AppConstants.handleWidth,
+            height: AppConstants.handleHeight,
+            decoration: BoxDecoration(
+              color: AppColors.dragHandle,
+              borderRadius: BorderRadius.circular(AppConstants.radiusXs),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppConstants.spacingLg),
+
+          // Illustration: Voiture confortcar.svg avec badge horloge
+          SizedBox(
+            width: AppConstants.refundCarCircleSize,
+            height: AppConstants.refundCarCircleSize,
+            child: Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                // Cercle pêche de fond avec icône de voiture
+                Container(
+                  width: AppConstants.refundCarCircleSize,
+                  height: AppConstants.refundCarCircleSize,
+                  decoration: const BoxDecoration(
+                    color: AppColors.peachContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: SvgPicture.asset(
+                    'assets/icons/confortcar.svg',
+                    width: AppConstants.refundCarSvgSize,
+                    height: AppConstants.refundCarSvgSize,
+                    fit: BoxFit.contain,
+                    colorFilter: const ColorFilter.mode(
+                      AppColors.primary,
+                      BlendMode.srcIn,
+                    ),
+                  ),
+                ),
+
+                // Badge blanc avec horloge en bas à droite
+                Positioned(
+                  bottom: AppConstants.refundClockBadgeOffset,
+                  right: AppConstants.refundClockBadgeOffset,
+                  child: Container(
+                    width: AppConstants.refundClockBadgeSize,
+                    height: AppConstants.refundClockBadgeSize,
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.refundClockBadgeBorder,
+                        width: AppConstants.strokeWidthBorder,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: AppColors.cardShadow,
+                          blurRadius: AppConstants.spacingXs,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.access_time_rounded,
+                      size: AppConstants.refundClockIconSize,
+                      color: AppColors.refundClockIcon,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppConstants.spacingLg),
 
           // Title
           Text(
             _safeTr('ride.no_driver_title', 'Aucun chauffeur disponible'),
+            textAlign: TextAlign.center,
             style: GoogleFonts.inter(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
+              fontSize: AppConstants.fontTitleDialog,
+              fontWeight: FontWeight.w800,
               color: AppColors.textPrimary,
-              letterSpacing: -0.4,
+              letterSpacing: AppConstants.fontTitleDialogLetterSpacing,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppConstants.spacingSm),
 
           // Subtitle
-          Text(
-            'ride.high_demand_around'.tr(args: [departure.mainText]),
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w400,
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spacingSm,
+            ),
+            child: Text(
+              'Forte demande autour de $locationName. Réessayez dans quelques instants.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: AppConstants.fontBase,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w400,
+                height: AppConstants.bannerLineHeight,
+              ),
             ),
           ),
 
-          const SizedBox(height: 20),
+          // Carte de remboursement : visible uniquement si paiement Wave ou Orange Money
+          if (shouldShowRefund) ...[
+            const SizedBox(height: AppConstants.spacingLg),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingMd,
+                vertical: AppConstants.spacingMd,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.refundContainerBg,
+                borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Cercle blanc avec icône check verte
+                  Container(
+                    width: AppConstants.searchIconBoxSize,
+                    height: AppConstants.searchIconBoxSize,
+                    decoration: const BoxDecoration(
+                      color: AppColors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: AppColors.refundGreen,
+                      size: AppConstants.iconSizeXl,
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingUnitXl),
 
-          // Refund Card
-          RefundDetailsCardWidget(
-            formattedAmount: rideOption.formattedPrice,
-            transactionRef: transactionRef,
+                  // Montant, libellé de paiement et référence
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${rideOption.formattedPrice} remboursés',
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontXl,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.refundAmountGreen,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: AppConstants.spacingTiny),
+                        Text(
+                          paymentProviderText,
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontMd,
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: AppConstants.spacingSm),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppConstants.spacingUnit,
+                            vertical: AppConstants.spacingXs,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.refundRefPillRadius,
+                            ),
+                            border: Border.all(
+                              color: AppColors.cardBorder,
+                              width: AppConstants.strokeWidthBorder,
+                            ),
+                          ),
+                          child: Text(
+                            transactionRef,
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.fontSm,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                              letterSpacing: AppConstants.refundRefLetterSpacing,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: AppConstants.spacingLg),
+
+          // Bouton principal : Réessayer
+          SizedBox(
+            width: double.infinity,
+            height: AppConstants.buttonHeight,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.white,
+                elevation: AppConstants.elevationNone,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(
+                    AppConstants.radiusButtonRound,
+                  ),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop(NoDriverFoundAction.retry);
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.refresh_rounded,
+                    size: AppConstants.iconSizeLg,
+                    color: AppColors.white,
+                  ),
+                  const SizedBox(width: AppConstants.spacingSm),
+                  Text(
+                    _safeTr('common.retry', 'Réessayer'),
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontLg,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+          const SizedBox(height: AppConstants.spacingUnit),
 
-          const SizedBox(height: 24),
-
-          // Action Buttons: Plus tard and Réessayer
-          Row(
-            children: [
-              // Plus tard
-              Expanded(
-                child: SizedBox(
-                  height: AppConstants.buttonHeight,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.cancelSecondaryBtnBg,
-                      foregroundColor: AppColors.textPrimary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusLg,
-                        ),
-                      ),
-                    ),
-                    onPressed: () {
-                      Navigator.of(context).pop(NoDriverFoundAction.later);
-                    },
-                    child: Text(
-                      _safeTr('common.later', 'Plus tard'),
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
+          // Bouton secondaire : Plus tard
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                padding: const EdgeInsets.symmetric(
+                  vertical: AppConstants.spacingUnit,
                 ),
               ),
-
-              const SizedBox(width: 12),
-
-              // Réessayer
-              Expanded(
-                child: SizedBox(
-                  height: AppConstants.buttonHeight,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.radiusLg,
-                        ),
-                      ),
-                    ),
-                    onPressed: () {
-                      Navigator.of(context).pop(NoDriverFoundAction.retry);
-                    },
-                    child: Text(
-                      _safeTr('common.retry', 'Réessayer'),
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
+              onPressed: () {
+                Navigator.of(context).pop(NoDriverFoundAction.later);
+              },
+              child: Text(
+                _safeTr('common.later', 'Plus tard'),
+                style: GoogleFonts.inter(
+                  fontSize: AppConstants.fontLg,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),

@@ -36,6 +36,7 @@ abstract class ApiEndpoints {
   static String rideShare(String id) => '$baseUrl/v1/rides/$id/share';
   static String shareView(String token) => '$baseUrl/v1/share/$token';
   static String rideSos(String id) => '$baseUrl/v1/rides/$id/sos';
+  static String rideLiveActivityToken(String id) => '$baseUrl/v1/rides/$id/live-activity-token';
 
   // Drivers nearby endpoint (GET /v1/drivers/nearby?lat={lat}&lng={lng})
   static String get driversNearby => '$baseUrl/v1/drivers/nearby';

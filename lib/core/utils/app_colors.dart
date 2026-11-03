@@ -165,6 +165,13 @@ abstract class AppColors {
   static const Color refundContainerBg = Color(0xFFE8F8F0);
   static const Color refundGreen = Color(0xFF1E8E4D);
   static const Color refundPillBg = Color(0xFFE8F8F0);
+  static const Color refundAmountGreen = Color(0xFF0F5132);
+  static const Color refundClockIcon = Color(0xFF9A3412);
+  static const Color refundClockBadgeBorder = Color(0xFFFFE0CC);
+  static const Color nearbyCarAvailableBadgeBg = Color(0xFFD1FAE5);
+  static const Color nearbyCarAvailableIcon = Color(0xFF047857);
+  static const Color nearbyNoCarBadgeBg = Color(0xFFFEF3C7);
+  static const Color nearbyNoCarIcon = Color(0xFFD97706);
   static const Color radarRingColor = Color(0x4DFB5B00);
   static const Color radarFillColor = Color(0x0FFB5B00);
   static const Color licensePlateBg = Color(0xFF1E293B);

@@ -13,6 +13,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_cancel_result_model.dart';
+import 'package:seddo/features/ride/data/models/ride_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
@@ -30,6 +31,8 @@ import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/services/route_service.dart';
 import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
+import 'package:seddo/features/ride/data/services/ride_live_update_service_impl.dart';
+import 'package:seddo/features/ride/domain/bloc/ride_live_update_bloc.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Écran affiché lorsque le chauffeur est en approche vers le point de départ :
@@ -119,6 +122,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   StreamSubscription<RealtimeRideEtaEvent>? _realtimeEtaSub;
   StreamSubscription<RealtimeRideRouteEvent>? _realtimeRouteSub;
   StreamSubscription<void>? _realtimeReconnectSub;
+  RideLiveUpdateBloc? _liveUpdateBloc;
 
   DateTime _lastDriverLocationTime = DateTime.now();
   Timer? _stalePositionCheckTimer;
@@ -245,6 +249,16 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       // 2. Connexion WebSocket unique et adhésion au canal ride:{id}
       RealtimeService().connect();
       RealtimeService().joinRide(effectiveRideId);
+
+      // 3. Initialisation du suivi sur écran verrouillé (Live Activity iOS / Live Update Android 16)
+      _liveUpdateBloc = RideLiveUpdateBloc(service: RideLiveUpdateServiceImpl());
+      _liveUpdateBloc?.add(InitializeLiveUpdateEvent(
+        rideId: effectiveRideId,
+        driver: widget.driver,
+        departure: widget.departure,
+        destination: widget.destination,
+        initialStatus: RideStatus.driverAssigned,
+      ));
 
       // Écoute du statut de la course (ride.status)
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
@@ -407,6 +421,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     _realtimeEtaSub?.cancel();
     _realtimeRouteSub?.cancel();
     _realtimeReconnectSub?.cancel();
+    _liveUpdateBloc?.close();
+    _liveUpdateBloc = null;
   }
 
   @override
@@ -951,6 +967,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
     _ridePollTimer?.cancel();
     _approachController?.stop();
+    _liveUpdateBloc?.add(const DismissLiveUpdateEvent(reason: 'Course annulée par le client'));
 
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId;

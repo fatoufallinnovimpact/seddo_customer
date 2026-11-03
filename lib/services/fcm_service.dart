@@ -2,6 +2,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
+import 'package:seddo/features/ride/data/services/ride_live_update_service_impl.dart';
+import 'package:seddo/features/ride/domain/models/ride_live_update_data.dart';
 
 /// Service gérant les notifications push distantes Firebase Cloud Messaging (FCM).
 /// Permet la réception des notifications push en premier plan (foreground),
@@ -63,9 +65,49 @@ class FcmService {
         await AuthRepository().registerCurrentDevicePushToken();
       });
 
+      // 5. Configuration des messages entrants en premier plan pour les Live Updates
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        _handleIncomingLiveUpdate(message);
+      });
+
+      // 6. Gestionnaire de réveil en arrière-plan (app en pause ou tuée)
+      FirebaseMessaging.onBackgroundMessage(fcmBackgroundLiveUpdateHandler);
+
       _initialized = true;
     } catch (e) {
       debugPrint('[FCM] Note : Firebase non initialisé ou fichier plist/json manquant ($e)');
+    }
+  }
+
+  static void _handleIncomingLiveUpdate(RemoteMessage message) {
+    final data = message.data;
+    if (data['type'] == 'ride_live_update') {
+      final action = data['action']?.toString().toUpperCase() ?? 'UPDATE';
+      final liveService = RideLiveUpdateServiceImpl();
+      final rideId = data['rideId']?.toString() ?? '';
+      if (action == 'END' || data['status'] == 'COMPLETED' || data['status'] == 'CANCELLED') {
+        liveService.endLiveUpdate(rideId: rideId);
+      } else {
+        final updateData = RideLiveUpdateData.fromMap(data);
+        liveService.updateLiveUpdate(updateData);
+      }
+    }
+  }
+}
+
+/// Global top-level background handler waking the app when FCM sends a data message
+@pragma('vm:entry-point')
+Future<void> fcmBackgroundLiveUpdateHandler(RemoteMessage message) async {
+  final data = message.data;
+  if (data['type'] == 'ride_live_update') {
+    final action = data['action']?.toString().toUpperCase() ?? 'UPDATE';
+    final liveService = RideLiveUpdateServiceImpl();
+    final rideId = data['rideId']?.toString() ?? '';
+    if (action == 'END' || data['status'] == 'COMPLETED' || data['status'] == 'CANCELLED') {
+      await liveService.endLiveUpdate(rideId: rideId);
+    } else {
+      final updateData = RideLiveUpdateData.fromMap(data);
+      await liveService.updateLiveUpdate(updateData);
     }
   }
 }

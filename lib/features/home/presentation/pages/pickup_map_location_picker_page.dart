@@ -713,13 +713,13 @@ class _PickupMapLocationPickerPageState
                       Container(
                         padding: const EdgeInsets.all(4),
                         decoration: const BoxDecoration(
-                          color: Color(0xFFD1FAE5),
+                          color: AppColors.nearbyCarAvailableBadgeBg,
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.directions_car_rounded,
                           size: 14,
-                          color: Color(0xFF047857),
+                          color: AppColors.nearbyCarAvailableIcon,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -822,19 +822,19 @@ class _PickupMapLocationPickerPageState
                       Container(
                         padding: const EdgeInsets.all(4),
                         decoration: const BoxDecoration(
-                          color: Color(0xFFFEF3C7),
+                          color: AppColors.nearbyNoCarBadgeBg,
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.info_outline_rounded,
                           size: 14,
-                          color: Color(0xFFD97706),
+                          color: AppColors.nearbyNoCarIcon,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          '0 voiture disponible actuellement',
+                          'Pas de voiture disponible actuellement',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(

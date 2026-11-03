@@ -252,7 +252,7 @@ void main() {
 
       expect(mockRideService.getNearbyDriversCalls, greaterThanOrEqualTo(1));
       expect(
-        find.text('0 voiture disponible actuellement'),
+        find.text('Pas de voiture disponible actuellement'),
         findsOneWidget,
       );
       expect(find.text('(rayon 3 km)'), findsNothing);
