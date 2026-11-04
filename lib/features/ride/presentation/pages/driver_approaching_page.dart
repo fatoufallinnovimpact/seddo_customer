@@ -1951,7 +1951,6 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
                                           // Driver Name & Rating
                                           Row(
-                                            mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Flexible(
                                                 child: Text(
@@ -1966,7 +1965,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
                                               ),
-                                              const SizedBox(width: 5),
+                                              const SizedBox(width: 4),
                                               const Text(
                                                 '•',
                                                 style: TextStyle(
@@ -1974,11 +1973,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                   fontSize: 12,
                                                 ),
                                               ),
-                                              const SizedBox(width: 5),
+                                              const SizedBox(width: 4),
                                               const Icon(
                                                 Icons.star_rounded,
                                                 color: AppColors.amberRating,
-                                                size: 15,
+                                                size: 14,
                                               ),
                                               const SizedBox(width: 2),
                                               Text(
@@ -1991,23 +1990,27 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                 ),
                                               ),
                                               if (_isOffline) ...[
-                                                const SizedBox(width: 6),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(
-                                                    horizontal: 5,
-                                                    vertical: 1.5,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.grayLight,
-                                                    borderRadius:
-                                                        BorderRadius.circular(4),
-                                                  ),
-                                                  child: Text(
-                                                    'Position non à jour',
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: AppColors.grayText,
+                                                const SizedBox(width: 4),
+                                                Flexible(
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 4,
+                                                      vertical: 1.5,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors.grayLight,
+                                                      borderRadius:
+                                                          BorderRadius.circular(4),
+                                                    ),
+                                                    child: Text(
+                                                      'Position non à jour',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 9.5,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: AppColors.grayText,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
                                                     ),
                                                   ),
                                                 ),

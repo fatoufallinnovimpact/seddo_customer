@@ -18,15 +18,6 @@ class ActiveRideOfflineBanner extends StatelessWidget {
     this.onRetry,
   });
 
-  String _formatElapsed() {
-    if (lastUpdateTime == null) return 'un instant';
-    final diff = DateTime.now().difference(lastUpdateTime!);
-    if (diff.inMinutes < 1) {
-      return 'un instant';
-    }
-    return '${diff.inMinutes} min';
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!isOffline) return const SizedBox.shrink();

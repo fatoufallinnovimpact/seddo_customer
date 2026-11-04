@@ -103,6 +103,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   late double _remainingDistanceKm;
   late int _initialEtaMinutes;
   late int _remainingEtaMinutes;
+
+  @visibleForTesting
+  int get remainingEtaMinutes => _remainingEtaMinutes;
   double _progressRatio = 0.0;
   bool _isStopped = false;
   String _stopReason = 'Arrêt feu rouge';
@@ -1537,7 +1540,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           ),
 
           if (!_isOffline)
-            // Normal online Floating Top Bar (Centering Pill with Siren Button on right)
+            // Floating Top Bar with Siren Button on right
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -1545,67 +1548,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                   vertical: AppConstants.spacingSm,
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    // Symmetry spacer to balance the Siren button on the right
-                    const SizedBox(width: AppConstants.circularButtonSize),
-
-                    Expanded(
-                      child: Center(
-                        child: GestureDetector(
-                          onLongPress: _toggleOfflineMode,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 9,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.white,
-                              borderRadius: BorderRadius.circular(
-                                AppConstants.radiusPill,
-                              ),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: AppColors.shadowMarker,
-                                  blurRadius: 10,
-                                  offset: Offset(0, 3),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: _isStopped
-                                        ? AppColors.orangeMoneyOrange
-                                        : AppColors.success,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _progressRatio >= 0.99
-                                      ? 'ride.arrived_at_destination'.tr()
-                                      : (_isPositionUpdating
-                                          ? 'ride.position_updating'.tr()
-                                          : (_isStopped
-                                              ? _stopReason
-                                              : 'ride.arriving_in'.tr(args: ['$_remainingEtaMinutes']))),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
                     // Bouton rouge flottant d'appel d'urgence / sécurité
                     Container(
                       width: AppConstants.circularButtonSize,
@@ -1865,6 +1809,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       ActiveDriverCardWidget(
                         driver: widget.driver,
                         isPaid: true,
+                        isOffline: true,
                         vehicleImagePath: widget.rideOption.type ==
                                 RideType.confort
                             ? 'assets/images/seddo_confort_3d.png'
@@ -1984,31 +1929,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                             color: AppColors.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
-                        ),
-                        const SizedBox(height: 10),
-
-                        // Yango-style animated route progress bar
-                        Stack(
-                          children: [
-                            Container(
-                              height: 4,
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                color: AppColors.surfaceGrey,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            FractionallySizedBox(
-                              widthFactor: _progressRatio.clamp(0.04, 1.0),
-                              child: Container(
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: AppColors.yangoRouteGreen,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                            ),
-                          ],
                         ),
                       ],
                     ),
