@@ -23,10 +23,9 @@ class RouteService {
   RouteService([Dio? dio, String? apiKey])
       : _dio = dio ?? Dio(),
         _apiKey = apiKey ??
-            const String.fromEnvironment(
-              'PLACES_API_KEY',
-              defaultValue: MapConfig.googleMapsApiKeyAndroid,
-            );
+            (const String.fromEnvironment('PLACES_API_KEY').isNotEmpty
+                ? const String.fromEnvironment('PLACES_API_KEY')
+                : MapConfig.apiKey);
 
   /// Computes walking route following real sidewalks, avenues, and streets
   Future<RouteDetails> getWalkingRoute({
@@ -240,5 +239,38 @@ class RouteService {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// Encodes a list of LatLng into Google encoded polyline format
+  static String encodePolyline(List<LatLng> points) {
+    if (points.isEmpty) return '';
+    final StringBuffer result = StringBuffer();
+    int lastLat = 0;
+    int lastLng = 0;
+
+    for (final point in points) {
+      final int lat = (point.latitude * 1E5).round();
+      final int lng = (point.longitude * 1E5).round();
+
+      final int dLat = lat - lastLat;
+      final int dLng = lng - lastLng;
+
+      lastLat = lat;
+      lastLng = lng;
+
+      _encodePolylineChunk(dLat, result);
+      _encodePolylineChunk(dLng, result);
+    }
+
+    return result.toString();
+  }
+
+  static void _encodePolylineChunk(int value, StringBuffer result) {
+    int v = value < 0 ? ~(value << 1) : (value << 1);
+    while (v >= 0x20) {
+      result.writeCharCode((0x20 | (v & 0x1f)) + 63);
+      v >>= 5;
+    }
+    result.writeCharCode(v + 63);
   }
 }

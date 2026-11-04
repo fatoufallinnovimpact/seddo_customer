@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/activity/presentation/pages/activity_page.dart';
+import 'package:seddo/features/activity/data/services/activity_service.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
 import '../../test_helpers/test_localization_helper.dart';
@@ -11,6 +12,11 @@ void main() {
 
   setUpAll(() async {
     await initTestLocalization();
+    ActivityService.enableMockDataForTesting = true;
+  });
+
+  tearDownAll(() {
+    ActivityService.enableMockDataForTesting = false;
   });
 
   group('ActivityPage & Lateral Drawer Flow Tests', () {

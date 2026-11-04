@@ -27,6 +27,9 @@ class DriverModel {
   /// Convenience getter for current location
   LatLng get location => currentLocation;
 
+  /// Convenience getter for driver phone number
+  String get phoneNumber => phone;
+
   const DriverModel({
     required this.id,
     required this.name,

@@ -21,7 +21,11 @@ import 'package:seddo/features/home/presentation/pages/edit_user_position_page.d
 import 'package:seddo/features/home/presentation/pages/pickup_map_location_picker_page.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/home/presentation/widgets/seddo_share_position_sheet.dart';
+import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
+import 'package:seddo/features/ride/presentation/utils/active_ride_navigation_helper.dart';
+import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
@@ -56,12 +60,17 @@ class _HomePageContent extends StatefulWidget {
   State<_HomePageContent> createState() => _HomePageContentState();
 }
 
-class _HomePageContentState extends State<_HomePageContent> {
+class _HomePageContentState extends State<_HomePageContent>
+    with WidgetsBindingObserver {
   final RideService _rideService = RideService();
   final PlacesService _placesService = PlacesService();
 
   Timer? _nearbyDriversPollTimer;
+  Timer? _activeRidePollTimer;
   StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
+  StreamSubscription<RealtimeRideStatusEvent>? _realtimeRideStatusSub;
+
+  Map<String, dynamic>? _activeRideData;
 
   LatLng? _lastNearbyFetchPos;
   HomeSuggestionsModel? _suggestions;
@@ -75,6 +84,7 @@ class _HomePageContentState extends State<_HomePageContent> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // Connexion WebSocket sur l'accueil pour recevoir les chauffeurs proches (PDF Seddo page 7)
     RealtimeService().connect();
@@ -82,6 +92,20 @@ class _HomePageContentState extends State<_HomePageContent> {
     _realtimeNearbySub = RealtimeService().nearbyDriversStream.listen((cars) {
       if (mounted && cars.isNotEmpty) {
         // Chauffeurs proches reçus en temps réel sans requête GET
+      }
+    });
+
+    // Écoute temps réel des changements de statut de course
+    _realtimeRideStatusSub = RealtimeService().rideStatusStream.listen((event) {
+      if (!mounted) return;
+      if (event.status == 'COMPLETED' ||
+          event.status.startsWith('CANCEL') ||
+          event.status == 'NO_DRIVER') {
+        setState(() {
+          _activeRideData = null;
+        });
+      } else {
+        _checkActiveRide();
       }
     });
 
@@ -94,6 +118,7 @@ class _HomePageContentState extends State<_HomePageContent> {
         _fetchNearbyDrivers(bloc.state.userLocation);
         _fetchSuggestions();
         _initRealUserLocation();
+        _checkActiveRide();
       }
     });
 
@@ -107,24 +132,61 @@ class _HomePageContentState extends State<_HomePageContent> {
         }
       },
     );
+
+    // Vérification active périodique de course en cours (toutes les 3s)
+    // Permet de détecter immédiatement un retour sur l'accueil ou un changement de statut
+    _activeRidePollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) {
+        if (mounted) {
+          _checkActiveRide();
+        }
+      },
+    );
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && mounted) {
+      _checkActiveRide();
+    }
+  }
+
+  StreamSubscription<Position>? _positionStreamSub;
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _realtimeNearbySub?.cancel();
+    _realtimeRideStatusSub?.cancel();
     _nearbyDriversPollTimer?.cancel();
+    _activeRidePollTimer?.cancel();
+    _positionStreamSub?.cancel();
     _miniMapController = null;
     super.dispose();
   }
 
-  /// Initialise la vraie localisation GPS de l'appareil et résout son adresse réelle
+  /// Initialise la vraie localisation GPS de l'appareil, résout son adresse
+  /// et écoute en continu les déplacements de l'utilisateur.
+  /// Le GPS physique par satellite ne dépend pas d'Internet et s'affiche immédiatement.
   Future<void> _initRealUserLocation() async {
     try {
       final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null && mounted) {
         final loc = LatLng(lastKnown.latitude, lastKnown.longitude);
-        _currentUserLocation = loc;
-        await _resolveUserLocationAddress(loc);
+        setState(() {
+          _currentUserLocation = loc;
+        });
+        _miniMapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: loc,
+              zoom: AppConstants.userPositionMapZoom,
+            ),
+          ),
+        );
+        _resolveUserLocationAddress(loc);
       }
     } catch (_) {}
 
@@ -147,14 +209,67 @@ class _HomePageContentState extends State<_HomePageContent> {
       );
       if (mounted) {
         final loc = LatLng(position.latitude, position.longitude);
-        _currentUserLocation = loc;
-        await _resolveUserLocationAddress(loc);
+        setState(() {
+          _currentUserLocation = loc;
+        });
+        _miniMapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: loc,
+              zoom: AppConstants.userPositionMapZoom,
+            ),
+          ),
+        );
+        _resolveUserLocationAddress(loc);
         if (mounted) {
           context.read<HomeBloc>().add(HomeUserLocationUpdatedEvent(loc));
           _fetchNearbyDrivers(loc);
         }
       }
+
+      // Écoute en continu les déplacements physiques
+      _positionStreamSub?.cancel();
+      _positionStreamSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 10,
+        ),
+      ).listen((pos) {
+        if (!mounted) return;
+        final newLoc = LatLng(pos.latitude, pos.longitude);
+        _onUserLocationMoved(newLoc);
+      });
     } catch (_) {}
+  }
+
+  void _onUserLocationMoved(LatLng newLoc) {
+    final oldLoc = _currentUserLocation;
+    setState(() {
+      _currentUserLocation = newLoc;
+    });
+    _miniMapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: newLoc,
+          zoom: AppConstants.userPositionMapZoom,
+        ),
+      ),
+    );
+    if (mounted) {
+      context.read<HomeBloc>().add(HomeUserLocationUpdatedEvent(newLoc));
+      _fetchNearbyDrivers(newLoc);
+    }
+    // Si déplacement de plus de 20m, actualiser l'adresse affichée
+    if (oldLoc == null ||
+        Geolocator.distanceBetween(
+              oldLoc.latitude,
+              oldLoc.longitude,
+              newLoc.latitude,
+              newLoc.longitude,
+            ) >
+            20) {
+      _resolveUserLocationAddress(newLoc);
+    }
   }
 
   /// Résout le vrai nom de rue et le quartier pour la position actuelle
@@ -183,7 +298,27 @@ class _HomePageContentState extends State<_HomePageContent> {
           ),
         );
       }
-    } catch (_) {}
+    } catch (_) {
+      // En mode hors-ligne : la localisation GPS satellite reste 100% active
+      if (mounted) {
+        setState(() {
+          _currentUserLocation = location;
+          if (_currentAddressShort.isEmpty ||
+              _currentAddressShort == 'Chargement...') {
+            _currentAddressShort = 'Position GPS actuelle';
+            _currentAddressDetails = 'Mode hors-ligne (signal satellite)';
+          }
+        });
+        _miniMapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: location,
+              zoom: AppConstants.userPositionMapZoom,
+            ),
+          ),
+        );
+      }
+    }
   }
 
   /// Applique la nouvelle position sélectionnée depuis la carte plein écran ou la recherche
@@ -245,7 +380,149 @@ class _HomePageContentState extends State<_HomePageContent> {
     } catch (_) {}
   }
 
-  Future<void> _openDestinationSearch(BuildContext context) async {
+  /// Interroge le serveur pour vérifier si une course est en cours
+  Future<void> _checkActiveRide() async {
+    try {
+      final res = await _rideService.getCurrentRide();
+      if (!mounted) return;
+      if (res != null && res['ride'] != null) {
+        final ride = res['ride'] as Map<String, dynamic>;
+        final status = (ride['status'] as String? ?? '').toUpperCase();
+        if (status != 'COMPLETED' &&
+            !status.startsWith('CANCEL') &&
+            status != 'NO_DRIVER' &&
+            status != 'NO_SHOW' &&
+            status != 'PAYMENT_PENDING' &&
+            status != 'PENDING' &&
+            status.isNotEmpty) {
+          setState(() {
+            _activeRideData = ride;
+          });
+          return;
+        }
+      }
+      if (_activeRideData != null) {
+        setState(() {
+          _activeRideData = null;
+        });
+      }
+    } catch (_) {
+      // Si la requête réseau échoue (ex: hors-ligne), vérifier la sauvegarde locale
+      try {
+        final cached = await ActiveRideOfflineStorage.getActiveRide();
+        if (cached != null && mounted) {
+          setState(() {
+            _activeRideData = cached;
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Ouvre l'écran correspondant à la course active (DriverSearch, DriverApproaching ou ActiveRide)
+  void _navigateToActiveRide() {
+    if (_activeRideData == null) return;
+    final page = ActiveRideNavigationHelper.resolveActiveRidePage(
+      _activeRideData!,
+      rideService: _rideService,
+    );
+    if (page != null && mounted) {
+      Navigator.of(context).push(
+        SlideRightToLeftRoute(page: page),
+      ).then((_) {
+        if (mounted) {
+          _checkActiveRide();
+        }
+      });
+    }
+  }
+
+  /// Boîte de dialogue avertissant qu'une course est déjà en cours et proposant de la rejoindre
+  void _showActiveRideReminderDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          backgroundColor: AppColors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.info_outline_rounded, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Course en cours',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w700,
+                    fontSize: AppConstants.fontLg,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Vous avez déjà une course active en cours. Souhaitez-vous retourner à la carte pour suivre son avancement ?',
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.fontSm,
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: Text(
+                'Fermer',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(dialogCtx).pop();
+                _navigateToActiveRide();
+              },
+              child: Text(
+                'Voir la course',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openDestinationSearch() async {
+    await _checkActiveRide();
+    if (!mounted) return;
+    if (_activeRideData != null) {
+      _showActiveRideReminderDialog(context);
+      return;
+    }
+
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      await OfflineModalSheet.show(
+        context,
+        currentPosition: _currentUserLocation,
+        currentAddress: '$_currentAddressShort, $_currentAddressDetails',
+        onRetry: () => _openDestinationSearch(),
+      );
+      return;
+    }
+
     final homeBloc = context.read<HomeBloc>();
     final PlaceSearchResult? selectedPlace =
         await Navigator.of(context).push<PlaceSearchResult>(
@@ -272,10 +549,30 @@ class _HomePageContentState extends State<_HomePageContent> {
 
     if (mounted) {
       _fetchSuggestions();
+      _checkActiveRide();
     }
   }
 
   Future<void> _onSelectSuggestion(PlaceSearchResult place) async {
+    await _checkActiveRide();
+    if (!mounted) return;
+    if (_activeRideData != null) {
+      _showActiveRideReminderDialog(context);
+      return;
+    }
+
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      await OfflineModalSheet.show(
+        context,
+        currentPosition: _currentUserLocation,
+        currentAddress: '$_currentAddressShort, $_currentAddressDetails',
+        onRetry: () => _onSelectSuggestion(place),
+      );
+      return;
+    }
+
     final homeBloc = context.read<HomeBloc>();
     await RecentTripStorage.saveLastRecentTrip(place);
     if (!mounted) return;
@@ -291,7 +588,7 @@ class _HomePageContentState extends State<_HomePageContent> {
       category: 'pickup',
     );
 
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: PlaceSearchPage(
           initialDepartureResult: departureResult,
@@ -299,6 +596,147 @@ class _HomePageContentState extends State<_HomePageContent> {
           initialPickup: _currentAddressShort,
           initialDestination: place.mainText,
           currentUserLocation: pickupLocation,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      _checkActiveRide();
+    }
+  }
+
+
+  /// Carte d'accès direct bien visible au sommet de l'accueil lorsqu'une course ou recherche est en cours
+  Widget _buildActiveRideInlineCard() {
+    if (_activeRideData == null) return const SizedBox.shrink();
+
+    final status = (_activeRideData!['status'] as String? ?? '').toUpperCase();
+    final isSearching = status == 'SEARCHING' || status == 'PAYMENT_PENDING';
+    final title = isSearching
+        ? 'Recherche d\'un chauffeur en cours...'
+        : (status.contains('ARRIV')
+            ? 'Votre chauffeur est arrivé sur place'
+            : (status.contains('PROGRESS') || status.contains('TRIP')
+                ? 'Course en cours vers votre destination'
+                : 'Chauffeur en approche'));
+    final subtitle = isSearching
+        ? 'Commande active. Appuyez pour suivre la recherche en direct'
+        : 'Appuyez pour revenir sur la carte et voir votre chauffeur';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _navigateToActiveRide,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppColors.primary,
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.2),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isSearching ? Icons.radar_rounded : Icons.directions_car_rounded,
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: GoogleFonts.inter(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.75),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Voir',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: Colors.white,
+                        size: 11,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -332,6 +770,12 @@ class _HomePageContentState extends State<_HomePageContent> {
                   // 1. Top bar aérée : Logo SEDDO à gauche, menu burger à droite
                   _buildTopBar(context),
                   const SizedBox(height: AppConstants.spacingUnitLg),
+
+                  // Si une course ou recherche est en cours, encart proéminent pour y retourner
+                  if (_activeRideData != null) ...[
+                    _buildActiveRideInlineCard(),
+                    const SizedBox(height: AppConstants.spacingUnitLg),
+                  ],
 
                   // 2. Search card aérée : "Où allez-vous ?"
                   _buildSearchBar(context),
@@ -427,7 +871,7 @@ class _HomePageContentState extends State<_HomePageContent> {
   // Barre de recherche aérée "Où allez-vous ?"
   Widget _buildSearchBar(BuildContext context) {
     return GestureDetector(
-      onTap: () => _openDestinationSearch(context),
+      onTap: _openDestinationSearch,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
         padding: const EdgeInsets.symmetric(
@@ -941,6 +1385,17 @@ class _HomePageContentState extends State<_HomePageContent> {
                   onMapCreated: (ctrl) {
                     _miniMapController = ctrl;
                     MapStyleService.applyStyle(ctrl);
+                    final userLoc = _currentUserLocation;
+                    if (userLoc != null) {
+                      ctrl.moveCamera(
+                        CameraUpdate.newCameraPosition(
+                          CameraPosition(
+                            target: userLoc,
+                            zoom: AppConstants.userPositionMapZoom,
+                          ),
+                        ),
+                      );
+                    }
                   },
                   buildingsEnabled: false,
                   myLocationEnabled: false,

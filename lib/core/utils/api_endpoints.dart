@@ -58,4 +58,7 @@ abstract class ApiEndpoints {
   static String get supportTickets => '$baseUrl/v1/support/tickets';
   static String supportTicketDetails(String id) => '$baseUrl/v1/support/tickets/$id';
   static String supportTicketMessages(String id) => '$baseUrl/v1/support/tickets/$id/messages';
+
+  // App parameters (Google Maps keys for Android, iOS, Web - cache 5 min)
+  static String get appParams => '$baseUrl/v1/app/params';
 }

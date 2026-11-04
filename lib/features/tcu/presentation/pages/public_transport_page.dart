@@ -10,6 +10,8 @@ import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/tcu/data/models/tcu_route_model.dart';
 import 'package:seddo/features/tcu/data/services/public_transport_service.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_stop_route_page.dart';
+import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
 import 'package:seddo/services/places_service.dart';
 
 /// Main Public Transport (TCU) page for Dakar.
@@ -246,6 +248,21 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
       return;
     }
 
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!isOnline) {
+      if (mounted) {
+        setState(() {
+          _showSuggestions = false;
+          _isLoading = false;
+        });
+        await OfflineModalSheet.show(
+          context,
+          onRetry: () => _onSearchPressed(),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _showSuggestions = false;
       _hasSearched = true;
@@ -339,6 +356,22 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   }
 
   Future<void> _loadRoutes() async {
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!isOnline) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _allOptions = [];
+          _hasSearched = false;
+        });
+        await OfflineModalSheet.show(
+          context,
+          onRetry: () => _loadRoutes(),
+        );
+      }
+      return;
+    }
+
     setState(() => _isLoading = true);
     final options = await _service.getRouteOptions(
       origin: _originController.text,
@@ -411,6 +444,15 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
 
   Future<void> _searchPlaces(String query) async {
     final clean = query.trim();
+    if (clean.isEmpty) {
+      if (mounted) setState(() => _suggestions = []);
+      return;
+    }
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!isOnline) {
+      if (mounted) setState(() => _suggestions = []);
+      return;
+    }
     final results = await _placesService.autocomplete(clean);
     if (mounted) {
       setState(() {

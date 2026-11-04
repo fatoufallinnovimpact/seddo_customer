@@ -8,29 +8,33 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/services/places_service.dart';
 
 /// Modal bottom sheet for SMS emergency when customer is offline (no internet connection).
-/// Uses cellular GSM / SMS to reach emergency services or relatives with exact ride and GPS details.
-class OfflineEmergencySheet extends StatelessWidget {
-  final PlaceSearchResult destination;
-  final DriverModel driver;
+/// Uses cellular GSM / SMS to reach emergency services or relatives with exact ride and real address details.
+class OfflineEmergencySheet extends StatefulWidget {
+  final PlaceSearchResult? destination;
+  final DriverModel? driver;
   final LatLng currentPosition;
+  final String? currentAddress;
   final String etaText;
 
   const OfflineEmergencySheet({
     super.key,
-    required this.destination,
-    required this.driver,
+    this.destination,
+    this.driver,
     required this.currentPosition,
-    required this.etaText,
+    this.currentAddress,
+    this.etaText = 'Urgence',
   });
 
   static Future<void> show(
     BuildContext context, {
-    required PlaceSearchResult destination,
-    required DriverModel driver,
+    PlaceSearchResult? destination,
+    DriverModel? driver,
     required LatLng currentPosition,
-    required String etaText,
+    String? currentAddress,
+    String etaText = 'Urgence',
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -40,17 +44,114 @@ class OfflineEmergencySheet extends StatelessWidget {
         destination: destination,
         driver: driver,
         currentPosition: currentPosition,
+        currentAddress: currentAddress,
         etaText: etaText,
       ),
     );
   }
 
+  /// Liste des quartiers et repères de Dakar pour la résolution d'adresse 100% hors-ligne
+  static final List<({String name, double lat, double lng})> dakarDistricts = [
+    (name: 'Fann Hock, Dakar', lat: 14.6860, lng: -17.4570),
+    (name: 'Gueule Tapée, Dakar', lat: 14.6890, lng: -17.4530),
+    (name: 'Fann Résidence, Dakar', lat: 14.6937, lng: -17.4647),
+    (name: 'Point E, Dakar', lat: 14.6974, lng: -17.4618),
+    (name: 'Fass, Dakar', lat: 14.6940, lng: -17.4510),
+    (name: 'Colobane, Dakar', lat: 14.6990, lng: -17.4460),
+    (name: 'Médina, Dakar', lat: 14.6850, lng: -17.4480),
+    (name: 'Dakar Plateau', lat: 14.6720, lng: -17.4330),
+    (name: 'Almadies, Dakar', lat: 14.7431, lng: -17.5195),
+    (name: 'Ngor, Dakar', lat: 14.7547, lng: -17.5142),
+    (name: 'Ouakam, Dakar', lat: 14.7231, lng: -17.4912),
+    (name: 'Mermoz, Dakar', lat: 14.7078, lng: -17.4744),
+    (name: 'Grand Dakar', lat: 14.7050, lng: -17.4520),
+    (name: 'Liberté 6, Dakar', lat: 14.7220, lng: -17.4650),
+    (name: 'Sacré-Cœur, Dakar', lat: 14.7140, lng: -17.4680),
+    (name: 'Yoff, Dakar', lat: 14.7580, lng: -17.4720),
+    (name: 'Ouest Foire, Dakar', lat: 14.7495, lng: -17.4682),
+    (name: 'Nord Foire, Dakar', lat: 14.7520, lng: -17.4610),
+    (name: 'Maristes, Hann, Dakar', lat: 14.7320, lng: -17.4360),
+    (name: 'Patte d\'Oie, Dakar', lat: 14.7410, lng: -17.4470),
+    (name: 'Parcelles Assainies, Dakar', lat: 14.7650, lng: -17.4420),
+    (name: 'Guédiawaye, Dakar', lat: 14.7780, lng: -17.3980),
+    (name: 'Pikine, Dakar', lat: 14.7550, lng: -17.3890),
+    (name: 'Rufisque, Dakar', lat: 14.7160, lng: -17.2720),
+    (name: 'Diamniadio, Dakar', lat: 14.7250, lng: -17.1850),
+  ];
+
+  /// Résout le quartier de Dakar le plus proche sans connexion internet
+  static String resolveDistrictFromCoordinates(LatLng position) {
+    double minDistance = double.infinity;
+    String closest = 'Dakar, Sénégal';
+
+    for (final d in dakarDistricts) {
+      final dLat = position.latitude - d.lat;
+      final dLng = position.longitude - d.lng;
+      final distSq = (dLat * dLat) + (dLng * dLng);
+      if (distSq < minDistance) {
+        minDistance = distSq;
+        closest = d.name;
+      }
+    }
+    return closest;
+  }
+
+  @override
+  State<OfflineEmergencySheet> createState() => _OfflineEmergencySheetState();
+}
+
+class _OfflineEmergencySheetState extends State<OfflineEmergencySheet> {
+  late String _resolvedAddress;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolvedAddress = widget.currentAddress != null &&
+            widget.currentAddress!.isNotEmpty
+        ? widget.currentAddress!
+        : OfflineEmergencySheet.resolveDistrictFromCoordinates(
+            widget.currentPosition);
+
+    _tryReverseGeocode();
+  }
+
+  Future<void> _tryReverseGeocode() async {
+    try {
+      final res = await PlacesService().reverseGeocode(
+        widget.currentPosition.latitude,
+        widget.currentPosition.longitude,
+      );
+      if (mounted && res.fullAddress.isNotEmpty) {
+        setState(() {
+          _resolvedAddress = res.fullAddress;
+        });
+      }
+    } catch (_) {
+      // Conservation du quartier de Dakar résolu hors-ligne
+    }
+  }
+
   String _buildEmergencyMessage() {
-    final lat = currentPosition.latitude.toStringAsFixed(5);
-    final lng = currentPosition.longitude.toStringAsFixed(5);
-    return 'URGENCE SEDDO: Besoin d\'aide immédiate en cours de trajet vers ${destination.mainText}. '
-        'Chauffeur: ${driver.name} (${driver.phone}), Véhicule: ${driver.carModel} [${driver.licensePlate}]. '
-        'Dernière position GPS: Lat $lat, Lng $lng. https://maps.google.com/?q=$lat,$lng';
+    final lat = widget.currentPosition.latitude.toStringAsFixed(5);
+    final lng = widget.currentPosition.longitude.toStringAsFixed(5);
+    final buffer = StringBuffer('URGENCE SEDDO: Besoin d\'aide immédiate. ');
+
+    if (widget.destination != null &&
+        widget.destination!.mainText.isNotEmpty &&
+        widget.destination!.mainText != 'Urgence') {
+      buffer.write('En cours de trajet vers ${widget.destination!.mainText}. ');
+    }
+
+    if (widget.driver != null &&
+        widget.driver!.carModel.isNotEmpty &&
+        !widget.driver!.carModel.toLowerCase().contains('sécurité')) {
+      buffer.write(
+          'Chauffeur: ${widget.driver!.name} (${widget.driver!.phone}), Véhicule: ${widget.driver!.carModel} [${widget.driver!.licensePlate}]. ');
+    }
+
+    buffer.write(
+        'Position actuelle: $_resolvedAddress. Coordonnées GPS: $lat, $lng. Lien carte: https://maps.google.com/?q=$lat,$lng');
+    return buffer.toString();
   }
 
   Future<void> _sendSms(BuildContext context, String recipient) async {
@@ -214,14 +315,30 @@ class OfflineEmergencySheet extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.spacingMd),
 
-            // Pre-composed SOS SMS Message preview
-            Text(
-              'ride.sms_preset_message'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
+            // Pre-composed SOS SMS Message preview with orange chat icon
+            Row(
+              children: [
+                SvgPicture.asset(
+                  'assets/icons/chat-round-svgrepo-com.svg',
+                  width: 16,
+                  height: 16,
+                  colorFilter: const ColorFilter.mode(
+                    AppColors.primary,
+                    BlendMode.srcIn,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'ride.sms_preset_message'.tr(),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: AppConstants.spacingSm),
             Container(

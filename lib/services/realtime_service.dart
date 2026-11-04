@@ -136,29 +136,76 @@ class RealtimeDriverLocationEvent {
       );
     }
 
+    final driverMap = json['driver'] is Map<String, dynamic>
+        ? json['driver'] as Map<String, dynamic>
+        : null;
+    final dataMap = json['data'] is Map<String, dynamic>
+        ? json['data'] as Map<String, dynamic>
+        : null;
+
     final posObj = json['position'] is Map<String, dynamic>
         ? json['position'] as Map<String, dynamic>
         : (json['location'] is Map<String, dynamic>
             ? json['location'] as Map<String, dynamic>
-            : json);
+            : (json['coords'] is Map<String, dynamic>
+                ? json['coords'] as Map<String, dynamic>
+                : (json['driverPosition'] is Map<String, dynamic>
+                    ? json['driverPosition'] as Map<String, dynamic>
+                    : (driverMap?['position'] is Map<String, dynamic>
+                        ? driverMap!['position'] as Map<String, dynamic>
+                        : (driverMap?['location'] is Map<String, dynamic>
+                            ? driverMap!['location'] as Map<String, dynamic>
+                            : (dataMap?['position'] is Map<String, dynamic>
+                                ? dataMap!['position'] as Map<String, dynamic>
+                                : (dataMap?['location'] is Map<String, dynamic>
+                                    ? dataMap!['location'] as Map<String, dynamic>
+                                    : json)))))));
 
-    final lat = (posObj['lat'] ?? posObj['latitude'] as num?)?.toDouble() ?? 0.0;
-    final lng = (posObj['lng'] ?? posObj['longitude'] as num?)?.toDouble() ?? 0.0;
+    final lat = (posObj['lat'] ??
+            posObj['latitude'] ??
+            driverMap?['lat'] ??
+            driverMap?['latitude'] ??
+            json['lat'] ??
+            json['latitude'] as num?)
+        ?.toDouble() ??
+        0.0;
+    final lng = (posObj['lng'] ??
+            posObj['longitude'] ??
+            posObj['lon'] ??
+            driverMap?['lng'] ??
+            driverMap?['longitude'] ??
+            json['lng'] ??
+            json['longitude'] as num?)
+        ?.toDouble() ??
+        0.0;
     final heading = (posObj['heading'] ??
             posObj['bearing'] ??
             posObj['direction'] ??
+            posObj['course'] ??
+            driverMap?['heading'] ??
             json['heading'] ??
             0.0 as num)
         .toDouble();
     final speed = (posObj['speed'] ?? json['speed'] as num?)?.toDouble();
     final accuracy = (posObj['accuracy'] ?? json['accuracy'] as num?)?.toDouble();
 
-    final rideId = (json['rideId'] ?? posObj['rideId'])?.toString();
-    final driverId = (json['driverId'] ?? posObj['driverId'])?.toString();
+    final rideId = (json['rideId'] ??
+            posObj['rideId'] ??
+            driverMap?['rideId'] ??
+            json['id'])
+        ?.toString();
+    final driverId = (json['driverId'] ??
+            posObj['driverId'] ??
+            driverMap?['id'] ??
+            driverMap?['driverId'])
+        ?.toString();
     final version = (json['version'] ?? posObj['version'] as num?)?.toInt() ?? 0;
 
     DateTime? time;
-    final rawTime = posObj['timestamp'] ?? json['timestamp'] ?? json['time'];
+    final rawTime = posObj['timestamp'] ??
+        json['timestamp'] ??
+        json['time'] ??
+        json['updatedAt'];
     if (rawTime is String) {
       time = DateTime.tryParse(rawTime);
     } else if (rawTime is int) {
@@ -748,9 +795,9 @@ class RealtimeService {
     try {
       final event = RealtimeDriverLocationEvent.fromJson(data);
 
-      // Filtre 1 : Précision GPS minimale 50m (PDF page 3 & 5)
-      if (event.accuracy != null && event.accuracy! > 50.0) {
-        debugPrint('[RealtimeService] Ignoré driver.location imprécis (${event.accuracy}m > 50m)');
+      // Filtre 1 : Précision GPS minimale (150m pour tolérer les zones urbaines denses)
+      if (event.accuracy != null && event.accuracy! > 150.0) {
+        debugPrint('[RealtimeService] Ignoré driver.location imprécis (${event.accuracy}m > 150m)');
         return;
       }
 

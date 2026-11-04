@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -108,16 +109,17 @@ class RideService {
     required String quoteId,
     String paymentMethod = 'ORANGE_MONEY',
   }) async {
+    final normalizedMethod = switch (paymentMethod.toUpperCase()) {
+      'WAVE' => 'WAVE',
+      'CASH' => 'CASH',
+      _ => 'ORANGE_MONEY',
+    };
+    final body = {
+      'quoteId': quoteId,
+      'paymentMethod': normalizedMethod,
+    };
+
     try {
-      final normalizedMethod = switch (paymentMethod.toUpperCase()) {
-        'WAVE' => 'WAVE',
-        'CASH' => 'CASH',
-        _ => 'ORANGE_MONEY',
-      };
-      final body = {
-        'quoteId': quoteId,
-        'paymentMethod': normalizedMethod,
-      };
       debugPrint('[RideService] 🚀 POST ${ApiEndpoints.rides} avec $body');
       final response = await _dio.post(
         ApiEndpoints.rides,
@@ -158,8 +160,108 @@ class RideService {
             }
           }
         } catch (_) {}
+
+        if (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.sendTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.error is SocketException) {
+          lastCreateRideError = {
+            'code': 'NO_CONNECTION',
+            'message':
+                'Aucune connexion Internet. Veuillez vérifier votre connexion et réessayer.',
+          };
+        }
+
+        // Détection de conflit : "Vous avez déjà une course en cours"
+        // Si l'utilisateur avait une course précédente non payée (PAYMENT_PENDING / PENDING),
+        // on l'annule automatiquement sur-le-champ et on relance la création sans attendre.
+        final statusCode = e.response?.statusCode;
+        final errMsg =
+            (lastCreateRideError?['message']?.toString() ?? '').toLowerCase();
+        final errCode =
+            (lastCreateRideError?['code']?.toString() ?? '').toUpperCase();
+        final isConflict = statusCode == 400 ||
+            statusCode == 409 ||
+            statusCode == 422 ||
+            errCode.contains('RIDE') ||
+            errCode.contains('ACTIVE') ||
+            errCode.contains('CONFLICT') ||
+            errMsg.contains('course') ||
+            errMsg.contains('cours') ||
+            errMsg.contains('active') ||
+            errMsg.contains('already');
+
+        if (isConflict) {
+          debugPrint(
+              '[RideService] 🔍 Détection conflit course existante. Vérification du statut de la course active...');
+          try {
+            final currentRes = await getCurrentRide();
+            final currentRide = currentRes?['ride'] as Map<String, dynamic>?;
+            if (currentRide != null) {
+              final currentStatus =
+                  (currentRide['status'] as String? ?? '').toUpperCase();
+              final currentId = currentRide['id']?.toString();
+              debugPrint(
+                  '[RideService] 🔍 Course actuelle ID: $currentId, Statut: $currentStatus');
+
+              // Si la course n'est pas encore payée (PAYMENT_PENDING / PENDING)
+              if (currentStatus == 'PAYMENT_PENDING' ||
+                  currentStatus == 'PENDING' ||
+                  currentStatus.isEmpty) {
+                if (currentId != null && currentId.isNotEmpty) {
+                  debugPrint(
+                      '[RideService] 🧹 Annulation automatique immédiate de la course non payée $currentId...');
+                  await cancelRide(
+                    rideId: currentId,
+                    reason: 'Remplacement automatique par une nouvelle destination',
+                  );
+
+                  // Réessayer la création de la course immédiatement
+                  debugPrint(
+                      '[RideService] 🔁 Relance de la commande POST /v1/rides pour la nouvelle destination...');
+                  final retryResponse = await _dio.post(
+                    ApiEndpoints.rides,
+                    data: body,
+                    options: Options(
+                      sendTimeout: const Duration(seconds: 10),
+                      receiveTimeout: const Duration(seconds: 10),
+                    ),
+                  );
+
+                  if (retryResponse.statusCode == 200 ||
+                      retryResponse.statusCode == 201) {
+                    lastCreateRideError = null;
+                    final retryData = retryResponse.data is String
+                        ? jsonDecode(retryResponse.data as String)
+                            as Map<String, dynamic>
+                        : retryResponse.data as Map<String, dynamic>;
+                    final newRideId = retryData['id']?.toString();
+                    if (newRideId != null && newRideId.isNotEmpty) {
+                      lastCreatedRideId = newRideId;
+                    }
+                    lastCreatedRideData = retryData;
+                    debugPrint(
+                        '[RideService] ✅ Succès création course après annulation auto de l\'ancienne: $newRideId');
+                    return retryData;
+                  }
+                }
+              }
+            }
+          } catch (retryErr) {
+            debugPrint(
+                '[RideService] ⚠️ Échec de l\'annulation/relance automatique: $retryErr');
+          }
+        }
       } else {
         debugPrint('[RideService] ⚠️ Erreur inattendue POST /v1/rides: $e');
+        if (e is SocketException || e is TimeoutException) {
+          lastCreateRideError = {
+            'code': 'NO_CONNECTION',
+            'message':
+                'Aucune connexion Internet. Veuillez vérifier votre connexion et réessayer.',
+          };
+        }
       }
     }
     return null;

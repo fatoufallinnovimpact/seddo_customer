@@ -15,6 +15,8 @@ import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
+import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
 
 /// Écran de recherche et sélection d'adresses (départ et arrivée) :
 /// - Header: Back arrow + "Votre trajet"
@@ -162,10 +164,37 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   Future<void> _searchPlaces(String input) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
 
     final cleanInput =
         input == currentPositionText ? '' : input.trim();
+    if (cleanInput.isEmpty) {
+      setState(() {
+        _suggestions = [];
+        _isLoading = false;
+      });
+      return;
+    }
+
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!isOnline) {
+      if (mounted) {
+        setState(() {
+          _suggestions = [];
+          _isLoading = false;
+        });
+        OfflineModalSheet.show(
+          context,
+          currentPosition: widget.currentUserLocation,
+          currentAddress: _departureController.text.isNotEmpty
+              ? _departureController.text
+              : null,
+          onRetry: () => _searchPlaces(cleanInput),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isLoading = true);
     final results = await _placesService.autocomplete(cleanInput);
 
     if (mounted) {
@@ -344,6 +373,19 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   Future<void> _confirmTrip() async {
     FocusScope.of(context).unfocus();
+
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!isOnline && mounted) {
+      await OfflineModalSheet.show(
+        context,
+        currentPosition: widget.currentUserLocation,
+        currentAddress: _departureController.text.isNotEmpty
+            ? _departureController.text
+            : null,
+        onRetry: () => _confirmTrip(),
+      );
+      return;
+    }
 
     // 1. Prepare departure
     PlaceSearchResult departure = _selectedDepartureResult ??

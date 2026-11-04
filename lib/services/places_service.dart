@@ -44,10 +44,9 @@ class PlacesService {
     Dio? dio,
     Future<LatLng?> Function()? locationFetcher,
   ])  : _apiKey = apiKey ??
-            const String.fromEnvironment(
-              'PLACES_API_KEY',
-              defaultValue: MapConfig.googleMapsApiKeyAndroid,
-            ),
+            (const String.fromEnvironment('PLACES_API_KEY').isNotEmpty
+                ? const String.fromEnvironment('PLACES_API_KEY')
+                : MapConfig.apiKey),
         _dio = dio ?? Dio(),
         _locationFetcher = locationFetcher;
 

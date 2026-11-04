@@ -17,10 +17,15 @@ import 'package:seddo/features/ride/data/models/ride_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
+import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
+import 'package:seddo/features/ride/presentation/widgets/active_ride_offline_banner.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
@@ -128,6 +133,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   Timer? _stalePositionCheckTimer;
   bool _isPositionUpdating = false;
 
+  bool _isOffline = false;
+  Timer? _offlineMonitorTimer;
+
   late final AnimationController _sheetAnimationController;
   BitmapDescriptor? _destinationMarkerIcon;
   bool _isNavigatingToActiveRide = false;
@@ -170,6 +178,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     _currentCarPosition = _driverInitialPosition;
     _currentCarHeading = _currentDriver.heading ??
         _calculateBearing(_driverInitialPosition, _pickupPosition);
+
+    _persistLocalState();
+    _startOfflineMonitor();
 
     // Initialisation immédiate de l'itinéraire routier d'approche s'il est déjà fourni
     if (_currentDriver.approachPolyline != null &&
@@ -412,6 +423,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   void _cleanupTimersAndSubs() {
+    _offlineMonitorTimer?.cancel();
     _ridePollTimer?.cancel();
     _stalePositionCheckTimer?.cancel();
     _approachController?.stop();
@@ -423,6 +435,112 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     _realtimeReconnectSub?.cancel();
     _liveUpdateBloc?.close();
     _liveUpdateBloc = null;
+  }
+
+  void _persistLocalState() {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+    ActiveRideOfflineStorage.saveActiveRide(
+      rideId: effectiveRideId,
+      status: _driverArrived ? 'ARRIVED' : 'EN_ROUTE',
+      departure: widget.departure,
+      destination: widget.destination,
+      driver: _currentDriver,
+      rideOption: widget.rideOption,
+      departureCode: _departureCode,
+      polylinePoints: _tripPolylinePoints,
+      lastDriverLocation: _currentCarPosition,
+      lastDriverHeading: _currentCarHeading,
+      lastDriverLocationTime: _lastDriverLocationTime,
+    );
+  }
+
+  void _startOfflineMonitor() {
+    _offlineMonitorTimer?.cancel();
+    _offlineMonitorTimer =
+        Timer.periodic(const Duration(seconds: 4), (_) async {
+      if (!mounted) return;
+      final online = await NetworkConnectivityService.isConnected;
+      if (!online && !_isOffline) {
+        setState(() {
+          _isOffline = true;
+        });
+        _approachController?.stop();
+      } else if (online && _isOffline) {
+        await _onNetworkRestored();
+      }
+    });
+  }
+
+  Future<void> _onNetworkRestored() async {
+    debugPrint(
+        '[DriverApproachingPage] 🌐 Réseau rétabli ! Démarrage de la séquence automatique...');
+    // 1. Reconnexion WebSocket automatique
+    RealtimeService().connect();
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      RealtimeService().joinRide(effectiveRideId);
+    }
+
+    // 2. Appel GET /v1/rides/current pour récupérer l'état réel
+    try {
+      final currentRes = await _rideService.getCurrentRide();
+      if (!mounted) return;
+      final ride = currentRes?['ride'] as Map<String, dynamic>?;
+      if (ride != null) {
+        final status = (ride['status'] as String? ?? '').toUpperCase();
+        // 3. Comparer avec l'état local : le serveur a raison
+        if (status == 'COMPLETED' ||
+            status.startsWith('CANCEL') ||
+            status == 'NO_DRIVER' ||
+            status == 'NO_SHOW') {
+          await ActiveRideOfflineStorage.clearActiveRide();
+          if (!mounted) return;
+          if (status == 'COMPLETED') {
+            Navigator.of(context).pushReplacement(
+              SlideRightToLeftRoute(
+                page: RideRatingPage(
+                  departure: widget.departure,
+                  destination: widget.destination,
+                  driver: _currentDriver,
+                  rideOption: widget.rideOption,
+                  arrivalTime: widget.rideOption.estimatedArrival,
+                  rideId: effectiveRideId,
+                  rideService: _rideService,
+                ),
+              ),
+            );
+          } else {
+            Navigator.of(context).pushReplacement(
+              SlideRightToLeftRoute(
+                page: RideCancelledPage(
+                  rideOption: widget.rideOption,
+                  departure: widget.departure,
+                  destination: widget.destination,
+                ),
+              ),
+            );
+          }
+          return;
+        } else {
+          _applyRideDetails(ride);
+        }
+      }
+    } catch (_) {}
+
+    // 4. Envoi de la file d'attente
+    await ActiveRideOfflineStorage.flushQueue(_rideService);
+
+    // 5. Retrait de la bannière
+    if (mounted) {
+      setState(() {
+        _isOffline = false;
+      });
+      if (_approachController != null && !_approachController!.isAnimating && !_driverArrived) {
+        _approachController!.forward();
+      }
+    }
   }
 
   @override
@@ -949,7 +1067,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           rideOption: effectiveTripOption,
           driver: _currentDriver,
           polylinePoints: effectivePolyline,
-          autoStartSimulation: false,
+          autoStartSimulation: true,
           rideId: widget.rideId ?? RideService.lastCreatedRideId,
           rideService: _rideService,
         ),
@@ -958,6 +1076,86 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   Future<void> _onCancelRide() async {
+    if (_isOffline) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Annulation hors-ligne',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Le chauffeur peut encore se présenter tant que le réseau n’est pas revenu.\n\nVotre demande d\'annulation sera enregistrée et envoyée dès le retour du réseau.',
+            style: GoogleFonts.inter(fontSize: 14, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(
+                'Conserver la course',
+                style: GoogleFonts.inter(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.errorRed,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                'Enregistrer l\'annulation',
+                style: GoogleFonts.inter(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm == true && mounted) {
+        final effectiveRideId =
+            widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+        await ActiveRideOfflineStorage.queueCancelRide(
+          rideId: effectiveRideId,
+          reason: 'Annulation demandée hors-ligne en cours d\'approche',
+          originalPrice: widget.rideOption.price,
+        );
+        await ActiveRideOfflineStorage.clearActiveRide();
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            SlideRightToLeftRoute(
+              page: RideCancelledPage(
+                rideOption: widget.rideOption,
+                departure: widget.departure,
+                destination: widget.destination,
+                reason: 'Annulation enregistrée (en attente réseau)',
+              ),
+            ),
+          );
+        }
+      }
+      return;
+    }
+
     final selectedReason = await CancelRideReasonSheet.show(
       context,
       isDriverAssigned: true,
@@ -994,6 +1192,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
     if (mounted) {
       Navigator.of(context, rootNavigator: true).pop();
+      await ActiveRideOfflineStorage.clearActiveRide();
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         SlideRightToLeftRoute(
           page: RideCancelledPage(
@@ -1010,6 +1210,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   void _openChat() {
+    if (_isOffline) {
+      _sendSmsDriver();
+      return;
+    }
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: DriverChatPage(
@@ -1022,12 +1226,41 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   Future<void> _callDriver() async {
+    if (_isOffline) {
+      final phone = _currentDriver.phoneNumber;
+      final uri =
+          Uri.parse('tel:${phone.isNotEmpty ? phone : "+221770000000"}');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+      return;
+    }
     await InAppCallPage.show(context, driver: _currentDriver);
+  }
+
+  Future<void> _sendSmsDriver() async {
+    final phone = _currentDriver.phoneNumber;
+    final uri = Uri.parse(
+      'sms:${phone.isNotEmpty ? phone : ""}?body=${Uri.encodeComponent("Bonjour, je vous attends au point de départ.")}',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Future<void> _openShare() async {
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+
+    if (_isOffline) {
+      final text =
+          'Suis mon trajet Seddo en direct vers ${widget.destination.mainText} avec ${_currentDriver.name} (${_currentDriver.carModel} ${_currentDriver.licensePlate})';
+      final uri = Uri.parse('sms:?body=${Uri.encodeComponent(text)}');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
 
     final effectivePolyline = _tripPolylinePoints.isNotEmpty
         ? _tripPolylinePoints
@@ -1294,6 +1527,13 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               alignment: Alignment.topCenter,
               child: RealtimeStatusIndicator(),
             ),
+          ),
+
+          // Bannière hors-ligne : "Connexion perdue, dernière mise à jour il y a X min"
+          ActiveRideOfflineBanner(
+            isOffline: _isOffline,
+            lastUpdateTime: _lastDriverLocationTime,
+            onRetry: _onNetworkRestored,
           ),
 
           // 1. Fullscreen Google Map with multi-touch gestures enabled (clipped to remove Google logo)
@@ -1564,25 +1804,35 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                             vertical: 7.5,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: AppColors.primary,
+                                            color: _isOffline
+                                                ? AppColors.grayLight
+                                                : (_driverArrived
+                                                    ? AppColors.success
+                                                    : AppColors.primary),
                                             borderRadius:
                                                 BorderRadius.circular(20),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Icon(
+                                              Icon(
                                                 Icons.access_time_rounded,
-                                                color: AppColors.white,
+                                                color: _isOffline
+                                                    ? AppColors.grayText
+                                                    : AppColors.white,
                                                 size: 15,
                                               ),
                                               const SizedBox(width: 5),
                                               Text(
-                                                etaDisplay,
+                                                _isOffline
+                                                    ? 'Estimation non actualisée'
+                                                    : etaDisplay,
                                                 style: GoogleFonts.inter(
                                                   fontSize: 13.5,
                                                   fontWeight: FontWeight.w800,
-                                                  color: AppColors.white,
+                                                  color: _isOffline
+                                                      ? AppColors.grayText
+                                                      : AppColors.white,
                                                 ),
                                               ),
                                             ],
@@ -1740,6 +1990,28 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                   color: AppColors.textPrimary,
                                                 ),
                                               ),
+                                              if (_isOffline) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(
+                                                    horizontal: 5,
+                                                    vertical: 1.5,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors.grayLight,
+                                                    borderRadius:
+                                                        BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    'Position non à jour',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: AppColors.grayText,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ],
                                           ),
                                         ],

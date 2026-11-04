@@ -16,7 +16,6 @@ import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
-import 'package:seddo/features/ride/presentation/widgets/insufficient_balance_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.dart';
@@ -24,8 +23,10 @@ import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_
 import 'package:seddo/features/ride/presentation/widgets/ride_option_card_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/select_payment_method_sheet.dart';
 import 'package:seddo/services/map_style_service.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
+import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Screen displaying the active route polyline on Google Maps and the ride options bottom sheet
@@ -71,6 +72,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
   List<LatLng> _polylinePoints = [];
   List<TrafficSegmentModel> _traffic = [];
   bool _isLoadingRoute = true;
+  bool _isOfflinePriceError = false;
   double _distanceKm = 5.0;
   int _durationMinutes = 15;
   String? _zoneName;
@@ -346,10 +348,14 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
       setState(() {
         _polylinePoints = [];
-        if (isTest || _ecoOption.price <= 0) {
+        if (isTest) {
           _ecoOption = _ecoOption.copyWith(price: ecoFare.clamp(2000, 25000));
           _confortOption =
               _confortOption.copyWith(price: confortFare.clamp(2800, 35000));
+          _isOfflinePriceError = false;
+        } else {
+          // En mode hors-ligne réel : ne pas inventer de faux tarifs
+          _isOfflinePriceError = true;
         }
         _isLoadingRoute = false;
       });
@@ -448,6 +454,19 @@ class _RideBookingPageState extends State<RideBookingPage> {
   }
 
   Future<void> _onOrderRide() async {
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      await OfflineModalSheet.show(
+        context,
+        currentPosition:
+            LatLng(widget.departure.latitude, widget.departure.longitude),
+        currentAddress: widget.departure.fullAddress,
+        onRetry: () => _onOrderRide(),
+      );
+      return;
+    }
+
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
 
@@ -469,20 +488,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
       paymentMethod: chosenMethod,
     );
 
-    if (!mounted || result == null) return;
-
-    if (result == OrangeMoneyPaymentResult.insufficientBalance) {
-      if (mounted) {
-        final apiMessage =
-            RideService.lastCreateRideError?['message']?.toString();
-        await InsufficientBalanceSheet.show(
-          context,
-          rideOption: selectedOption,
-          customMessage: apiMessage,
-        );
-      }
-      return;
-    }
+    if (!mounted) return;
 
     if (result == OrangeMoneyPaymentResult.success) {
       if (mounted) {
@@ -527,6 +533,10 @@ class _RideBookingPageState extends State<RideBookingPage> {
           ),
         );
       }
+    } else {
+      // Si la commande n'a pas abouti ou a été fermée/annulée (ex: devis déjà commandé),
+      // rafraîchir immédiatement le devis pour renouveler le quoteId
+      _fetchRoute();
     }
   }
 
@@ -948,6 +958,45 @@ class _RideBookingPageState extends State<RideBookingPage> {
                     ),
                   ),
 
+                  if (_isOfflinePriceError) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.errorLightBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.errorRed.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.wifi_off_rounded, color: AppColors.errorRed, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Mode hors-ligne : la connexion Internet est requise pour calculer le tarif exact.',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.errorRed,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _fetchRoute,
+                            child: Text(
+                              'Réessayer',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.errorRed,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   // Option 1: Seddo Eco Card (3D Vehicle)
                   RideOptionCardWidget(
                     option: _ecoOption,
@@ -986,7 +1035,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                           ),
                         ),
                       ),
-                      onPressed: _isLoadingRoute ? null : _onOrderRide,
+                      onPressed: (_isLoadingRoute || _isOfflinePriceError) ? null : _onOrderRide,
                       child: _isLoadingRoute
                           ? const SizedBox(
                               width: 22,
@@ -997,7 +1046,9 @@ class _RideBookingPageState extends State<RideBookingPage> {
                               ),
                             )
                           : Text(
-                              '${'ride.order'.tr()} ${selectedOption.title}',
+                              _isOfflinePriceError
+                                  ? 'Connexion Internet requise'
+                                  : '${'ride.order'.tr()} ${selectedOption.title}',
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,

@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/activity/data/models/activity_item_model.dart';
 import 'package:seddo/features/activity/data/repositories/activity_repository.dart';
+import 'package:seddo/features/activity/data/services/activity_service.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_event.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_state.dart';
 
@@ -28,30 +29,25 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     emit(const ActivityLoadingState());
     try {
       final historyRides = await _repository.getRidesHistory(limit: 50);
-      final isRemote = _repository.isUsingRemoteData;
-      final rawRefunds =
-          await _repository.getRefunds(rides: isRemote ? historyRides : null);
+      final rawRefunds = await _repository.getRefunds(rides: historyRides);
       _allRefunds = rawRefunds;
       final summary = await _repository.getSummary(
-        rides: isRemote ? historyRides : null,
-        refunds: isRemote ? rawRefunds : null,
+        rides: historyRides,
+        refunds: rawRefunds,
       );
-      final recent =
-          await _repository.getRecentRide(rides: isRemote ? historyRides : null);
+      final recent = await _repository.getRecentRide(rides: historyRides);
 
-      if (isRemote) {
-        _allPastRides = historyRides.length > 1 ? historyRides.sublist(1) : [];
-      } else {
-        _allPastRides = [];
-      }
+      _allPastRides = ActivityService.enableMockDataForTesting
+          ? historyRides
+          : (historyRides.length > 1 ? historyRides.sublist(1) : <ActivityRideItem>[]);
 
       final past = await _repository.getPastRides(
-        allRides: isRemote ? _allPastRides : null,
+        allRides: _allPastRides,
         page: 1,
         pageSize: AppConstants.activityItemsPerPage,
       );
       final totalPast = await _repository.getTotalPastRidesCount(
-        allRides: isRemote ? _allPastRides : null,
+        allRides: _allPastRides,
       );
 
       final initialRefunds =
@@ -99,13 +95,13 @@ class ActivityBloc extends Bloc<ActivityEvent, ActivityState> {
     try {
       final nextPage = current.currentPage + 1;
       final newItems = await _repository.getPastRides(
-        allRides: _allPastRides.isNotEmpty ? _allPastRides : null,
+        allRides: _allPastRides,
         page: nextPage,
         pageSize: AppConstants.activityItemsPerPage,
       );
 
       final totalPast = await _repository.getTotalPastRidesCount(
-        allRides: _allPastRides.isNotEmpty ? _allPastRides : null,
+        allRides: _allPastRides,
       );
       final updatedList = List.of(current.pastRides)..addAll(newItems);
 

@@ -245,6 +245,9 @@ abstract class AppColors {
   static const Color drawerDark = Color(0xFF161616);
   static const Color drawerCardBorder = Color(0xFF282828);
   static const Color amberWarning = Color(0xFFF59E0B);
+  static const Color warning = Color(0xFFF59E0B);
+  static const Color grayLight = Color(0xFFF3F4F6);
+  static const Color grayText = Color(0xFF8A8A8A);
   static const Color greenSuccess = Color(0xFF16A34A);
   static const Color skyBlue = Color(0xFF0284C7);
   static const Color waveBlue = Color(0xFF00B2FE);

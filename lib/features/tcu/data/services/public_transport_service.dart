@@ -11,6 +11,9 @@ class PublicTransportService {
   final Dio _dio;
   final String? endpoint;
 
+  /// Activé uniquement pour les tests de parsing / filtrage statique
+  static bool enableMockDataForTesting = false;
+
   PublicTransportService({
     Dio? dio,
     this.endpoint,
@@ -104,13 +107,18 @@ class PublicTransportService {
       // fallback smoothly to local verified Dakar transit dataset
     }
 
-    // 4. Fallback to local verified dataset
-    final fallback = _buildOptionsForRoute(origin, destination);
-    if (filter == TcuTransportType.all) {
-      return fallback;
+    // 4. Fallback to local verified dataset ONLY if explicitly enabled for testing
+    if (enableMockDataForTesting) {
+      final fallback = _buildOptionsForRoute(origin, destination);
+      if (filter == TcuTransportType.all) {
+        return fallback;
+      }
+      final filtered = fallback.where((opt) => opt.type == filter).toList();
+      return filtered.isNotEmpty ? filtered : fallback;
     }
-    final filtered = fallback.where((opt) => opt.type == filter).toList();
-    return filtered.isNotEmpty ? filtered : fallback;
+
+    // Production: aucune fausse donnée retournée en cas de panne réseau ou hors ligne
+    return const <TcuRouteOption>[];
   }
 
   /// Parses Transit v2 JSON array into verified TcuRouteOption models

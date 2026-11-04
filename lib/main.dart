@@ -12,6 +12,7 @@ import 'package:seddo/firebase_options.dart';
 import 'package:seddo/services/fcm_service.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/notification_service.dart';
+import 'package:seddo/services/app_params_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -70,6 +71,7 @@ void main() async {
   await EasyLocalization.ensureInitialized();
   await NotificationService().initialize();
   await MapStyleService.loadMapStyle();
+  await AppParamsService().initParams();
 
   try {
     await Firebase.initializeApp(

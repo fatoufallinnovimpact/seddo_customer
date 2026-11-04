@@ -360,8 +360,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      // Dès le retour de Wave ou du navigateur, on active la recherche et on interroge l'API
-      _onPaymentConfirmed();
+      // Au retour d'une application externe (Wave / navigateur), interroger l'API pour vérifier si le paiement a réellement abouti
       final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
       if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
         if (!RealtimeService().isConnected) {
@@ -449,6 +448,13 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         final status = (rideObj['status'] as String? ?? data['status'] as String? ?? '').toUpperCase();
         if (status == 'SEARCHING') {
           _onPaymentConfirmed();
+        } else if (status == 'PAYMENT_PENDING' || status == 'PENDING') {
+          if (mounted) {
+            setState(() {
+              _paymentStatus = 'PENDING';
+              _currentRideStatus = status;
+            });
+          }
         } else if (status == 'ACCEPTED' ||
             status == 'DRIVER_ARRIVED' ||
             status == 'IN_PROGRESS' ||
@@ -1158,7 +1164,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            'ride.searching'.tr(),
+                                            _isPaymentConfirmed
+                                                ? 'ride.searching'.tr()
+                                                : 'En attente du paiement...',
                                             style: GoogleFonts.inter(
                                               fontSize: 20,
                                               fontWeight: FontWeight.w900,
@@ -1186,7 +1194,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            'ride.searching'.tr(),
+                                            _isPaymentConfirmed
+                                                ? 'ride.searching'.tr()
+                                                : 'En attente du paiement...',
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: GoogleFonts.inter(

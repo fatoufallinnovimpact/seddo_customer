@@ -19,10 +19,15 @@ import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
+import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
+import 'package:seddo/features/ride/presentation/widgets/active_ride_offline_banner.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
+import 'package:seddo/services/route_service.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_driver_card_widget.dart';
@@ -106,6 +111,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   double _currentSheetExtent = 0.38;
   DateTime _lastCameraUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   late bool _isOffline;
+  Timer? _offlineMonitorTimer;
 
   // Realtime Socket.IO streams & stale location tracking (PDF Seddo)
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
@@ -118,6 +124,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   Timer? _stalePositionCheckTimer;
   Timer? _pollTimer;
   bool _isPositionUpdating = false;
+  bool _isRerouting = false;
+  DateTime _lastRerouteTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Whether to display the simulation toggle button in the bottom sheet.
   /// Kept in code for later use as requested by the user.
@@ -131,6 +139,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _isOffline = widget.isOffline;
     _currentSheetExtent = _isOffline ? 0.25 : 0.38;
     _initRoute();
+    _persistLocalState();
+    _startOfflineMonitor();
     _loadCustomMarkers();
 
     final bool isTest =
@@ -177,11 +187,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         }
       });
 
-    if (widget.autoStartSimulation &&
-        widget.polylinePoints.isNotEmpty &&
-        !isTest) {
+    if (!isTest) {
       Future.delayed(const Duration(milliseconds: 600), () {
-        if (mounted) {
+        if (mounted && _animController != null && !_animController!.isAnimating) {
           _startSimulation();
         }
       });
@@ -340,32 +348,153 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       return;
     }
 
-    // 3. Mise à jour de la position GPS du chauffeur si retournée
+    // 3. Mise à jour de la polyline réelle si fournie par l'API
+    final routeObj = rideObj['route'] is Map<String, dynamic>
+        ? rideObj['route'] as Map<String, dynamic>
+        : null;
+    final plannedPolyStr = rideObj['plannedPolyline'] as String? ??
+        (routeObj?['polyline'] as String?);
+    if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
+      final tripPts = RouteService.decodePolyline(plannedPolyStr);
+      if (tripPts.length >= 2 && tripPts != _effectiveRoute) {
+        _setNewRoute(tripPts);
+      }
+    }
+
+    // 4. Mise à jour de la position GPS du chauffeur si retournée
     final driverObj = rideObj['driver'] is Map<String, dynamic>
         ? rideObj['driver'] as Map<String, dynamic>
         : null;
-    final locObj = driverObj?['location'] is Map<String, dynamic>
-        ? driverObj!['location'] as Map<String, dynamic>
-        : null;
-    if (locObj != null &&
-        locObj['latitude'] != null &&
-        locObj['longitude'] != null) {
-      final lat = (locObj['latitude'] as num).toDouble();
-      final lng = (locObj['longitude'] as num).toDouble();
-      final heading = (locObj['heading'] as num?)?.toDouble() ?? 0.0;
-      if (lat != 0.0 && lng != 0.0) {
-        _lastDriverLocationTime = DateTime.now();
-        if (_isPositionUpdating) {
-          setState(() {
-            _isPositionUpdating = false;
-          });
+    final posObj = driverObj?['position'] is Map<String, dynamic>
+        ? driverObj!['position'] as Map<String, dynamic>
+        : (driverObj?['location'] is Map<String, dynamic>
+            ? driverObj!['location'] as Map<String, dynamic>
+            : (rideObj['driverPosition'] is Map<String, dynamic>
+                ? rideObj['driverPosition'] as Map<String, dynamic>
+                : (rideObj['position'] is Map<String, dynamic>
+                    ? rideObj['position'] as Map<String, dynamic>
+                    : null)));
+
+    final lat = (posObj?['lat'] ??
+            posObj?['latitude'] ??
+            driverObj?['lat'] ??
+            driverObj?['latitude'] ??
+            rideObj['lat'] ??
+            rideObj['latitude'] as num?)
+        ?.toDouble();
+    final lng = (posObj?['lng'] ??
+            posObj?['longitude'] ??
+            driverObj?['lng'] ??
+            driverObj?['longitude'] ??
+            rideObj['lng'] ??
+            rideObj['longitude'] as num?)
+        ?.toDouble();
+    final heading = (posObj?['heading'] ??
+            posObj?['bearing'] ??
+            driverObj?['heading'] ??
+            rideObj['heading'] as num?)
+        ?.toDouble();
+
+    if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+      _lastDriverLocationTime = DateTime.now();
+      if (_isPositionUpdating) {
+        setState(() {
+          _isPositionUpdating = false;
+        });
+      }
+      updateCarLocation(LatLng(lat, lng), heading: heading);
+    }
+  }
+
+  void _persistLocalState() {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+    ActiveRideOfflineStorage.saveActiveRide(
+      rideId: effectiveRideId,
+      status: 'IN_PROGRESS',
+      departure: widget.departure,
+      destination: widget.destination,
+      driver: widget.driver,
+      rideOption: widget.rideOption,
+      departureCode: '4821',
+      polylinePoints: _effectiveRoute,
+      lastDriverLocation: _currentCarPosition,
+      lastDriverHeading: _currentCarHeading,
+      lastDriverLocationTime: _lastDriverLocationTime,
+    );
+  }
+
+  void _startOfflineMonitor() {
+    _offlineMonitorTimer?.cancel();
+    _offlineMonitorTimer =
+        Timer.periodic(const Duration(seconds: 4), (_) async {
+      if (!mounted) return;
+      final online = await NetworkConnectivityService.isConnected;
+      if (!online && !_isOffline) {
+        setState(() {
+          _isOffline = true;
+        });
+        _animController?.stop();
+      } else if (online && _isOffline) {
+        await _onNetworkRestored();
+      }
+    });
+  }
+
+  Future<void> _onNetworkRestored() async {
+    debugPrint(
+        '[ActiveRidePage] 🌐 Réseau rétabli ! Resynchronisation automatique...');
+    RealtimeService().connect();
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      RealtimeService().joinRide(effectiveRideId);
+    }
+
+    try {
+      final res = await _rideService.getCurrentRide();
+      if (!mounted) return;
+      final ride = res?['ride'] as Map<String, dynamic>?;
+      if (ride != null) {
+        final status = (ride['status'] as String? ?? '').toUpperCase();
+        if (status == 'COMPLETED') {
+          await ActiveRideOfflineStorage.clearActiveRide();
+          if (!mounted) return;
+          _onTripCompleted();
+          return;
+        } else if (status.startsWith('CANCEL') ||
+            status == 'NO_DRIVER' ||
+            status == 'NO_SHOW') {
+          await ActiveRideOfflineStorage.clearActiveRide();
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            SlideRightToLeftRoute(
+              page: RideCancelledPage(
+                rideOption: widget.rideOption,
+                departure: widget.departure,
+                destination: widget.destination,
+              ),
+            ),
+          );
+          return;
         }
-        updateCarLocation(LatLng(lat, lng), heading: heading);
+      }
+    } catch (_) {}
+
+    await ActiveRideOfflineStorage.flushQueue(_rideService);
+
+    if (mounted) {
+      setState(() {
+        _isOffline = false;
+      });
+      if (_animController != null && !_animController!.isAnimating && _progressRatio < 0.99) {
+        _animController!.forward();
       }
     }
   }
 
   void _cleanupRealtime() {
+    _offlineMonitorTimer?.cancel();
     _pollTimer?.cancel();
     _stalePositionCheckTimer?.cancel();
     _realtimeStatusSub?.cancel();
@@ -422,15 +551,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           start.longitude + (end.longitude - start.longitude) * t,
         );
       });
+      // Récupération asynchrone des vraies routes de Dakar via RouteService
+      _loadRoadRoute();
     }
 
-    _segmentLengths = [];
-    _totalRouteDistanceMeters = 0.0;
-    for (int i = 0; i < _effectiveRoute.length - 1; i++) {
-      final len = _haversineMeters(_effectiveRoute[i], _effectiveRoute[i + 1]);
-      _segmentLengths.add(len);
-      _totalRouteDistanceMeters += len;
-    }
+    _recomputeRouteMetrics();
 
     // Car starts at departure point of the ride
     _currentCarPosition = _effectiveRoute.first;
@@ -451,6 +576,159 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _traveledPoints = [_currentCarPosition];
     _remainingPoints = List<LatLng>.from(_effectiveRoute);
     _progressRatio = 0.0;
+  }
+
+  void _recomputeRouteMetrics() {
+    _segmentLengths = [];
+    _totalRouteDistanceMeters = 0.0;
+    for (int i = 0; i < _effectiveRoute.length - 1; i++) {
+      final len = _haversineMeters(_effectiveRoute[i], _effectiveRoute[i + 1]);
+      _segmentLengths.add(len);
+      _totalRouteDistanceMeters += len;
+    }
+  }
+
+  void _setNewRoute(List<LatLng> newRoute) {
+    if (newRoute.length < 2) return;
+    setState(() {
+      _effectiveRoute = List<LatLng>.from(newRoute);
+      _recomputeRouteMetrics();
+      final proj = _findClosestProjectionOnRoute(_currentCarPosition);
+      _applyExternalGpsLocation(proj.projectedPoint, heading: proj.heading);
+    });
+  }
+
+  Future<void> _loadRoadRoute() async {
+    try {
+      final origin =
+          LatLng(widget.departure.latitude, widget.departure.longitude);
+      final dest =
+          LatLng(widget.destination.latitude, widget.destination.longitude);
+      final details =
+          await RouteService().getRoute(origin: origin, destination: dest);
+      if (details.polylinePoints.length >= 2 && mounted) {
+        _setNewRoute(details.polylinePoints);
+        if (details.distanceKm > 0) {
+          setState(() {
+            _initialDistanceKm = details.distanceKm;
+            _remainingDistanceKm = details.distanceKm;
+          });
+        }
+        if (details.durationMinutes > 0) {
+          setState(() {
+            _initialEtaMinutes = details.durationMinutes;
+            _remainingEtaMinutes = details.durationMinutes;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[ActiveRidePage] Note route loading fallback: $e');
+    }
+  }
+
+  Future<void> _checkRerouting(LatLng driverPos) async {
+    final now = DateTime.now();
+    if (_isRerouting || now.difference(_lastRerouteTime).inSeconds < 10) return;
+    _isRerouting = true;
+    _lastRerouteTime = now;
+    try {
+      final dest =
+          LatLng(widget.destination.latitude, widget.destination.longitude);
+      final details =
+          await RouteService().getRoute(origin: driverPos, destination: dest);
+      if (details.polylinePoints.length >= 2 && mounted) {
+        _setNewRoute(details.polylinePoints);
+      }
+    } catch (_) {
+    } finally {
+      _isRerouting = false;
+    }
+  }
+
+  ({
+    LatLng projectedPoint,
+    int segmentIndex,
+    double distanceMeters,
+    double segmentRatio,
+    double heading,
+    double progressRatio,
+  }) _findClosestProjectionOnRoute(LatLng point) {
+    if (_effectiveRoute.length < 2) {
+      return (
+        projectedPoint: point,
+        segmentIndex: 0,
+        distanceMeters: 0.0,
+        segmentRatio: 0.0,
+        heading: _currentCarHeading,
+        progressRatio: 0.0,
+      );
+    }
+
+    double minDistance = double.infinity;
+    LatLng bestProjected = point;
+    int bestSegmentIndex = 0;
+    double bestRatio = 0.0;
+    double bestHeading = _currentCarHeading;
+    double bestAccumulatedDistance = 0.0;
+
+    double runningDistance = 0.0;
+    for (int i = 0; i < _effectiveRoute.length - 1; i++) {
+      final p1 = _effectiveRoute[i];
+      final p2 = _effectiveRoute[i + 1];
+      final segLen = i < _segmentLengths.length
+          ? _segmentLengths[i]
+          : _haversineMeters(p1, p2);
+
+      final dLat = p2.latitude - p1.latitude;
+      final dLon = p2.longitude - p1.longitude;
+      final meanLatRad =
+          (p1.latitude + p2.latitude) / 2.0 * (math.pi / 180.0);
+      final cosLat = math.cos(meanLatRad);
+      final dx = dLon * cosLat;
+      final dy = dLat;
+      final px = (point.longitude - p1.longitude) * cosLat;
+      final py = point.latitude - p1.latitude;
+
+      final lenSq = dx * dx + dy * dy;
+      final t =
+          lenSq == 0 ? 0.0 : ((px * dx + py * dy) / lenSq).clamp(0.0, 1.0);
+      final proj = LatLng(p1.latitude + t * dLat, p1.longitude + t * dLon);
+      final dist = _haversineMeters(point, proj);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestProjected = proj;
+        bestSegmentIndex = i;
+        bestRatio = t;
+        bestAccumulatedDistance = runningDistance + t * segLen;
+
+        final rawBearing = _calculateBearing(p1, p2);
+        if (i < _effectiveRoute.length - 2 && t > 0.65) {
+          final nextBearing = _calculateBearing(
+            _effectiveRoute[i + 1],
+            _effectiveRoute[i + 2],
+          );
+          final turnRatio = (t - 0.65) / 0.35;
+          bestHeading = _interpolateAngle(rawBearing, nextBearing, turnRatio);
+        } else {
+          bestHeading = rawBearing;
+        }
+      }
+      runningDistance += segLen;
+    }
+
+    final totalDist =
+        _totalRouteDistanceMeters > 0 ? _totalRouteDistanceMeters : 1.0;
+    final progress = (bestAccumulatedDistance / totalDist).clamp(0.0, 1.0);
+
+    return (
+      projectedPoint: bestProjected,
+      segmentIndex: bestSegmentIndex,
+      distanceMeters: minDistance,
+      segmentRatio: bestRatio,
+      heading: bestHeading,
+      progressRatio: progress,
+    );
   }
 
   double _haversineMeters(LatLng p1, LatLng p2) {
@@ -632,71 +910,80 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   /// Méthode publique prête pour connecter l'API backend / WebSockets en temps réel.
   /// Lorsque le serveur ou l'application chauffeur envoie une mise à jour GPS,
-  /// appelez cette méthode pour mettre à jour la position du véhicule en direct.
+  /// cette méthode projette le véhicule sur la route réelle et anime son déplacement fluide.
   void updateCarLocation(LatLng newPosition, {double? heading}) {
-    if (_animController != null && _animController!.isAnimating) {
-      _animController!.stop();
-    }
-    _smoothCarController?.stop();
-
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
-    final calcHeading =
-        heading ?? _calculateBearing(_currentCarPosition, newPosition);
+
+    final proj = _findClosestProjectionOnRoute(newPosition);
+    final bool isSnapped = proj.distanceMeters <= 80.0;
+    final targetPos = isSnapped ? proj.projectedPoint : newPosition;
+    final targetHeading = heading ??
+        (isSnapped
+            ? proj.heading
+            : _calculateBearing(_currentCarPosition, newPosition));
 
     if (isTest) {
-      _applyExternalGpsLocation(newPosition, heading: calcHeading);
+      _applyExternalGpsLocation(targetPos, heading: targetHeading);
       return;
     }
 
     // Si la position a très peu changé (< 1m), mise à jour directe
-    if ((_currentCarPosition.latitude - newPosition.latitude).abs() < 0.00001 &&
-        (_currentCarPosition.longitude - newPosition.longitude).abs() < 0.00001) {
-      _applyExternalGpsLocation(newPosition, heading: calcHeading);
+    if ((_currentCarPosition.latitude - targetPos.latitude).abs() < 0.00001 &&
+        (_currentCarPosition.longitude - targetPos.longitude).abs() < 0.00001) {
+      _applyExternalGpsLocation(targetPos, heading: targetHeading);
       return;
     }
 
+    _smoothCarController?.stop();
+
     _animStartPos = _currentCarPosition;
-    _animEndPos = newPosition;
+    _animEndPos = targetPos;
     _animStartHeading = _currentCarHeading;
-    _animEndHeading = calcHeading;
+    _animEndHeading = targetHeading;
 
     _smoothCarController?.forward(from: 0.0);
+
+    // Ajustement de la progression sur la route
+    if (_animController != null && isSnapped) {
+      _animController!.value = proj.progressRatio;
+      if (!_animController!.isAnimating && proj.progressRatio < 0.99) {
+        _animController!.forward();
+      }
+    }
   }
 
   void _applyExternalGpsLocation(LatLng newPosition, {double? heading}) {
     if (!mounted || _effectiveRoute.isEmpty) return;
 
-    int closestIndex = 0;
-    double minDistance = double.infinity;
-    for (int i = 0; i < _effectiveRoute.length; i++) {
-      final d = _haversineMeters(newPosition, _effectiveRoute[i]);
-      if (d < minDistance) {
-        minDistance = d;
-        closestIndex = i;
-      }
-    }
-
+    final proj = _findClosestProjectionOnRoute(newPosition);
+    final bool isSnapped = proj.distanceMeters <= 80.0;
+    final finalPos = isSnapped ? proj.projectedPoint : newPosition;
     final computedHeading = heading ??
-        (closestIndex < _effectiveRoute.length - 1
-            ? _calculateBearing(_effectiveRoute[closestIndex],
-                _effectiveRoute[closestIndex + 1])
-            : _currentCarHeading);
+        (isSnapped
+            ? proj.heading
+            : (proj.segmentIndex < _effectiveRoute.length - 1
+                ? _calculateBearing(_effectiveRoute[proj.segmentIndex],
+                    _effectiveRoute[proj.segmentIndex + 1])
+                : _currentCarHeading));
 
     final traveled = <LatLng>[];
-    for (int i = 0; i <= closestIndex; i++) {
+    for (int i = 0; i <= proj.segmentIndex; i++) {
       traveled.add(_effectiveRoute[i]);
     }
-    traveled.add(newPosition);
+    traveled.add(finalPos);
 
-    final remaining = <LatLng>[newPosition];
-    for (int i = closestIndex + 1; i < _effectiveRoute.length; i++) {
+    final remaining = <LatLng>[finalPos];
+    for (int i = proj.segmentIndex + 1; i < _effectiveRoute.length; i++) {
       remaining.add(_effectiveRoute[i]);
     }
 
-    final ratio = (closestIndex /
-            (_effectiveRoute.length - 1).clamp(1, double.infinity))
-        .clamp(0.0, 1.0);
+    final ratio = proj.progressRatio;
+
+    // Si déviation de plus de 80m de la route, recalculer l'itinéraire vers la destination
+    if (!isSnapped) {
+      _checkRerouting(newPosition);
+    }
 
     // Recentrage automatique fluide si le mode suivi est activé
     if (_followCar && _mapController != null) {
@@ -705,13 +992,13 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         _lastCameraUpdateTime = now;
         _isProgrammaticCameraMove = true;
         _mapController?.animateCamera(
-          CameraUpdate.newLatLng(newPosition),
+          CameraUpdate.newLatLng(finalPos),
         );
       }
     }
 
     setState(() {
-      _currentCarPosition = newPosition;
+      _currentCarPosition = finalPos;
       _currentCarHeading = computedHeading;
       _traveledPoints = traveled;
       _remainingPoints = remaining;
@@ -785,10 +1072,33 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Future<void> _callDriver() async {
+    if (_isOffline) {
+      final phone = widget.driver.phoneNumber;
+      final uri =
+          Uri.parse('tel:${phone.isNotEmpty ? phone : "+221770000000"}');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+      return;
+    }
     await InAppCallPage.show(context, driver: widget.driver);
   }
 
+  Future<void> _sendSmsDriver() async {
+    final phone = widget.driver.phoneNumber;
+    final uri = Uri.parse(
+      'sms:${phone.isNotEmpty ? phone : ""}?body=${Uri.encodeComponent("Bonjour, je suis dans votre véhicule.")}',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   void _openChat() {
+    if (_isOffline) {
+      _sendSmsDriver();
+      return;
+    }
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: DriverChatPage(
@@ -802,6 +1112,16 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   Future<void> _shareRide() async {
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? 'current';
+
+    if (_isOffline) {
+      final text =
+          'Suis mon trajet Seddo en direct vers ${widget.destination.mainText} avec ${widget.driver.name} (${widget.driver.carModel} ${widget.driver.licensePlate})';
+      final uri = Uri.parse('sms:?body=${Uri.encodeComponent(text)}');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
     String shareUrl = 'https://suivi.seddo.sn/t/8K02F';
     String? token;
 
@@ -957,6 +1277,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       destination: widget.destination,
       driver: widget.driver,
       currentPosition: _currentCarPosition,
+      currentAddress: widget.departure.fullAddress.isNotEmpty
+          ? widget.departure.fullAddress
+          : widget.departure.mainText,
       etaText: widget.rideOption.estimatedArrival,
     );
   }
@@ -1206,61 +1529,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           ),
         ),
 
-          // 2. Floating Offline Banner (when offline) or Top Bar (when online)
-          if (_isOffline) ...[
-            // Bannière flottante d'indication du mode hors-ligne
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
-              left: 16,
-              right: 16,
-              child: GestureDetector(
-                onTap: _toggleOfflineMode,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.offlineDark,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: AppColors.black38,
-                        blurRadius: 14,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 2),
-                        child: Icon(
-                          Icons.wifi_off_rounded,
-                          color: AppColors.white,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Pas de réseau. Votre course continue et la position se mettra à jour au retour du réseau.',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.white,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          // Bannière hors-ligne : "Connexion perdue, dernière mise à jour il y a X min"
+          ActiveRideOfflineBanner(
+            isOffline: _isOffline,
+            lastUpdateTime: _lastDriverLocationTime,
+            onRetry: _onNetworkRestored,
+          ),
 
-          ] else
+          if (!_isOffline)
             // Normal online Floating Top Bar (Centering Pill with Siren Button on right)
             SafeArea(
               child: Padding(
@@ -1743,6 +2019,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                     ActiveDriverCardWidget(
                       driver: widget.driver,
                       isPaid: true,
+                      isOffline: _isOffline,
                       vehicleImagePath: widget.rideOption.type ==
                               RideType.confort
                           ? 'assets/images/seddo_confort_3d.png'

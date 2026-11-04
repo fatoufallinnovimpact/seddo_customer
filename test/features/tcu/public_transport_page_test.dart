@@ -15,6 +15,11 @@ void main() {
 
   setUpAll(() async {
     await initTestLocalization();
+    PublicTransportService.enableMockDataForTesting = true;
+  });
+
+  tearDownAll(() {
+    PublicTransportService.enableMockDataForTesting = false;
   });
 
   group('TCU Public Transport Page & Navigation Flow Tests', () {

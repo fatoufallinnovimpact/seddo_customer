@@ -16,6 +16,7 @@ import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/services/map_style_service.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
 
 export 'package:seddo/features/activity/domain/bloc/activity_event.dart'
     show ActivityTab;
@@ -377,47 +378,78 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
 
   Widget _buildCoursesTabContent(ActivityLoadedState state) {
     if (state.recentRide == null && state.pastRides.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.directions_car_rounded,
-                  color: AppColors.primary,
-                  size: 32,
-                ),
+      return FutureBuilder<bool>(
+        future: NetworkConnectivityService.isConnected,
+        builder: (context, snap) {
+          final isOffline = snap.hasData && snap.data == false;
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: (isOffline ? AppColors.warning : AppColors.primary)
+                          .withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isOffline
+                          ? Icons.wifi_off_rounded
+                          : Icons.directions_car_rounded,
+                      color: isOffline ? AppColors.warning : AppColors.primary,
+                      size: 32,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    isOffline
+                        ? 'Mode hors-ligne'
+                        : 'Aucune course enregistrée',
+                    style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.slateDark,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isOffline
+                        ? 'Impossible de charger l\'historique d\'activité sans connexion Internet.'
+                        : 'Vos trajets et reçus apparaîtront ici dès votre première course.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  if (isOffline) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      onPressed: () => context
+                          .read<ActivityBloc>()
+                          .add(const ActivityRefreshEvent()),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text('common.retry'.tr()),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Aucune course enregistrée',
-                style: GoogleFonts.inter(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.slateDark,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Vos trajets et reçus apparaîtront ici dès votre première course.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       );
     }
 

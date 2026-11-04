@@ -1,21 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
-import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
-import 'package:seddo/features/ride/data/models/driver_model.dart';
-import 'package:seddo/features/ride/data/models/ride_option_model.dart';
-import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
-import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
-import 'package:seddo/features/ride/presentation/pages/driver_approaching_page.dart';
-import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
-import 'package:seddo/services/route_service.dart';
+import 'package:seddo/features/ride/presentation/utils/active_ride_navigation_helper.dart';
 
 /// Splash page showing solid Seddo orange background and an animated SEDDO logo reveal.
 /// Checks GET /v1/rides/current at app startup if the user is authenticated.
@@ -107,6 +100,17 @@ class _SplashPageState extends State<SplashPage>
         }
       } catch (_) {}
 
+      // Si le réseau est indisponible (offline), récupérer la course sauvegardée en local
+      // pour qu'une coupure réseau ne fasse JAMAIS disparaître la course en cours
+      if (activePage == null) {
+        try {
+          final cachedRide = await ActiveRideOfflineStorage.getActiveRide();
+          if (cachedRide != null) {
+            activePage = _resolveActiveRidePage(cachedRide);
+          }
+        } catch (_) {}
+      }
+
       targetPage = activePage ?? const HomePage();
     } else {
       // If the user has not completed their profile yet, clear the incomplete session
@@ -130,121 +134,8 @@ class _SplashPageState extends State<SplashPage>
 
   /// Resolves the corresponding screen according to the active ride status
   Widget? _resolveActiveRidePage(Map<String, dynamic> ride) {
-    final status = (ride['status'] as String? ?? '').toUpperCase();
-    if (status == 'COMPLETED' ||
-        status.startsWith('CANCELLED') ||
-        status == 'NO_DRIVER' ||
-        status == 'NO_SHOW') {
-      return null;
-    }
-
-    final pickupRaw = ride['pickup'] as Map<String, dynamic>? ?? {};
-    final dropoffRaw = ride['dropoff'] as Map<String, dynamic>? ?? {};
-
-    final departure = PlaceSearchResult(
-      id: 'pickup',
-      mainText: (pickupRaw['address'] as String?)?.split(',').first ?? 'Départ',
-      secondaryText: (pickupRaw['address'] as String?) ?? 'Dakar',
-      fullAddress: (pickupRaw['address'] as String?) ?? 'Point de départ',
-      latitude: (pickupRaw['lat'] as num?)?.toDouble() ?? 14.6937,
-      longitude: (pickupRaw['lng'] as num?)?.toDouble() ?? -17.4440,
-    );
-
-    final destination = PlaceSearchResult(
-      id: 'dropoff',
-      mainText: (dropoffRaw['address'] as String?)?.split(',').first ?? 'Destination',
-      secondaryText: (dropoffRaw['address'] as String?) ?? 'Dakar',
-      fullAddress: (dropoffRaw['address'] as String?) ?? 'Point d\'arrivée',
-      latitude: (dropoffRaw['lat'] as num?)?.toDouble() ?? 14.7431,
-      longitude: (dropoffRaw['lng'] as num?)?.toDouble() ?? -17.5195,
-    );
-
-    final isConfort = (ride['category'] as String? ?? '').toUpperCase() == 'CONFORT';
-    final rideType = isConfort ? RideType.confort : RideType.eco;
-
-    // Planned traffic segments
-    final plannedTrafficRaw = ride['plannedTraffic'] as List<dynamic>?;
-    final List<TrafficSegmentModel> plannedTraffic = plannedTrafficRaw != null
-        ? plannedTrafficRaw
-            .whereType<Map<String, dynamic>>()
-            .map((item) => TrafficSegmentModel.fromJson(item))
-            .toList()
-        : const [];
-
-    final rideOption = RideOptionModel(
-      type: rideType,
-      title: isConfort ? 'Seddo Confort' : 'Seddo Eco',
-      subtitle: (ride['categoryName'] as String?) ??
-          (isConfort ? 'Seddo Confort' : 'Seddo Eco'),
-      price: (ride['finalPrice'] ?? ride['price'] ?? 2000) as int,
-      capacity: 4,
-      estimatedArrival: 'Dans 15 min',
-      pickupDuration: '3 min',
-      traffic: plannedTraffic,
-    );
-
-    if (status == 'SEARCHING' || status == 'PAYMENT_PENDING') {
-      return DriverSearchPage(
-        departure: departure,
-        destination: destination,
-        rideOption: rideOption,
-      );
-    }
-
-    final routeRaw = ride['route'] as Map<String, dynamic>?;
-    final phase = (routeRaw?['phase'] as String? ?? '').toUpperCase();
-    final startedAt = ride['startedAt'];
-    final rideId = ride['id']?.toString();
-
-    // Décodage de la polyline planifiée (du pickup au dropoff)
-    List<LatLng> tripPolyline = [];
-    final plannedPolylineStr = ride['plannedPolyline'] as String?;
-    if (plannedPolylineStr != null && plannedPolylineStr.isNotEmpty) {
-      tripPolyline = RouteService.decodePolyline(plannedPolylineStr);
-    }
-
-    // Driver information pour approche ou course en cours :
-    // DriverModel.fromRideJson extrait fidèlement driver.position, heading,
-    // route.polyline (phase APPROACH sur vraies routes), durationS et distanceM
-    final driver = DriverModel.fromRideJson(
+    return ActiveRideNavigationHelper.resolveActiveRidePage(
       ride,
-      defaultRideType: rideType,
-    );
-
-    final departureCode =
-        DriverModel.extractDepartureCode(ride, fallback: '4821');
-
-    // Vérification stricte de la phase et du statut :
-    // Tant que la phase est 'APPROACH' ou que startedAt est null (code non encore validé par le chauffeur),
-    // l'application DOIT afficher DriverApproachingPage avec le code de départ à 4 chiffres.
-    final isTripUnderway = (status == 'IN_PROGRESS' ||
-            phase == 'TRIP' ||
-            (startedAt != null && startedAt.toString().isNotEmpty)) &&
-        phase != 'APPROACH';
-
-    if (isTripUnderway) {
-      return ActiveRidePage(
-        departure: departure,
-        destination: destination,
-        rideOption: rideOption,
-        driver: driver,
-        polylinePoints: tripPolyline,
-        autoStartSimulation: false,
-        rideId: rideId,
-        rideService: widget.rideService,
-      );
-    }
-
-    // Phase APPROACH (chauffeur en route vers le client ou arrivé au point de rendez-vous)
-    return DriverApproachingPage(
-      departure: departure,
-      destination: destination,
-      rideOption: rideOption,
-      driver: driver,
-      departureCode: departureCode,
-      polylinePoints: tripPolyline,
-      autoStartSimulation: false,
-      rideId: rideId,
       rideService: widget.rideService,
     );
   }

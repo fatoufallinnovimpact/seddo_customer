@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/network/api_client.dart';
 import 'package:seddo/core/utils/api_endpoints.dart';
@@ -19,6 +19,10 @@ class ActivityService {
   final Dio _dio;
   bool _usingRemoteData = false;
   bool get usingRemoteData => _usingRemoteData;
+
+  /// Ne doit être activé QUE pour les tests automatisés de layout UI.
+  /// Strictement false par défaut pour ne JAMAIS injecter de fausses courses dans l'application.
+  static bool enableMockDataForTesting = false;
 
   ActivityService({
     String? baseUrl,
@@ -70,8 +74,11 @@ class ActivityService {
     }
 
     _usingRemoteData = false;
-    // Fallback preset past rides for offline or test mode
-    return _allPastRides;
+    if (enableMockDataForTesting) {
+      return _allPastRides;
+    }
+    // En production réelle : ne pas afficher de fausses courses mockées hors-ligne
+    return const <ActivityRideItem>[];
   }
 
   /// GET /v1/rides/{id}
@@ -106,6 +113,16 @@ class ActivityService {
         debugPrint('[ActivityService] ⚠️ Erreur inattendue GET /v1/rides/$id: $e');
       }
     }
+
+    if (enableMockDataForTesting) {
+      if (id == 'ride_recent') {
+        return (await getRecentRide());
+      }
+      for (final r in _allPastRides) {
+        if (r.id == id) return r;
+      }
+    }
+
     return null;
   }
 
@@ -140,6 +157,16 @@ class ActivityService {
     List<ActivityRideItem>? rides,
     List<ActivityRefundItem>? refunds,
   }) async {
+    if (enableMockDataForTesting) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      return const ActivitySummary(
+        paidRidesCount: 3,
+        totalSpentFormatted: '22 900 F',
+        totalRefundedFormatted: '2 900 F',
+        refundPaymentAccount: 'Orange Money 77 ••• 45 12',
+      );
+    }
+
     if (rides != null && rides.isNotEmpty) {
       final paidRides = rides
           .where((r) =>
@@ -163,40 +190,25 @@ class ActivityService {
       return ActivitySummary(
         paidRidesCount: paidCount,
         totalSpentFormatted: ActivityRideItem.formatPrice(totalSpent),
-        totalRefundedFormatted: ActivityRideItem.formatPrice(
-          totalRefunded > 0 ? totalRefunded : 2900,
-        ),
-        refundPaymentAccount: 'Orange Money 77 ••• 45 12',
+        totalRefundedFormatted: ActivityRideItem.formatPrice(totalRefunded),
+        refundPaymentAccount: '',
       );
     }
 
-    await Future<void>.delayed(const Duration(milliseconds: 20));
     return const ActivitySummary(
-      paidRidesCount: 3,
-      totalSpentFormatted: '22 900 F',
-      totalRefundedFormatted: '2 900 F',
-      refundPaymentAccount: 'Orange Money 77 ••• 45 12',
+      paidRidesCount: 0,
+      totalSpentFormatted: '0 F',
+      totalRefundedFormatted: '0 F',
+      refundPaymentAccount: '',
     );
   }
 
   /// The most recent ride (featured with map trajectory preview)
   Future<ActivityRideItem?> getRecentRide({List<ActivityRideItem>? rides}) async {
-    if (rides != null && rides.isNotEmpty) {
-      final first = rides.first;
-      final detailed = await getRideDetails(first.id);
-      if (detailed != null && detailed.polylinePoints.isNotEmpty) {
-        return detailed;
-      }
-      return first;
-    }
-
-    if (_usingRemoteData) {
-      return null;
-    }
-
-    await Future<void>.delayed(const Duration(milliseconds: 20));
-    return ActivityRideItem(
-      id: 'ride_recent',
+    if (enableMockDataForTesting) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      return ActivityRideItem(
+        id: 'ride_recent',
       title: 'ALMADIES',
       subtitle: 'Moussa · 7,8 km',
       price: 3500,
@@ -245,6 +257,18 @@ class ActivityService {
       ],
     );
   }
+
+  if (rides != null && rides.isNotEmpty) {
+    final first = rides.first;
+    final detailed = await getRideDetails(first.id);
+    if (detailed != null && detailed.polylinePoints.isNotEmpty) {
+      return detailed;
+    }
+    return first;
+  }
+
+  return null;
+}
 
   /// Master list of past rides (earlier than the most recent)
   static final List<ActivityRideItem> _allPastRides = [
@@ -584,7 +608,7 @@ class ActivityService {
     int pageSize = 3,
   }) async {
     final list = allRides ??
-        (_usingRemoteData ? const <ActivityRideItem>[] : _allPastRides);
+        (enableMockDataForTesting ? _allPastRides : const <ActivityRideItem>[]);
     if (page < 1) page = 1;
     final startIndex = (page - 1) * pageSize;
     if (startIndex >= list.length) {
@@ -597,7 +621,7 @@ class ActivityService {
   /// Total count of earlier past rides
   Future<int> getTotalPastRidesCount({List<ActivityRideItem>? allRides}) async {
     return (allRides ??
-            (_usingRemoteData ? const <ActivityRideItem>[] : _allPastRides))
+            (enableMockDataForTesting ? _allPastRides : const <ActivityRideItem>[]))
         .length;
   }
 
@@ -653,7 +677,11 @@ class ActivityService {
       }
     }
 
-    // Fallback gracieux en environnement de test ou hors-ligne
+    if (!enableMockDataForTesting) {
+      return const <ActivityRefundItem>[];
+    }
+
+    // Fallback en environnement de test
     await Future<void>.delayed(const Duration(milliseconds: 20));
     return [
       ActivityRefundItem(
