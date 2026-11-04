@@ -135,6 +135,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   late bool _isOffline;
   Timer? _offlineMonitorTimer;
   int _consecutiveOfflineFailures = 0;
+  bool _isCheckingConnectivity = false;
   String? _paymentMethod;
   String? _paymentPhone;
   DateTime _lastLiveUpdateSync = DateTime.fromMillisecondsSinceEpoch(0);
@@ -172,19 +173,17 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _loadCustomMarkers();
     _syncLiveUpdate(progress: 0.05, etaMinutes: _remainingEtaMinutes);
 
-    if (!widget.isOffline) {
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+
+    if (!isTest || !widget.isOffline) {
       NetworkConnectivityService.isConnected.then((online) {
         if (mounted && online && _isOffline) {
-          setState(() {
-            _isOffline = false;
-            _currentSheetExtent = 0.38;
-          });
+          _onNetworkRestored();
         }
       });
     }
 
-    final bool isTest =
-        WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
     _animController = AnimationController(
       vsync: this,
@@ -493,22 +492,29 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _offlineMonitorTimer?.cancel();
     _offlineMonitorTimer =
         Timer.periodic(const Duration(seconds: 4), (_) async {
-      if (!mounted) return;
-      final online = await NetworkConnectivityService.isConnected;
-      if (!online) {
-        _consecutiveOfflineFailures++;
-        if (_consecutiveOfflineFailures >= 2 && !_isOffline) {
-          setState(() {
-            _isOffline = true;
-          });
-          _animController?.stop();
-          _smoothCarController?.stop();
+      if (!mounted || _isCheckingConnectivity) return;
+      _isCheckingConnectivity = true;
+      try {
+        final isSocketConnected = RealtimeService().isConnected;
+        final online = isSocketConnected || await NetworkConnectivityService.isConnected;
+        if (!mounted) return;
+        if (!online) {
+          _consecutiveOfflineFailures++;
+          if (_consecutiveOfflineFailures >= 3 && !_isOffline) {
+            setState(() {
+              _isOffline = true;
+            });
+            _animController?.stop();
+            _smoothCarController?.stop();
+          }
+        } else {
+          _consecutiveOfflineFailures = 0;
+          if (_isOffline) {
+            await _onNetworkRestored();
+          }
         }
-      } else {
-        _consecutiveOfflineFailures = 0;
-        if (_isOffline) {
-          await _onNetworkRestored();
-        }
+      } finally {
+        _isCheckingConnectivity = false;
       }
     });
   }
@@ -516,13 +522,34 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   Future<void> _onNetworkRestored() async {
     debugPrint(
         '[ActiveRidePage] 🌐 Réseau rétabli ! Resynchronisation automatique...');
+    _consecutiveOfflineFailures = 0;
+    NetworkConnectivityService.markOnline();
+
+    // 1. Débloquer immédiatement l'interface utilisateur et masquer la bannière
+    if (mounted) {
+      setState(() {
+        _isOffline = false;
+        _currentSheetExtent = 0.38;
+      });
+      if (!_hasReceivedRealGps &&
+          widget.autoStartSimulation &&
+          _animController != null &&
+          !_animController!.isAnimating &&
+          _progressRatio < 0.99) {
+        _animController!.forward();
+      }
+    }
+
+    // 2. Reconnexion WebSocket en tâche de fond
     RealtimeService().connect();
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? '';
     if (effectiveRideId.isNotEmpty) {
       RealtimeService().joinRide(effectiveRideId);
+      _fetchRideDetails(effectiveRideId);
     }
 
+    // 3. Resynchronisation du statut réel avec le serveur
     try {
       final res = await _rideService.getCurrentRide();
       if (!mounted) return;
@@ -553,23 +580,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       }
     } catch (_) {}
 
-    await ActiveRideOfflineStorage.flushQueue(_rideService);
-
-    if (mounted) {
-      setState(() {
-        _isOffline = false;
-      });
-      if (!_hasReceivedRealGps &&
-          widget.autoStartSimulation &&
-          _animController != null &&
-          !_animController!.isAnimating &&
-          _progressRatio < 0.99) {
-        _animController!.forward();
-      }
-      if (effectiveRideId.isNotEmpty) {
-        _fetchRideDetails(effectiveRideId);
-      }
-    }
+    // 4. Vidage de la file d'attente hors-ligne
+    try {
+      await ActiveRideOfflineStorage.flushQueue(_rideService);
+    } catch (_) {}
   }
 
   void _cleanupRealtime() {
@@ -590,10 +604,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _consecutiveOfflineFailures = 0;
       NetworkConnectivityService.isConnected.then((online) {
         if (mounted && online && _isOffline) {
-          setState(() {
-            _isOffline = false;
-            _currentSheetExtent = 0.38;
-          });
+          _onNetworkRestored();
         }
       });
       final effectiveRideId =

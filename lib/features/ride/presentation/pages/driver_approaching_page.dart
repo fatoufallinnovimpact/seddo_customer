@@ -141,6 +141,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   bool _isOffline = false;
   Timer? _offlineMonitorTimer;
   int _consecutiveOfflineFailures = 0;
+  bool _isCheckingConnectivity = false;
 
   late final AnimationController _sheetAnimationController;
   BitmapDescriptor? _destinationMarkerIcon;
@@ -190,7 +191,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
     NetworkConnectivityService.isConnected.then((online) {
       if (mounted && online && _isOffline) {
-        setState(() => _isOffline = false);
+        _onNetworkRestored();
       }
     });
 
@@ -471,22 +472,29 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     _offlineMonitorTimer?.cancel();
     _offlineMonitorTimer =
         Timer.periodic(const Duration(seconds: 4), (_) async {
-      if (!mounted) return;
-      final online = await NetworkConnectivityService.isConnected;
-      if (!online) {
-        _consecutiveOfflineFailures++;
-        if (_consecutiveOfflineFailures >= 2 && !_isOffline) {
-          setState(() {
-            _isOffline = true;
-          });
-          _approachController?.stop();
-          _smoothCarController?.stop();
+      if (!mounted || _isCheckingConnectivity) return;
+      _isCheckingConnectivity = true;
+      try {
+        final isSocketConnected = RealtimeService().isConnected;
+        final online = isSocketConnected || await NetworkConnectivityService.isConnected;
+        if (!mounted) return;
+        if (!online) {
+          _consecutiveOfflineFailures++;
+          if (_consecutiveOfflineFailures >= 3 && !_isOffline) {
+            setState(() {
+              _isOffline = true;
+            });
+            _approachController?.stop();
+            _smoothCarController?.stop();
+          }
+        } else {
+          _consecutiveOfflineFailures = 0;
+          if (_isOffline) {
+            await _onNetworkRestored();
+          }
         }
-      } else {
-        _consecutiveOfflineFailures = 0;
-        if (_isOffline) {
-          await _onNetworkRestored();
-        }
+      } finally {
+        _isCheckingConnectivity = false;
       }
     });
   }
@@ -494,22 +502,37 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   Future<void> _onNetworkRestored() async {
     debugPrint(
         '[DriverApproachingPage] 🌐 Réseau rétabli ! Démarrage de la séquence automatique...');
-    // 1. Reconnexion WebSocket automatique
+    _consecutiveOfflineFailures = 0;
+    NetworkConnectivityService.markOnline();
+
+    // 1. Retrait immédiat de la bannière et reprise de l'animation
+    if (mounted) {
+      setState(() {
+        _isOffline = false;
+      });
+      if (_approachController != null &&
+          !_approachController!.isAnimating &&
+          !_driverArrived) {
+        _approachController!.forward();
+      }
+    }
+
+    // 2. Reconnexion WebSocket automatique
     RealtimeService().connect();
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? '';
     if (effectiveRideId.isNotEmpty) {
       RealtimeService().joinRide(effectiveRideId);
+      _fetchRideDetails(effectiveRideId);
     }
 
-    // 2. Appel GET /v1/rides/current pour récupérer l'état réel
+    // 3. Appel GET /v1/rides/current pour récupérer l'état réel
     try {
       final currentRes = await _rideService.getCurrentRide();
       if (!mounted) return;
       final ride = currentRes?['ride'] as Map<String, dynamic>?;
       if (ride != null) {
         final status = (ride['status'] as String? ?? '').toUpperCase();
-        // 3. Comparer avec l'état local : le serveur a raison
         if (status == 'COMPLETED' ||
             status.startsWith('CANCEL') ||
             status == 'NO_DRIVER' ||
@@ -550,17 +573,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     } catch (_) {}
 
     // 4. Envoi de la file d'attente
-    await ActiveRideOfflineStorage.flushQueue(_rideService);
-
-    // 5. Retrait de la bannière
-    if (mounted) {
-      setState(() {
-        _isOffline = false;
-      });
-      if (_approachController != null && !_approachController!.isAnimating && !_driverArrived) {
-        _approachController!.forward();
-      }
-    }
+    try {
+      await ActiveRideOfflineStorage.flushQueue(_rideService);
+    } catch (_) {}
   }
 
   @override
@@ -570,7 +585,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       _consecutiveOfflineFailures = 0;
       NetworkConnectivityService.isConnected.then((online) {
         if (mounted && online && _isOffline) {
-          setState(() => _isOffline = false);
+          _onNetworkRestored();
         }
       });
       final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
