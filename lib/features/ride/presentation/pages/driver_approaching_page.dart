@@ -37,6 +37,7 @@ import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/services/route_service.dart';
 import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
 import 'package:seddo/features/ride/data/services/ride_live_update_service_impl.dart';
+import 'package:seddo/features/ride/domain/models/ride_live_update_data.dart';
 import 'package:seddo/features/ride/domain/bloc/ride_live_update_bloc.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -62,6 +63,8 @@ class DriverApproachingPage extends StatefulWidget {
   final bool autoStartSimulation;
   final String? rideId;
   final RideService? rideService;
+  final String? paymentMethod;
+  final String? paymentPhone;
 
   const DriverApproachingPage({
     super.key,
@@ -74,6 +77,8 @@ class DriverApproachingPage extends StatefulWidget {
     this.autoStartSimulation = false,
     this.rideId,
     this.rideService,
+    this.paymentMethod,
+    this.paymentPhone,
   });
 
   @override
@@ -135,6 +140,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   bool _isOffline = false;
   Timer? _offlineMonitorTimer;
+  int _consecutiveOfflineFailures = 0;
 
   late final AnimationController _sheetAnimationController;
   BitmapDescriptor? _destinationMarkerIcon;
@@ -181,6 +187,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
     _persistLocalState();
     _startOfflineMonitor();
+
+    NetworkConnectivityService.isConnected.then((online) {
+      if (mounted && online && _isOffline) {
+        setState(() => _isOffline = false);
+      }
+    });
 
     // Initialisation immédiate de l'itinéraire routier d'approche s'il est déjà fourni
     if (_currentDriver.approachPolyline != null &&
@@ -461,13 +473,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         Timer.periodic(const Duration(seconds: 4), (_) async {
       if (!mounted) return;
       final online = await NetworkConnectivityService.isConnected;
-      if (!online && !_isOffline) {
-        setState(() {
-          _isOffline = true;
-        });
-        _approachController?.stop();
-      } else if (online && _isOffline) {
-        await _onNetworkRestored();
+      if (!online) {
+        _consecutiveOfflineFailures++;
+        if (_consecutiveOfflineFailures >= 2 && !_isOffline) {
+          setState(() {
+            _isOffline = true;
+          });
+          _approachController?.stop();
+          _smoothCarController?.stop();
+        }
+      } else {
+        _consecutiveOfflineFailures = 0;
+        if (_isOffline) {
+          await _onNetworkRestored();
+        }
       }
     });
   }
@@ -498,6 +517,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           await ActiveRideOfflineStorage.clearActiveRide();
           if (!mounted) return;
           if (status == 'COMPLETED') {
+            _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Course terminée');
             Navigator.of(context).pushReplacement(
               SlideRightToLeftRoute(
                 page: RideRatingPage(
@@ -547,6 +567,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
+      _consecutiveOfflineFailures = 0;
+      NetworkConnectivityService.isConnected.then((online) {
+        if (mounted && online && _isOffline) {
+          setState(() => _isOffline = false);
+        }
+      });
       final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
       if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
         if (!RealtimeService().isConnected) {
@@ -882,6 +908,39 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
   }
 
+  void _syncLiveUpdate({double? progress, int? etaMinutes, String? statusLabel}) {
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId == null || effectiveRideId.isEmpty) return;
+
+    final effEta = etaMinutes ?? _remainingEtaMinutes;
+    final currentVal = _approachController?.value ?? 0.5;
+    final effProgress = progress ??
+        (_driverArrived ? 1.0 : (currentVal > 0 ? currentVal : 0.5));
+    final effLabel = statusLabel ??
+        (_driverArrived ? 'Chauffeur arrivé' : 'Chauffeur en approche');
+
+    try {
+      RideLiveUpdateServiceImpl().updateLiveUpdate(
+        RideLiveUpdateData(
+          rideId: effectiveRideId,
+          driverName: _currentDriver.name,
+          carModel: _currentDriver.carModel,
+          carColor: _currentDriver.carColor,
+          licensePlate: _currentDriver.licensePlate,
+          departureText: widget.departure.mainText,
+          destinationText: widget.destination.mainText,
+          statusLabel: effLabel,
+          phase: _driverArrived
+              ? RideLiveUpdatePhase.driverArrived
+              : RideLiveUpdatePhase.driverApproaching,
+          etaMinutes: effEta,
+          progress: effProgress.clamp(0.0, 1.0),
+          updatedAtTimestamp: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    } catch (_) {}
+  }
+
   /// Met à jour de façon strictement synchrone le libellé ETA du modal et le marqueur visuel sur la carte
   void _setEtaLabel(String newLabel, int remainingMinutes) {
     if (!mounted) return;
@@ -895,6 +954,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     });
 
     if (changed) {
+      _syncLiveUpdate(etaMinutes: remainingMinutes);
       MapMarkerHelper.getEtaPillMarker(newLabel).then((markerIcon) {
         if (mounted) {
           setState(() {
@@ -979,6 +1039,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   void _onDriverReachedPickup() {
     if (!mounted) return;
     _setEtaLabel('ride.arrived'.tr(), 0);
+    _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Chauffeur arrivé');
     setState(() {
       _driverArrived = true;
       _totalApproachS = 0;
@@ -1021,6 +1082,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   /// Méthode publique prête pour connecter l'API backend / WebSocket en direct :
   /// Appelée lorsque le chauffeur accepte et se déplace vers le point de départ
   void updateDriverGpsLocation(LatLng position, {double? heading}) {
+    if (_isOffline) return;
     if (_approachController != null && _approachController!.isAnimating) {
       _approachController!.stop();
     }
@@ -1070,6 +1132,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           autoStartSimulation: true,
           rideId: widget.rideId ?? RideService.lastCreatedRideId,
           rideService: _rideService,
+          paymentMethod: widget.paymentMethod,
+          paymentPhone: widget.paymentPhone,
         ),
       ),
     );

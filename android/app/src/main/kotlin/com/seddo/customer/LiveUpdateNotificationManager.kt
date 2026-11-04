@@ -7,9 +7,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -26,6 +28,8 @@ object LiveUpdateNotificationManager {
     const val CHANNEL_ID = "seddo_live_updates_channel"
     private const val CHANNEL_NAME = "Courses Seddo en direct"
     const val NOTIFICATION_ID = 2026
+
+    private var cachedRotatedCarBitmap: Bitmap? = null
 
     fun createChannelIfNeeded(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -73,8 +77,9 @@ object LiveUpdateNotificationManager {
         val etaMinutes = (data["etaMinutes"] as? Number)?.toInt() ?: 0
         val progress = (data["progress"] as? Number)?.toDouble() ?: 0.2
 
-        val etaText = if (etaMinutes > 0) "$etaMinutes min" else "Arrivé"
-        val title = "$statusLabel • $etaText"
+        val isFinished = progress >= 0.98 || statusLabel.contains("terminée", ignoreCase = true)
+        val etaText = if (isFinished) "Arrivé" else if (etaMinutes > 0) "$etaMinutes min" else "Arrivé"
+        val title = if (isFinished) "Course terminée • Arrivé" else "$statusLabel • $etaText"
         val contentText = "$driverName • $carModel ($carColor) • $licensePlate"
 
         // Intent opening the app when tapped
@@ -90,8 +95,8 @@ object LiveUpdateNotificationManager {
 
         val seddoGreen = Color.parseColor("#16A34A")
 
-        // Generate the custom Yango-style route bitmap with moving car
-        val routeBitmap = generateRouteTrackBitmap(progress)
+        // Generate the custom Yango-style route bitmap with moving car (100% full when finished)
+        val routeBitmap = generateRouteTrackBitmap(context, if (isFinished) 1.0 else progress, isFinished)
 
         // Custom RemoteViews for standard and expanded layouts
         val customView = RemoteViews(context.packageName, R.layout.notification_seddo_live_update).apply {
@@ -110,7 +115,7 @@ object LiveUpdateNotificationManager {
         val publicNotification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
             .setColor(seddoGreen)
-            .setOngoing(true)
+            .setOngoing(!isFinished)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
@@ -123,7 +128,7 @@ object LiveUpdateNotificationManager {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
             .setColor(seddoGreen)
-            .setOngoing(true)
+            .setOngoing(!isFinished)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
@@ -142,11 +147,11 @@ object LiveUpdateNotificationManager {
      * Draws a single seamless horizontal line with:
      * - Origin point (green circle with white core) on the left
      * - Traveled distance line (Seddo Green)
-     * - Moving car icon separating traveled and remaining distances
+     * - Moving car icon (same car as on map, rotated 90 degrees) separating traveled and remaining distances
      * - Remaining distance line (subtle neutral track)
-     * - Destination point (red circle with white core) on the right
+     * - Destination point (red circle, turning green when arrived) on the right
      */
-    private fun generateRouteTrackBitmap(progress: Double): Bitmap {
+    private fun generateRouteTrackBitmap(context: Context, progress: Double, isFinished: Boolean): Bitmap {
         val width = 1000
         val height = 72
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -159,9 +164,9 @@ object LiveUpdateNotificationManager {
         val centerY = height / 2f + 4f
         val trackHeight = 7.5f
 
-        // Progress clamped between 0.06 and 0.94 so the car is always completely on the line
-        val clampedProgress = progress.coerceIn(0.06, 0.94).toFloat()
-        val carX = startX + trackWidth * clampedProgress
+        // When finished, car is strictly at endX and track is 100% green
+        val normalizedProgress = if (isFinished) 1.0f else progress.coerceIn(0.05, 0.98).toFloat()
+        val carX = if (isFinished) endX else (startX + trackWidth * normalizedProgress)
 
         // 1. Pickup Origin Point (Seddo Green with white core)
         val originPaint = Paint().apply {
@@ -177,7 +182,7 @@ object LiveUpdateNotificationManager {
         }
         canvas.drawCircle(startX, centerY, 3.5f, originCore)
 
-        // 2. Traveled Route Line (Vibrant green from origin up to the car)
+        // 2. Traveled Route Line (Vibrant green from origin up to the car, or all the way to destination if finished)
         val traveledPaint = Paint().apply {
             isAntiAlias = true
             color = Color.parseColor("#16A34A")
@@ -185,22 +190,24 @@ object LiveUpdateNotificationManager {
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
         }
-        canvas.drawLine(startX, centerY, carX, centerY, traveledPaint)
+        canvas.drawLine(startX, centerY, if (isFinished) endX else carX, centerY, traveledPaint)
 
         // 3. Remaining Route Line (Subtle translucent track from car to destination)
-        val remainingPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#448E8E93")
-            strokeWidth = trackHeight
-            strokeCap = Paint.Cap.ROUND
-            style = Paint.Style.STROKE
+        if (!isFinished && carX < endX) {
+            val remainingPaint = Paint().apply {
+                isAntiAlias = true
+                color = Color.parseColor("#448E8E93")
+                strokeWidth = trackHeight
+                strokeCap = Paint.Cap.ROUND
+                style = Paint.Style.STROKE
+            }
+            canvas.drawLine(carX, centerY, endX, centerY, remainingPaint)
         }
-        canvas.drawLine(carX, centerY, endX, centerY, remainingPaint)
 
-        // 4. Destination Arrival Point (Destination Red with white core)
+        // 4. Destination Arrival Point (Green if finished, Destination Red with white core if in-progress)
         val destPaint = Paint().apply {
             isAntiAlias = true
-            color = Color.parseColor("#E11D48")
+            color = if (isFinished) Color.parseColor("#16A34A") else Color.parseColor("#E11D48")
             style = Paint.Style.FILL
         }
         canvas.drawCircle(endX, centerY, 8f, destPaint)
@@ -211,10 +218,47 @@ object LiveUpdateNotificationManager {
         }
         canvas.drawCircle(endX, centerY, 3.5f, destCore)
 
-        // 5. Stylized aerodynamic car moving along the track and facing right
-        drawStylizedCar(canvas, carX, centerY - 2f)
+        // 5. Draw the exact same car as on the map, facing forward along the track
+        drawMapCar(context, canvas, carX, centerY - 2f)
 
         return bitmap
+    }
+
+    /**
+     * Draws the real car from the map (ic_seddo_map_car) rotated horizontally forward.
+     */
+    private fun drawMapCar(context: Context, canvas: Canvas, x: Float, y: Float) {
+        var carBmp = cachedRotatedCarBitmap
+        if (carBmp == null) {
+            try {
+                val original = BitmapFactory.decodeResource(context.resources, R.drawable.ic_seddo_map_car)
+                if (original != null) {
+                    val matrix = Matrix().apply { postRotate(90f) }
+                    val rotated = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+                    // Scale to clean horizontal dimensions (~52x24) matching the track height
+                    val targetW = 52
+                    val targetH = (targetW * rotated.height) / rotated.width
+                    carBmp = Bitmap.createScaledBitmap(rotated, targetW, targetH, true)
+                    cachedRotatedCarBitmap = carBmp
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        if (carBmp != null) {
+            // Drop shadow under the car
+            val shadowPaint = Paint().apply {
+                isAntiAlias = true
+                color = Color.parseColor("#40000000")
+                maskFilter = BlurMaskFilter(4f, BlurMaskFilter.Blur.NORMAL)
+            }
+            canvas.drawOval(RectF(x - 26f, y + 4f, x + 26f, y + 13f), shadowPaint)
+
+            canvas.drawBitmap(carBmp, x - carBmp.width / 2f, y - carBmp.height / 2f, null)
+        } else {
+            drawStylizedCar(canvas, x, y)
+        }
     }
 
     /**

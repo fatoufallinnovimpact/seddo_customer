@@ -143,6 +143,9 @@ void main() {
 
       // Verify that calling updateCarLocation updates the car along the route
       final dynamic dynamicState = state;
+      final initialPos = dynamicState.currentCarPosition as LatLng;
+      expect(dynamicState.hasReceivedRealGps, isFalse);
+
       dynamicState.updateCarLocation(
         const LatLng(14.6752, -17.4402),
         heading: 120.0,
@@ -150,6 +153,47 @@ void main() {
 
       await tester.pump();
       expect(find.byType(ActiveRidePage), findsOneWidget);
+      expect(dynamicState.hasReceivedRealGps, isTrue);
+      expect(dynamicState.currentCarPosition, isNot(equals(initialPos)));
+    });
+
+    testWidgets('ActiveRidePage retains last known car position when offline',
+        (tester) async {
+      final polylinePoints = [
+        const LatLng(14.6698, -17.4326),
+        const LatLng(14.6750, -17.4400),
+        const LatLng(14.6850, -17.4500),
+        const LatLng(14.7431, -17.5195),
+      ];
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            departure: departure,
+            destination: destination,
+            driver: driver,
+            rideOption: rideOption,
+            polylinePoints: polylinePoints,
+            isOffline: true,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(ActiveRidePage));
+      expect(state.isOffline, isTrue);
+      final frozenPos = state.currentCarPosition as LatLng;
+
+      // Attempt GPS update while offline
+      state.updateCarLocation(
+        const LatLng(14.7000, -17.4800),
+        heading: 90.0,
+      );
+
+      await tester.pump();
+      // Car must strictly preserve its position
+      expect(state.currentCarPosition, equals(frozenPos));
     });
 
     test('ActiveRideNavigationHelper configures ActiveRidePage with autoStartSimulation true', () {

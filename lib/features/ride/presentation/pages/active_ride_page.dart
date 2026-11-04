@@ -35,9 +35,11 @@ import 'package:seddo/features/ride/presentation/widgets/driver_action_buttons_w
 import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/offline_emergency_sheet.dart';
-import 'package:seddo/features/ride/presentation/widgets/ride_action_tile_widget.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_sos_bottom_sheet.dart';
+import 'package:seddo/features/ride/data/services/ride_live_update_service_impl.dart';
+import 'package:seddo/features/ride/domain/models/ride_live_update_data.dart';
+import 'package:seddo/features/ride/presentation/widgets/ride_action_tile_widget.dart';
 
 /// Écran de suivi du trajet en cours avec chauffeur :
 /// - Floating top bar with back button, center status, and red safety siren button
@@ -59,6 +61,8 @@ class ActiveRidePage extends StatefulWidget {
   final bool isOffline;
   final String? rideId;
   final RideService? rideService;
+  final String? paymentMethod;
+  final String? paymentPhone;
 
   const ActiveRidePage({
     super.key,
@@ -71,6 +75,8 @@ class ActiveRidePage extends StatefulWidget {
     this.isOffline = false,
     this.rideId,
     this.rideService,
+    this.paymentMethod,
+    this.paymentPhone,
   });
 
   @override
@@ -88,6 +94,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   // Route & Simulation State
   AnimationController? _animController;
   AnimationController? _smoothCarController;
+  bool _hasReceivedRealGps = false;
+  bool _isSnappedMovement = true;
+  double _startProgressRatio = 0.0;
+  double _targetProgressRatio = 0.0;
   LatLng? _animStartPos;
   LatLng? _animEndPos;
   double? _animStartHeading;
@@ -106,15 +116,28 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   @visibleForTesting
   int get remainingEtaMinutes => _remainingEtaMinutes;
+
+  @visibleForTesting
+  LatLng get currentCarPosition => _currentCarPosition;
+
+  @visibleForTesting
+  bool get isOffline => _isOffline;
+
+  @visibleForTesting
+  bool get hasReceivedRealGps => _hasReceivedRealGps;
   double _progressRatio = 0.0;
   bool _isStopped = false;
-  String _stopReason = 'Arrêt feu rouge';
+  final String _stopReason = 'Arrêt temporaire';
   bool _followCar = true;
   bool _isProgrammaticCameraMove = false;
   double _currentSheetExtent = 0.38;
   DateTime _lastCameraUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   late bool _isOffline;
   Timer? _offlineMonitorTimer;
+  int _consecutiveOfflineFailures = 0;
+  String? _paymentMethod;
+  String? _paymentPhone;
+  DateTime _lastLiveUpdateSync = DateTime.fromMillisecondsSinceEpoch(0);
 
   // Realtime Socket.IO streams & stale location tracking (PDF Seddo)
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
@@ -140,11 +163,25 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
     _isOffline = widget.isOffline;
+    _paymentMethod = widget.paymentMethod;
+    _paymentPhone = widget.paymentPhone;
     _currentSheetExtent = _isOffline ? 0.25 : 0.38;
     _initRoute();
     _persistLocalState();
     _startOfflineMonitor();
     _loadCustomMarkers();
+    _syncLiveUpdate(progress: 0.05, etaMinutes: _remainingEtaMinutes);
+
+    if (!widget.isOffline) {
+      NetworkConnectivityService.isConnected.then((online) {
+        if (mounted && online && _isOffline) {
+          setState(() {
+            _isOffline = false;
+            _currentSheetExtent = 0.38;
+          });
+        }
+      });
+    }
 
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
@@ -154,14 +191,16 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       duration: const Duration(minutes: 2),
     )
       ..addListener(() {
-        _updateProgress(_animController!.value);
+        if (!_hasReceivedRealGps && !_isOffline) {
+          _updateProgress(_animController!.value);
+        }
       })
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
-          if (mounted) {
+          if (mounted && !_hasReceivedRealGps) {
             // Arrivée automatique à destination après les 2 minutes de simulation
             Future.delayed(const Duration(milliseconds: 800), () {
-              if (mounted) {
+              if (mounted && !_hasReceivedRealGps) {
                 _onTripCompleted();
               }
             });
@@ -172,10 +211,15 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     // Contrôleur de déplacement fluide de la voiture lors des mises à jour GPS en direct
     _smoothCarController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(milliseconds: 1500),
     )..addListener(() {
-        if (_animStartPos != null && _animEndPos != null && mounted) {
-          final t = _smoothCarController!.value;
+        if (!mounted || _isOffline) return;
+        final t = _smoothCarController!.value;
+        if (_isSnappedMovement) {
+          final curS = _startProgressRatio +
+              (_targetProgressRatio - _startProgressRatio) * t;
+          _setProgressOnRoute(curS);
+        } else if (_animStartPos != null && _animEndPos != null) {
           final curLat = _animStartPos!.latitude +
               (_animEndPos!.latitude - _animStartPos!.latitude) * t;
           final curLng = _animStartPos!.longitude +
@@ -190,9 +234,13 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         }
       });
 
-    if (!isTest) {
+    if (!isTest && widget.autoStartSimulation) {
       Future.delayed(const Duration(milliseconds: 600), () {
-        if (mounted && _animController != null && !_animController!.isAnimating) {
+        if (mounted &&
+            !_hasReceivedRealGps &&
+            !_isOffline &&
+            _animController != null &&
+            !_animController!.isAnimating) {
           _startSimulation();
         }
       });
@@ -248,6 +296,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             setState(() {
               _remainingEtaMinutes = event.etaMinutes;
             });
+            _syncLiveUpdate(etaMinutes: event.etaMinutes);
           }
           if (event.distanceMeters != null && event.distanceMeters! > 0) {
             setState(() {
@@ -319,7 +368,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   /// Applique les données retournées par GET /v1/rides/{id}
   void _applyRideDetails(Map<String, dynamic> data) {
-    if (!mounted) return;
+    if (!mounted || _isOffline) return;
 
     final rideObj = data['ride'] is Map<String, dynamic>
         ? data['ride'] as Map<String, dynamic>
@@ -332,6 +381,19 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _cleanupRealtime();
       _onTripCompleted();
       return;
+    }
+
+    // Récupérer la méthode de paiement si transmise par le serveur
+    final pMap = rideObj['payment'] is Map<String, dynamic>
+        ? rideObj['payment'] as Map<String, dynamic>
+        : null;
+    if (pMap != null) {
+      if (pMap['method'] != null) {
+        _paymentMethod = pMap['method'].toString().toUpperCase();
+      }
+      if (pMap['phone'] != null) {
+        _paymentPhone = pMap['phone'].toString();
+      }
     }
 
     // 2. Course annulée
@@ -433,13 +495,20 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         Timer.periodic(const Duration(seconds: 4), (_) async {
       if (!mounted) return;
       final online = await NetworkConnectivityService.isConnected;
-      if (!online && !_isOffline) {
-        setState(() {
-          _isOffline = true;
-        });
-        _animController?.stop();
-      } else if (online && _isOffline) {
-        await _onNetworkRestored();
+      if (!online) {
+        _consecutiveOfflineFailures++;
+        if (_consecutiveOfflineFailures >= 2 && !_isOffline) {
+          setState(() {
+            _isOffline = true;
+          });
+          _animController?.stop();
+          _smoothCarController?.stop();
+        }
+      } else {
+        _consecutiveOfflineFailures = 0;
+        if (_isOffline) {
+          await _onNetworkRestored();
+        }
       }
     });
   }
@@ -490,8 +559,15 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       setState(() {
         _isOffline = false;
       });
-      if (_animController != null && !_animController!.isAnimating && _progressRatio < 0.99) {
+      if (!_hasReceivedRealGps &&
+          widget.autoStartSimulation &&
+          _animController != null &&
+          !_animController!.isAnimating &&
+          _progressRatio < 0.99) {
         _animController!.forward();
+      }
+      if (effectiveRideId.isNotEmpty) {
+        _fetchRideDetails(effectiveRideId);
       }
     }
   }
@@ -511,6 +587,15 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
+      _consecutiveOfflineFailures = 0;
+      NetworkConnectivityService.isConnected.then((online) {
+        if (mounted && online && _isOffline) {
+          setState(() {
+            _isOffline = false;
+            _currentSheetExtent = 0.38;
+          });
+        }
+      });
       final effectiveRideId =
           widget.rideId ?? RideService.lastCreatedRideId ?? '';
       if (effectiveRideId.isNotEmpty) {
@@ -597,6 +682,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _effectiveRoute = List<LatLng>.from(newRoute);
       _recomputeRouteMetrics();
       final proj = _findClosestProjectionOnRoute(_currentCarPosition);
+      _progressRatio = proj.progressRatio;
       _applyExternalGpsLocation(proj.projectedPoint, heading: proj.heading);
     });
   }
@@ -769,58 +855,22 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     return (from + diff * t) % 360.0;
   }
 
-  void _updateProgress(double progress) {
-    if (!mounted ||
-        _effectiveRoute.length < 2 ||
+  ({LatLng position, double heading, int segmentIndex}) _getPositionAtProgress(
+      double s) {
+    if (_effectiveRoute.isEmpty) {
+      return (position: const LatLng(0, 0), heading: 0.0, segmentIndex: 0);
+    }
+    if (_effectiveRoute.length == 1 ||
+        _segmentLengths.isEmpty ||
         _totalRouteDistanceMeters <= 0) {
-      return;
+      return (
+        position: _effectiveRoute.first,
+        heading: _currentCarHeading,
+        segmentIndex: 0
+      );
     }
 
-    final clampedT = progress.clamp(0.0, 1.0);
-
-    // Profil de navigation réaliste sur 2 minutes (120 secondes) :
-    // 0:00 - 0:25 (t: 0.00 -> 0.21) : Départ fluide et accélération sur la première artère (0% -> 22% du trajet)
-    // 0:25 - 0:38 (t: 0.21 -> 0.32) : 1er arrêt au feu tricolore / carrefour (13s d'arrêt visible avec badge 'Arrêt feu rouge')
-    // 0:38 - 1:05 (t: 0.32 -> 0.54) : Redémarrage au feu vert, passage sur grande avenue (22% -> 55% du trajet)
-    // 1:05 - 1:22 (t: 0.54 -> 0.68) : Négociation du rond-point avec virages continus et lissage angulaire (55% -> 68% du trajet)
-    // 1:22 - 1:35 (t: 0.68 -> 0.79) : 2e arrêt temporaire : priorité / passage piéton (13s d'arrêt visible avec badge 'Arrêt priorité')
-    // 1:35 - 1:54 (t: 0.79 -> 0.95) : Reprise et approche de la zone de destination (68% -> 96% du trajet)
-    // 1:54 - 2:00 (t: 0.95 -> 1.00) : Décélération douce et stationnement à l'adresse finale (96% -> 100% du trajet)
-    double routeProgress = 0.0;
-    bool isStoppedNow = false;
-    String currentStopReason = 'Arrêt feu rouge';
-
-    if (clampedT <= 0.21) {
-      final localT = clampedT / 0.21;
-      routeProgress = 0.22 * Curves.easeInOut.transform(localT);
-      isStoppedNow = false;
-    } else if (clampedT <= 0.32) {
-      routeProgress = 0.22;
-      isStoppedNow = true;
-      currentStopReason = 'Arrêt feu rouge';
-    } else if (clampedT <= 0.54) {
-      final localT = (clampedT - 0.32) / 0.22;
-      routeProgress = 0.22 + (0.55 - 0.22) * Curves.easeInOut.transform(localT);
-      isStoppedNow = false;
-    } else if (clampedT <= 0.68) {
-      final localT = (clampedT - 0.54) / 0.14;
-      routeProgress = 0.55 + (0.68 - 0.55) * Curves.linear.transform(localT);
-      isStoppedNow = false;
-    } else if (clampedT <= 0.79) {
-      routeProgress = 0.68;
-      isStoppedNow = true;
-      currentStopReason = 'Arrêt priorité';
-    } else if (clampedT <= 0.95) {
-      final localT = (clampedT - 0.79) / 0.16;
-      routeProgress = 0.68 + (0.96 - 0.68) * Curves.easeInOut.transform(localT);
-      isStoppedNow = false;
-    } else {
-      final localT = (clampedT - 0.95) / 0.05;
-      routeProgress = 0.96 + (1.0 - 0.96) * Curves.easeOut.transform(localT);
-      isStoppedNow = false;
-    }
-
-    final clampedS = routeProgress.clamp(0.0, 1.0);
+    final clampedS = s.clamp(0.0, 1.0);
     final targetDistance = clampedS * _totalRouteDistanceMeters;
 
     double acc = 0.0;
@@ -831,7 +881,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       final segLen = _segmentLengths[i];
       if (acc + segLen >= targetDistance || i == _segmentLengths.length - 1) {
         segIndex = i;
-        segRatio = segLen > 0 ? (targetDistance - acc) / segLen : 0.0;
+        segRatio =
+            segLen > 0 ? ((targetDistance - acc) / segLen).clamp(0.0, 1.0) : 0.0;
         break;
       }
       acc += segLen;
@@ -844,7 +895,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final curLng = p1.longitude + (p2.longitude - p1.longitude) * segRatio;
     final newPos = LatLng(curLat, curLng);
 
-    // Orientation dynamique avec lissage doux dans les virages et rond-points (style Yango)
     final rawHeading = _calculateBearing(p1, p2);
     double heading = rawHeading;
     if (segIndex < _effectiveRoute.length - 2 && segRatio > 0.65) {
@@ -856,11 +906,17 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       heading = _interpolateAngle(rawHeading, nextHeading, turnRatio);
     }
 
-    // Micro-animation subtile de vibration moteur (+/- 0.6°) en marche
-    if (!isStoppedNow && clampedS > 0.005 && clampedS < 0.995) {
-      final engineVibration = math.sin(clampedS * 90 * math.pi) * 0.6;
-      heading = (heading + engineVibration) % 360.0;
-    }
+    return (position: newPos, heading: heading, segmentIndex: segIndex);
+  }
+
+  void _setProgressOnRoute(double s, {bool updateCamera = true}) {
+    if (!mounted || _effectiveRoute.length < 2) return;
+
+    final clampedS = s.clamp(0.0, 1.0);
+    final posInfo = _getPositionAtProgress(clampedS);
+    final newPos = posInfo.position;
+    final heading = posInfo.heading;
+    final segIndex = posInfo.segmentIndex;
 
     final traveled = <LatLng>[];
     for (int i = 0; i <= segIndex; i++) {
@@ -875,11 +931,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     final remDist = (_initialDistanceKm * (1.0 - clampedS))
         .clamp(0.0, _initialDistanceKm);
-    final remainingSeconds = ((1.0 - clampedS) * 120).ceil();
-    final remEta = (remainingSeconds / 60).ceil().clamp(1, 2);
+    final remainingMinutes = (_initialEtaMinutes * (1.0 - clampedS))
+        .ceil()
+        .clamp(1, _initialEtaMinutes);
 
-    // Recentrage automatique fluide si le mode suivi est activé
-    if (_followCar && _mapController != null) {
+    if (updateCamera && _followCar && _mapController != null) {
       final now = DateTime.now();
       if (now.difference(_lastCameraUpdateTime).inMilliseconds > 1000) {
         _lastCameraUpdateTime = now;
@@ -896,15 +952,60 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _traveledPoints = traveled;
       _remainingPoints = remaining;
       _remainingDistanceKm = remDist;
-      _remainingEtaMinutes = remEta;
+      _remainingEtaMinutes = remainingMinutes;
       _progressRatio = clampedS;
-      _isStopped = isStoppedNow;
-      _stopReason = currentStopReason;
+      _isStopped = false;
     });
+
+    final now = DateTime.now();
+    if (now.difference(_lastLiveUpdateSync).inMilliseconds > 2000) {
+      _lastLiveUpdateSync = now;
+      _syncLiveUpdate(progress: clampedS, etaMinutes: remainingMinutes);
+    }
+  }
+
+  void _syncLiveUpdate({double? progress, int? etaMinutes, String? statusLabel}) {
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId == null || effectiveRideId.isEmpty) return;
+
+    final effProgress = (progress ?? _progressRatio).clamp(0.0, 1.0);
+    final effEta = etaMinutes ?? _remainingEtaMinutes;
+    final isDone = effProgress >= 0.98 || (statusLabel?.contains('terminée') == true);
+    final effLabel = statusLabel ?? (isDone ? 'Course terminée' : 'En route vers la destination');
+
+    try {
+      RideLiveUpdateServiceImpl().updateLiveUpdate(
+        RideLiveUpdateData(
+          rideId: effectiveRideId,
+          driverName: widget.driver.name,
+          carModel: widget.driver.carModel,
+          carColor: widget.driver.carColor,
+          licensePlate: widget.driver.licensePlate,
+          departureText: widget.departure.mainText,
+          destinationText: widget.destination.mainText,
+          statusLabel: effLabel,
+          phase: isDone ? RideLiveUpdatePhase.completed : RideLiveUpdatePhase.inProgress,
+          etaMinutes: isDone ? 0 : effEta,
+          progress: isDone ? 1.0 : effProgress,
+          updatedAtTimestamp: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    } catch (_) {}
+  }
+
+  void _updateProgress(double progress) {
+    if (!mounted ||
+        _hasReceivedRealGps ||
+        _isOffline ||
+        _effectiveRoute.length < 2 ||
+        _totalRouteDistanceMeters <= 0) {
+      return;
+    }
+    _setProgressOnRoute(progress.clamp(0.0, 1.0));
   }
 
   void _startSimulation() {
-    if (_animController == null) return;
+    if (_hasReceivedRealGps || _isOffline || _animController == null) return;
     if (_animController!.value >= 1.0) {
       _animController!.reset();
     }
@@ -915,6 +1016,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   /// Lorsque le serveur ou l'application chauffeur envoie une mise à jour GPS,
   /// cette méthode projette le véhicule sur la route réelle et anime son déplacement fluide.
   void updateCarLocation(LatLng newPosition, {double? heading}) {
+    if (_isOffline) {
+      // Hors-ligne: conserver strictement la dernière position connue sur la carte
+      return;
+    }
+
+    _hasReceivedRealGps = true;
+    _animController?.stop();
+
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
@@ -927,32 +1036,49 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             : _calculateBearing(_currentCarPosition, newPosition));
 
     if (isTest) {
-      _applyExternalGpsLocation(targetPos, heading: targetHeading);
+      if (isSnapped) {
+        _setProgressOnRoute(proj.progressRatio);
+      } else {
+        _applyExternalGpsLocation(targetPos, heading: targetHeading);
+      }
       return;
     }
 
-    // Si la position a très peu changé (< 1m), mise à jour directe
-    if ((_currentCarPosition.latitude - targetPos.latitude).abs() < 0.00001 &&
-        (_currentCarPosition.longitude - targetPos.longitude).abs() < 0.00001) {
-      _applyExternalGpsLocation(targetPos, heading: targetHeading);
+    // Anti-jitter: si le déplacement est négligeable (< 0.5m), ignorer
+    final distChange = _haversineMeters(_currentCarPosition, targetPos);
+    if (distChange < 0.5) {
       return;
     }
 
     _smoothCarController?.stop();
 
-    _animStartPos = _currentCarPosition;
-    _animEndPos = targetPos;
-    _animStartHeading = _currentCarHeading;
-    _animEndHeading = targetHeading;
+    if (isSnapped) {
+      _isSnappedMovement = true;
+      _startProgressRatio = _progressRatio;
 
-    _smoothCarController?.forward(from: 0.0);
-
-    // Ajustement de la progression sur la route
-    if (_animController != null && isSnapped) {
-      _animController!.value = proj.progressRatio;
-      if (!_animController!.isAnimating && proj.progressRatio < 0.99) {
-        _animController!.forward();
+      // Filtre anti-retour arrière: si le GPS recule légèrement (< 2.5% du trajet) à cause d'une imprécision satellite,
+      // on ne fait pas faire marche arrière au véhicule sur le polyline
+      double targetRatio = proj.progressRatio;
+      if (targetRatio < _startProgressRatio &&
+          (_startProgressRatio - targetRatio) < 0.025) {
+        targetRatio = _startProgressRatio;
       }
+      _targetProgressRatio = targetRatio;
+
+      _animStartPos = _currentCarPosition;
+      _animEndPos = targetPos;
+      _animStartHeading = _currentCarHeading;
+      _animEndHeading = targetHeading;
+
+      _smoothCarController?.forward(from: 0.0);
+    } else {
+      _isSnappedMovement = false;
+      _animStartPos = _currentCarPosition;
+      _animEndPos = targetPos;
+      _animStartHeading = _currentCarHeading;
+      _animEndHeading = targetHeading;
+
+      _smoothCarController?.forward(from: 0.0);
     }
   }
 
@@ -1291,6 +1417,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     setState(() {
       _isOffline = !_isOffline;
     });
+    if (_isOffline) {
+      _animController?.stop();
+      _smoothCarController?.stop();
+    } else {
+      _onNetworkRestored();
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1339,6 +1471,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   void _onTripCompleted() {
+    _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Course terminée');
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: RideRatingPage(
@@ -1347,6 +1480,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           driver: widget.driver,
           rideOption: widget.rideOption,
           arrivalTime: widget.rideOption.estimatedArrival,
+          paymentPhone: _paymentPhone ?? widget.paymentPhone ?? '77 ••• 45 12',
+          paymentMethod: _paymentMethod ?? widget.paymentMethod,
           rideId: widget.rideId ?? RideService.lastCreatedRideId,
           rideService: _rideService,
         ),

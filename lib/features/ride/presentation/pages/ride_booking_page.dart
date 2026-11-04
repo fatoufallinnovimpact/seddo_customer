@@ -343,18 +343,20 @@ class _RideBookingPageState extends State<RideBookingPage> {
     if (mounted) {
       final bool isTest =
           WidgetsBinding.instance.runtimeType.toString().contains('Test');
+      final isOnline = await NetworkConnectivityService.isConnected;
       final ecoFare = ((1500 + (_distanceKm * 250)) / 100).round() * 100;
       final confortFare = ((2200 + (_distanceKm * 325)) / 100).round() * 100;
 
+      if (!mounted) return;
       setState(() {
         _polylinePoints = [];
-        if (isTest) {
+        if (isTest || isOnline) {
           _ecoOption = _ecoOption.copyWith(price: ecoFare.clamp(2000, 25000));
           _confortOption =
               _confortOption.copyWith(price: confortFare.clamp(2800, 35000));
           _isOfflinePriceError = false;
         } else {
-          // En mode hors-ligne réel : ne pas inventer de faux tarifs
+          // En mode hors-ligne réel : afficher l'avertissement
           _isOfflinePriceError = true;
         }
         _isLoadingRoute = false;

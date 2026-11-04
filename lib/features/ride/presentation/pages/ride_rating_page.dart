@@ -14,6 +14,8 @@ import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
 import 'package:seddo/services/receipt_pdf_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:seddo/features/ride/data/services/ride_live_update_service_impl.dart';
+import 'package:seddo/features/ride/domain/models/ride_live_update_data.dart';
 
 /// Screen displayed at the end of the trip to rate the driver matching the design:
 /// - Top bar: Circular back button and centered Seddo logo with decorative organic waves
@@ -36,6 +38,7 @@ class RideRatingPage extends StatefulWidget {
   final String arrivalTime;
   final String durationText;
   final String paymentPhone;
+  final String? paymentMethod;
   final String? rideId;
   final RideService? rideService;
 
@@ -48,6 +51,7 @@ class RideRatingPage extends StatefulWidget {
     this.arrivalTime = '18:41',
     this.durationText = '22 min',
     this.paymentPhone = '77 ••• 45 12',
+    this.paymentMethod,
     this.rideId,
     this.rideService,
   });
@@ -71,6 +75,8 @@ class _RideRatingPageState extends State<RideRatingPage> {
   final Set<String> _selectedTags = {'rating.safe_driving'};
   late final TextEditingController _commentController;
   late final RideService _rideService;
+  late String _paymentMethod;
+  late String _paymentPhone;
   bool _isSubmitting = false;
   bool _isDownloadingReceipt = false;
   bool _isSharingReceipt = false;
@@ -106,10 +112,73 @@ class _RideRatingPageState extends State<RideRatingPage> {
     super.initState();
     _commentController = TextEditingController();
     _rideService = widget.rideService ?? RideService();
+    _paymentMethod = (widget.paymentMethod ?? 'ORANGE_MONEY').toUpperCase();
+    _paymentPhone = widget.paymentPhone;
+    _syncCompletedLiveUpdate();
+    _fetchPaymentDetails();
+  }
+
+  void _syncCompletedLiveUpdate() {
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      try {
+        RideLiveUpdateServiceImpl().updateLiveUpdate(
+          RideLiveUpdateData(
+            rideId: effectiveRideId,
+            driverName: widget.driver.name,
+            carModel: widget.driver.carModel,
+            carColor: widget.driver.carColor,
+            licensePlate: widget.driver.licensePlate,
+            departureText: widget.departure?.mainText ?? '',
+            destinationText: widget.destination.mainText,
+            statusLabel: 'Course terminée',
+            phase: RideLiveUpdatePhase.completed,
+            etaMinutes: 0,
+            progress: 1.0,
+            updatedAtTimestamp: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _fetchPaymentDetails() async {
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      try {
+        final data = await _rideService.getRideDetails(effectiveRideId);
+        if (data != null && mounted) {
+          final rideObj = data['ride'] is Map<String, dynamic>
+              ? data['ride'] as Map<String, dynamic>
+              : data;
+          final pMap = rideObj['payment'] is Map<String, dynamic>
+              ? rideObj['payment'] as Map<String, dynamic>
+              : null;
+          if (pMap != null) {
+            setState(() {
+              if (pMap['method'] != null) {
+                _paymentMethod = pMap['method'].toString().toUpperCase();
+              }
+              if (pMap['phone'] != null) {
+                _paymentPhone = pMap['phone'].toString();
+              }
+            });
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  void _dismissLiveNotification() {
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RideLiveUpdateServiceImpl().endLiveUpdate(rideId: effectiveRideId);
+    }
   }
 
   @override
   void dispose() {
+    _dismissLiveNotification();
     _commentController.dispose();
     super.dispose();
   }
@@ -143,6 +212,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
           compliments: compliments,
         );
       }
+      _dismissLiveNotification();
     } catch (_) {
       // Ignorer silencieusement pour toujours afficher la confirmation visuelle
     } finally {
@@ -396,6 +466,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
   }
 
   void _redirectToPlaceSearch() {
+    _dismissLiveNotification();
     Navigator.of(context).pushAndRemoveUntil(
       SlideRightToLeftRoute(
         page: const PlaceSearchPage(),
@@ -509,7 +580,77 @@ class _RideRatingPageState extends State<RideRatingPage> {
                         const SizedBox(height: 4),
 
                         // 2. Driver Avatar with Badge & Sparkles
-                        const _DriverAvatarWithBadge(),
+                        _DriverAvatarWithBadge(driver: widget.driver),
+
+                        const SizedBox(height: 8),
+
+                        // Nom complet du chauffeur
+                        Text(
+                          widget.driver.name.isNotEmpty
+                              ? widget.driver.name
+                              : 'Chauffeur Seddo',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.slateDark,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        // Badge récapitulatif du chauffeur et de son véhicule
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.peachContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                size: 14,
+                                color: AppColors.orangeAccent,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                widget.driver.rating.toStringAsFixed(1),
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.slateDark,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                width: 3,
+                                height: 3,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.slateMuted,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  '${widget.driver.carModel} (${widget.driver.licensePlate})',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.slateDark,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
 
                         const SizedBox(height: 10),
 
@@ -712,10 +853,14 @@ class _RideRatingPageState extends State<RideRatingPage> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: Image.asset(
-                'assets/images/seddo_confort_3d.png',
+                widget.rideOption.type == RideType.confort
+                    ? 'assets/images/seddo_confort_3d_nobg.png'
+                    : 'assets/images/seddo_eco_3d_nobg.png',
                 fit: BoxFit.contain,
                 errorBuilder: (ctx, err, stack) => Image.asset(
-                  'assets/images/seddo_eco_3d.png',
+                  widget.rideOption.type == RideType.confort
+                      ? 'assets/images/seddo_confort_clean.png'
+                      : 'assets/images/seddo_eco_clean.png',
                   fit: BoxFit.contain,
                   errorBuilder: (ctx2, err2, stack2) => const Icon(
                     Icons.directions_car_rounded,
@@ -806,51 +951,136 @@ class _RideRatingPageState extends State<RideRatingPage> {
 
                 const SizedBox(height: 10),
 
-                // Orange Money payment row with OM badge and chevron
+                // Real Payment Method Row
                 Row(
                   children: [
-                    Container(
-                      width: 34,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        color: AppColors.slateDark,
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'OM',
-                        style: GoogleFonts.inter(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
+                    if (_paymentMethod == 'CASH' || _paymentMethod == 'ESPECES') ...[
+                      Container(
+                        width: 34,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: AppColors.success,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.payments_rounded,
+                          size: 16,
                           color: AppColors.white,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Orange Money',
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.slateDark,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Espèces (Cash)',
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.slateDark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            widget.paymentPhone,
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              color: AppColors.slateMuted,
+                            Text(
+                              'Au chauffeur à l\'arrivée',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: AppColors.slateMuted,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    ] else if (_paymentMethod == 'WAVE') ...[
+                      Container(
+                        width: 34,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1EA6D6),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Wave',
+                          style: GoogleFonts.inter(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Wave',
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.slateDark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              _paymentPhone.isNotEmpty ? _paymentPhone : 'Paiement mobile',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: AppColors.slateMuted,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        width: 34,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: AppColors.slateDark,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          'OM',
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Orange Money',
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.slateDark,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              _paymentPhone.isNotEmpty ? _paymentPhone : 'Paiement mobile',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: AppColors.slateMuted,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const Icon(
                       Icons.chevron_right_rounded,
                       size: 20,
@@ -1219,9 +1449,11 @@ class _RideRatingPageState extends State<RideRatingPage> {
   }
 }
 
-/// Driver avatar with character, cap, polo shirt, verified shield badge, and sparkle accents
+/// Driver avatar with character or photo, cap, verified shield badge, and sparkle accents
 class _DriverAvatarWithBadge extends StatelessWidget {
-  const _DriverAvatarWithBadge();
+  final DriverModel driver;
+
+  const _DriverAvatarWithBadge({required this.driver});
 
   @override
   Widget build(BuildContext context) {
@@ -1238,18 +1470,34 @@ class _DriverAvatarWithBadge extends StatelessWidget {
             painter: _DriverSparklesPainter(),
           ),
 
-          // Circular Avatar with driver character
+          // Circular Avatar with real driver photo or fallback character
           Container(
             width: 80,
             height: 80,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: AppColors.avatarCircleBg,
+              border: Border.all(color: AppColors.white, width: 3),
+              boxShadow: const [
+                BoxShadow(
+                  color: AppColors.shadowSoftBlack,
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
             ),
             child: ClipOval(
-              child: CustomPaint(
-                painter: _DriverCharacterPainter(),
-              ),
+              child: (driver.photoUrl != null && driver.photoUrl!.isNotEmpty)
+                  ? Image.network(
+                      driver.photoUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => CustomPaint(
+                        painter: _DriverCharacterPainter(),
+                      ),
+                    )
+                  : CustomPaint(
+                      painter: _DriverCharacterPainter(),
+                    ),
             ),
           ),
 
