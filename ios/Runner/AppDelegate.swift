@@ -155,14 +155,24 @@ import ActivityKit
     )
 
     do {
-      let activity = try Activity<RideActivityAttributes>.request(
-        attributes: attributes,
-        contentState: initialContentState,
-        pushType: .token
-      )
+      var activity: Activity<RideActivityAttributes>
+      do {
+        activity = try Activity<RideActivityAttributes>.request(
+          attributes: attributes,
+          contentState: initialContentState,
+          pushType: .token
+        )
+      } catch {
+        print("[ActivityKit] Note: pushType: .token non disponible (\(error.localizedDescription)), utilisation du mode local (pushType: nil)")
+        activity = try Activity<RideActivityAttributes>.request(
+          attributes: attributes,
+          contentState: initialContentState,
+          pushType: nil
+        )
+      }
       self.activeActivityId = activity.id
 
-      // Écoute des mises à jour du jeton push APNs de cette activité
+      // Écoute des mises à jour du jeton push APNs de cette activité (si disponible)
       Task {
         for await pushToken in activity.pushTokenUpdates {
           let tokenHex = pushToken.map { String(format: "%02x", $0) }.joined()

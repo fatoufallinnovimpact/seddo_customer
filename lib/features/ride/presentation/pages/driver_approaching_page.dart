@@ -20,6 +20,7 @@ import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_ride_offline_banner.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
@@ -265,8 +266,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       });
     }
 
-    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
+    if (effectiveRideId.isNotEmpty) {
       // 1. Appel REST initial pour obtenir l'état complet
       _fetchRideDetails(effectiveRideId);
 
@@ -274,7 +276,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       RealtimeService().connect();
       RealtimeService().joinRide(effectiveRideId);
 
-      // 3. Initialisation du suivi sur écran verrouillé (Live Activity iOS / Live Update Android 16)
+      // 3. Initialisation du suivi sur écran verrouillé (Live Activity iOS / Live Update Android)
       _liveUpdateBloc = RideLiveUpdateBloc(service: RideLiveUpdateServiceImpl());
       _liveUpdateBloc?.add(InitializeLiveUpdateEvent(
         rideId: effectiveRideId,
@@ -283,6 +285,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         destination: widget.destination,
         initialStatus: RideStatus.driverAssigned,
       ));
+
+      // Déclenchement direct immédiat pour garantir l'affichage sans délai
+      _syncLiveUpdate(progress: 0.05, etaMinutes: _remainingEtaMinutes);
 
       // Écoute du statut de la course (ride.status)
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
@@ -541,6 +546,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           if (!mounted) return;
           if (status == 'COMPLETED') {
             _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Course terminée');
+            if (effectiveRideId.isNotEmpty) {
+              RideService.lastCompletedRideId = effectiveRideId;
+              SharedPreferences.getInstance().then((prefs) {
+                prefs.setString('seddo_last_completed_ride_id', effectiveRideId);
+              });
+            }
             Navigator.of(context).pushReplacement(
               SlideRightToLeftRoute(
                 page: RideRatingPage(
@@ -924,13 +935,26 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   void _syncLiveUpdate({double? progress, int? etaMinutes, String? statusLabel}) {
-    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId == null || effectiveRideId.isEmpty) return;
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
 
     final effEta = etaMinutes ?? _remainingEtaMinutes;
-    final currentVal = _approachController?.value ?? 0.5;
-    final effProgress = progress ??
-        (_driverArrived ? 1.0 : (currentVal > 0 ? currentVal : 0.5));
+    // Progression continue de gauche (départ: 0.05) vers la droite (arrivé: 1.0)
+    final double computedProgress;
+    if (_driverArrived) {
+      computedProgress = 1.0;
+    } else if (progress != null) {
+      computedProgress = progress;
+    } else if (_approachController != null && _approachController!.isAnimating) {
+      computedProgress = _approachController!.value.clamp(0.05, 1.0);
+    } else if (_totalApproachM > 0) {
+      final ratio =
+          (1.0 - (_remainingDistanceM / _totalApproachM)).clamp(0.05, 0.98);
+      computedProgress = ratio;
+    } else {
+      computedProgress = 0.05;
+    }
+
     final effLabel = statusLabel ??
         (_driverArrived ? 'Chauffeur arrivé' : 'Chauffeur en approche');
 
@@ -949,7 +973,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               ? RideLiveUpdatePhase.driverArrived
               : RideLiveUpdatePhase.driverApproaching,
           etaMinutes: effEta,
-          progress: effProgress.clamp(0.0, 1.0),
+          progress: computedProgress.clamp(0.0, 1.0),
           updatedAtTimestamp: DateTime.now().millisecondsSinceEpoch,
         ),
       );

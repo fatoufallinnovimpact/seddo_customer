@@ -22,6 +22,7 @@ import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page
 import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_ride_offline_banner.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
@@ -976,8 +977,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   void _syncLiveUpdate({double? progress, int? etaMinutes, String? statusLabel}) {
-    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId == null || effectiveRideId.isEmpty) return;
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
 
     final effProgress = (progress ?? _progressRatio).clamp(0.0, 1.0);
     final effEta = etaMinutes ?? _remainingEtaMinutes;
@@ -1483,6 +1484,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   void _onTripCompleted() {
     _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Course terminée');
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RideService.lastCompletedRideId = effectiveRideId;
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('seddo_last_completed_ride_id', effectiveRideId);
+      });
+    }
+    ActiveRideOfflineStorage.clearActiveRide();
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: RideRatingPage(
@@ -1493,7 +1502,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           arrivalTime: widget.rideOption.estimatedArrival,
           paymentPhone: _paymentPhone ?? widget.paymentPhone ?? '77 ••• 45 12',
           paymentMethod: _paymentMethod ?? widget.paymentMethod,
-          rideId: widget.rideId ?? RideService.lastCreatedRideId,
+          rideId: effectiveRideId,
           rideService: _rideService,
         ),
       ),

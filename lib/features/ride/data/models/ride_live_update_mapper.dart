@@ -37,22 +37,22 @@ class RideLiveUpdateMapper {
         rideStatus == RideStatus.inProgress) {
       phase = RideLiveUpdatePhase.inProgress;
       statusLabel = 'En route vers destination';
-      progress = overrideProgress ?? 0.70;
+      progress = overrideProgress ?? 0.05;
     } else if (statusString.contains('ARRIVED')) {
       phase = RideLiveUpdatePhase.driverArrived;
       statusLabel = 'Chauffeur arrivé au point de prise en charge';
-      progress = 0.50;
+      progress = overrideProgress ?? 1.0;
     } else if (statusString.contains('APPROACH') || (driver.etaMinutes > 0 && driver.etaMinutes <= 15)) {
       phase = RideLiveUpdatePhase.driverApproaching;
       statusLabel = 'Chauffeur en approche';
-      // Compute progress smoothly between 0.15 and 0.45 based on eta
+      // Progression continue de gauche (0.05) vers la droite (0.98)
       final eta = overrideEtaMinutes ?? driver.etaMinutes;
       final remainingRatio = (eta / 15.0).clamp(0.0, 1.0);
-      progress = overrideProgress ?? (0.45 - (remainingRatio * 0.30));
+      progress = overrideProgress ?? ((1.0 - remainingRatio).clamp(0.05, 0.98));
     } else {
       phase = RideLiveUpdatePhase.driverAssigned;
       statusLabel = 'Chauffeur assigné';
-      progress = overrideProgress ?? 0.15;
+      progress = overrideProgress ?? 0.05;
     }
 
     final eta = overrideEtaMinutes ?? driver.etaMinutes;

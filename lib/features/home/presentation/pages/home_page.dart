@@ -399,7 +399,11 @@ class _HomePageContentState extends State<_HomePageContent>
             _activeRideData = ride;
           });
           return;
+        } else {
+          ActiveRideOfflineStorage.clearActiveRide();
         }
+      } else if (res != null && res['ride'] == null) {
+        ActiveRideOfflineStorage.clearActiveRide();
       }
       if (_activeRideData != null) {
         setState(() {

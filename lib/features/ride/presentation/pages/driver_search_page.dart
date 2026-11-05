@@ -85,6 +85,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
   StreamSubscription<RealtimePaymentStatusEvent>? _realtimePaymentSub;
   StreamSubscription<List<NearbyCarModel>>? _realtimeNearbySub;
+  StreamSubscription<RealtimeDriverLocationEvent>? _realtimeDriverLocationSub;
   StreamSubscription<void>? _realtimeReconnectSub;
   AppLinks? _appLinks;
   StreamSubscription<Uri>? _appLinksSub;
@@ -263,22 +264,71 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       });
     }
 
-    // Écoute temps réel des chauffeurs proches via WebSocket (nearby.drivers)
+    // Connexion WebSocket immédiate et requête proactive des chauffeurs à proximité
+    RealtimeService().connect();
+    RealtimeService().requestNearbyDrivers(
+      lat: widget.departure.latitude,
+      lng: widget.departure.longitude,
+    );
+
+    // Écoute temps réel des chauffeurs proches via WebSocket (nearby.drivers / drivers:nearby)
     _realtimeNearbySub = RealtimeService().nearbyDriversStream.listen((cars) {
       if (mounted && cars.isNotEmpty) {
         setState(() {
-          _nearbyCars = cars;
-          _nearbyDriversCount = cars.length;
+          final map = <String, NearbyCarModel>{
+            for (var c in _nearbyCars)
+              (c.id.isNotEmpty ? c.id : '${c.lat}_${c.lng}'): c
+          };
+          for (var c in cars) {
+            final key = c.id.isNotEmpty ? c.id : '${c.lat}_${c.lng}';
+            map[key] = c;
+          }
+          _nearbyCars = map.values.toList();
+          _nearbyDriversCount = _nearbyCars.length;
         });
       }
     });
 
-    // Poll de secours passif pour les chauffeurs à proximité (toutes les 15s si hors ligne)
+    // Écoute temps réel des déplacements GPS individuels des chauffeurs (driver.location)
+    _realtimeDriverLocationSub =
+        RealtimeService().driverLocationStream.listen((event) {
+      if (!mounted) return;
+      if (event.location.latitude == 0.0 && event.location.longitude == 0.0) {
+        return;
+      }
+
+      setState(() {
+        final driverKey = event.driverId != null && event.driverId!.isNotEmpty
+            ? event.driverId!
+            : 'driver_${event.location.latitude}_${event.location.longitude}';
+
+        final updatedCar = NearbyCarModel(
+          id: driverKey,
+          lat: event.location.latitude,
+          lng: event.location.longitude,
+          heading: event.heading,
+        );
+
+        final index = _nearbyCars.indexWhere((c) => c.id == driverKey);
+        if (index >= 0) {
+          _nearbyCars[index] = updatedCar;
+        } else {
+          _nearbyCars.add(updatedCar);
+        }
+        _nearbyDriversCount = _nearbyCars.length;
+      });
+    });
+
+    // Poll passif / rafraîchissement des chauffeurs à proximité (toutes les 15s)
     _nearbyPollTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) {
-        if (!RealtimeService().isConnected) {
-          _loadNearbyDrivers();
+        _loadNearbyDrivers();
+        if (RealtimeService().isConnected) {
+          RealtimeService().requestNearbyDrivers(
+            lat: widget.departure.latitude,
+            lng: widget.departure.longitude,
+          );
         }
       },
     );
@@ -288,8 +338,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
       _checkRideStatus(effectiveRideId);
 
-      // Connexion Socket.IO et adhésion au canal de la course
-      RealtimeService().connect();
+      // Adhésion au canal de la course
       RealtimeService().joinRide(effectiveRideId);
 
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
@@ -335,13 +384,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         }
       });
 
-      // Resynchronisation REST automatique dès la reconnexion (PDF page 7 & 8)
-      _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
-        if (mounted) {
-          _checkRideStatus(effectiveRideId);
-        }
-      });
-
       // Polling actif continu : interroger toutes les 3s tant qu'on recherche un chauffeur.
       // Cela garantit une transition immédiate dès qu'un chauffeur accepte sur le backend,
       // en parallèle du WebSocket temps réel.
@@ -354,6 +396,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         );
       }
     }
+
+    // Resynchronisation REST et WebSocket dès la reconnexion
+    _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {
+      if (mounted) {
+        if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+          _checkRideStatus(effectiveRideId);
+          RealtimeService().joinRide(effectiveRideId);
+        }
+        _loadNearbyDrivers();
+        RealtimeService().requestNearbyDrivers(
+          lat: widget.departure.latitude,
+          lng: widget.departure.longitude,
+        );
+      }
+    });
   }
 
   @override
@@ -406,6 +463,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     _realtimeStatusSub?.cancel();
     _realtimePaymentSub?.cancel();
     _realtimeNearbySub?.cancel();
+    _realtimeDriverLocationSub?.cancel();
     _realtimeReconnectSub?.cancel();
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
     if (!_isTransitioningToApproaching &&
@@ -577,9 +635,24 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         final categoryCount = isEco ? result.ecoCount : result.confortCount;
 
         setState(() {
-          _nearbyCars = categoryCars.isNotEmpty ? categoryCars : result.allCars;
-          _nearbyDriversCount =
-              categoryCount > 0 ? categoryCount : result.allCars.length;
+          // Afficher toutes les voitures autour du point de départ (toutes catégories confondues)
+          // pour que le client voie l'ensemble des véhicules réels qui l'entourent sur la carte
+          final carsToShow =
+              result.allCars.isNotEmpty ? result.allCars : categoryCars;
+          if (carsToShow.isNotEmpty) {
+            final map = <String, NearbyCarModel>{
+              for (var c in _nearbyCars)
+                (c.id.isNotEmpty ? c.id : '${c.lat}_${c.lng}'): c
+            };
+            for (var c in carsToShow) {
+              final key = c.id.isNotEmpty ? c.id : '${c.lat}_${c.lng}';
+              map[key] = c;
+            }
+            _nearbyCars = map.values.toList();
+          }
+          _nearbyDriversCount = result.allCars.isNotEmpty
+              ? result.allCars.length
+              : (categoryCount > 0 ? categoryCount : _nearbyCars.length);
         });
       }
     } catch (_) {}
@@ -822,14 +895,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       );
     }
 
-    // 3. Real nearby cars from GET /v1/drivers/nearby (waiting for driver acceptance)
-    if (_carMarkerIcon != null && _nearbyCars.isNotEmpty) {
-      for (final car in _nearbyCars) {
+    // 3. Real nearby cars from GET /v1/drivers/nearby and WebSocket (waiting for driver acceptance)
+    if (_nearbyCars.isNotEmpty) {
+      final carIcon = _carMarkerIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+      for (int i = 0; i < _nearbyCars.length; i++) {
+        final car = _nearbyCars[i];
+        if (car.lat == 0.0 && car.lng == 0.0) continue;
+        final markerId = car.id.isNotEmpty && car.id != 'unknown'
+            ? 'nearby_car_${car.id}'
+            : 'nearby_car_${car.lat}_${car.lng}_$i';
         markers.add(
           Marker(
-            markerId: MarkerId('nearby_car_${car.id}'),
+            markerId: MarkerId(markerId),
             position: LatLng(car.lat, car.lng),
-            icon: _carMarkerIcon!,
+            icon: carIcon,
             rotation: car.heading,
             anchor: const Offset(0.5, 0.5),
             flat: true,

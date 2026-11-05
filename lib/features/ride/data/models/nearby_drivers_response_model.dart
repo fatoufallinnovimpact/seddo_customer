@@ -138,12 +138,38 @@ class NearbyDriversResponseModel extends Equatable {
   List<NearbyCarModel> get allCars => [...ecoCars, ...confortCars];
 
   factory NearbyDriversResponseModel.fromJson(Map<String, dynamic> json) {
-    final rawCats = json['categories'] as List<dynamic>? ?? [];
+    final effectiveJson = (json['data'] is Map<String, dynamic>)
+        ? json['data'] as Map<String, dynamic>
+        : json;
+
+    final rawCats = effectiveJson['categories'] as List<dynamic>?;
+    List<NearbyCategoryModel> parsedCategories = [];
+    if (rawCats != null && rawCats.isNotEmpty) {
+      parsedCategories = rawCats
+          .whereType<Map<String, dynamic>>()
+          .map((c) => NearbyCategoryModel.fromJson(c))
+          .toList();
+    } else {
+      final flatCars = (effectiveJson['cars'] ??
+              effectiveJson['drivers'] ??
+              effectiveJson['nearbyDrivers'] ??
+              effectiveJson['vehicles'] ??
+              (json['data'] is List ? json['data'] : null)) as List<dynamic>?;
+      if (flatCars != null && flatCars.isNotEmpty) {
+        final carsList =
+            flatCars.map((c) => NearbyCarModel.fromJson(c)).toList();
+        parsedCategories = [
+          NearbyCategoryModel(
+            category: 'ECO',
+            count: carsList.length,
+            cars: carsList,
+          ),
+        ];
+      }
+    }
     return NearbyDriversResponseModel(
-      radiusM: (json['radiusM'] as num?)?.toInt() ?? 3000,
-      categories: rawCats
-          .map((c) => NearbyCategoryModel.fromJson(c as Map<String, dynamic>))
-          .toList(),
+      radiusM: (effectiveJson['radiusM'] as num?)?.toInt() ?? 3000,
+      categories: parsedCategories,
     );
   }
 

@@ -115,15 +115,15 @@ class RideLiveUpdateBloc
     if (state is! RideLiveUpdateActiveState) return;
     final current = (state as RideLiveUpdateActiveState).data;
 
-    // Calculate progression update smoothly
+    // Progression continue de gauche (0.05) vers la droite (0.98) selon l'ETA restante
     final updatedEta = event.etaMinutes ?? current.etaMinutes;
     double progress = current.progress;
     if (current.phase == RideLiveUpdatePhase.driverApproaching) {
       final remaining = (updatedEta / 15.0).clamp(0.0, 1.0);
-      progress = (0.45 - (remaining * 0.30)).clamp(0.15, 0.49);
+      progress = (1.0 - remaining).clamp(0.05, 0.98);
     } else if (current.phase == RideLiveUpdatePhase.inProgress) {
       final remaining = (updatedEta / 30.0).clamp(0.0, 1.0);
-      progress = (0.95 - (remaining * 0.40)).clamp(0.55, 0.95);
+      progress = (1.0 - remaining).clamp(0.05, 0.98);
     }
 
     final updatedData = current.copyWith(
@@ -193,13 +193,13 @@ class RideLiveUpdateBloc
     if (upperStatus.contains('ARRIVED')) {
       newPhase = RideLiveUpdatePhase.driverArrived;
       newLabel = 'Chauffeur arrivé au point de rendez-vous';
-      newProgress = 0.50;
+      newProgress = 1.0;
     } else if (upperStatus.contains('IN_PROGRESS') ||
         upperStatus.contains('PROGRESS') ||
         upperStatus.contains('STARTED')) {
       newPhase = RideLiveUpdatePhase.inProgress;
       newLabel = 'En route vers destination';
-      newProgress = newProgress < 0.55 ? 0.55 : newProgress;
+      newProgress = newProgress >= 1.0 ? 0.05 : newProgress;
     } else if (upperStatus.contains('APPROACH')) {
       newPhase = RideLiveUpdatePhase.driverApproaching;
       newLabel = 'Chauffeur en approche';

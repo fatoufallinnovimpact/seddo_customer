@@ -10,6 +10,7 @@ import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
+import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
@@ -256,13 +257,41 @@ void main() {
       await tester.ensureVisible(sendButton);
       await tester.tap(sendButton);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
 
       // Verify the rating was submitted via RideService
       expect(submittedRatingBody, isNotNull);
       expect(submittedRatingBody!['stars'], 5);
       expect(submittedRatingBody!['comment'], 'Service impeccable');
       expect(submittedRatingBody!['compliments'], contains('SAFE_DRIVING'));
+    });
+
+    testWidgets('tapping back button on RideRatingPage redirects to HomePage',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: RideRatingPage(
+            destination: destination,
+            driver: driver,
+            rideOption: rideOption,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final backButton = find.byIcon(Icons.arrow_back_rounded);
+      expect(backButton, findsOneWidget);
+      await tester.tap(backButton);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.byType(HomePage), findsOneWidget);
     });
   });
 }

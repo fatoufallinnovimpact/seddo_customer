@@ -9,6 +9,7 @@ import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dar
 import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/utils/active_ride_navigation_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Splash page showing solid Seddo orange background and an animated SEDDO logo reveal.
 /// Checks GET /v1/rides/current at app startup if the user is authenticated.
@@ -89,20 +90,39 @@ class _SplashPageState extends State<SplashPage>
 
     final Widget targetPage;
     if (isAuth) {
-      // GET /v1/rides/current : Course en cours de l’appelant, ou ride: null (au démarrage de l’app)
-      Widget? activePage;
+      // 1. Restaurer le dernier ID de course terminée en local
       try {
-        final rideService = widget.rideService ?? RideService();
-        final currentRideData = await rideService.getCurrentRide();
-        final ride = currentRideData?['ride'];
-        if (ride != null && ride is Map<String, dynamic>) {
-          activePage = _resolveActiveRidePage(ride);
+        final prefs = await SharedPreferences.getInstance();
+        final lastCompleted = prefs.getString('seddo_last_completed_ride_id');
+        if (lastCompleted != null && lastCompleted.isNotEmpty) {
+          RideService.lastCompletedRideId = lastCompleted;
         }
       } catch (_) {}
 
-      // Si le réseau est indisponible (offline), récupérer la course sauvegardée en local
-      // pour qu'une coupure réseau ne fasse JAMAIS disparaître la course en cours
-      if (activePage == null) {
+      // 2. GET /v1/rides/current : Course en cours de l’appelant, ou ride: null (au démarrage de l’app)
+      Widget? activePage;
+      bool hasOnlineResult = false;
+      try {
+        final rideService = widget.rideService ?? RideService();
+        final currentRideData = await rideService.getCurrentRide();
+        if (currentRideData != null) {
+          hasOnlineResult = true;
+          final ride = currentRideData['ride'];
+          if (ride != null && ride is Map<String, dynamic>) {
+            activePage = _resolveActiveRidePage(ride);
+            if (activePage == null) {
+              // Si la course reçue est terminée/annulée, purger immédiatement le cache local
+              await ActiveRideOfflineStorage.clearActiveRide();
+            }
+          } else {
+            // Le serveur confirme expressément qu'aucune course n'est en cours (ride: null)
+            await ActiveRideOfflineStorage.clearActiveRide();
+          }
+        }
+      } catch (_) {}
+
+      // 3. Récupérer la course sauvegardée en local UNIQUEMENT si le serveur était injoignable (vrai offline)
+      if (!hasOnlineResult && activePage == null) {
         try {
           final cachedRide = await ActiveRideOfflineStorage.getActiveRide();
           if (cachedRide != null) {

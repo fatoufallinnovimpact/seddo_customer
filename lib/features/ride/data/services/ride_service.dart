@@ -30,6 +30,9 @@ class RideService {
   /// Identifiant de la dernière course créée ou restaurée
   static String? lastCreatedRideId;
 
+  /// Identifiant de la dernière course terminée en attente de notation
+  static String? lastCompletedRideId;
+
   /// Données complètes de la dernière course créée (id, plannedPolyline, status, payment)
   static Map<String, dynamic>? lastCreatedRideData;
 
@@ -797,15 +800,31 @@ class RideService {
       final effectiveStars = (stars != null && stars > 0)
           ? stars
           : ((rating != null && rating > 0) ? rating : 5);
-      final effectiveCompliments =
+      final rawCompliments =
           compliments.isNotEmpty ? compliments : (tags ?? const []);
+
+      // Enum strict attendu par le Swagger backend RateRideDto :
+      // ["SAFE_DRIVING", "PUNCTUAL", "CLEAN_CAR", "FRIENDLY", "POLITE_CLIENT"]
+      const allowedCompliments = {
+        'SAFE_DRIVING',
+        'PUNCTUAL',
+        'CLEAN_CAR',
+        'FRIENDLY',
+        'POLITE_CLIENT',
+      };
+
+      final cleanCompliments = rawCompliments
+          .map((c) => c.toUpperCase() == 'POLITE' ? 'FRIENDLY' : c.toUpperCase())
+          .where((c) => allowedCompliments.contains(c))
+          .toList();
 
       final url = ApiEndpoints.rideRating(rideId);
       final body = <String, dynamic>{
         'stars': effectiveStars,
         if (comment != null && comment.trim().isNotEmpty)
           'comment': comment.trim(),
-        'compliments': effectiveCompliments,
+        if (cleanCompliments.isNotEmpty)
+          'compliments': cleanCompliments,
       };
 
       debugPrint('[RideService] 🚀 POST $url avec body: $body');

@@ -556,6 +556,38 @@ class RealtimeService {
     }
   }
 
+  LatLng? _lastRequestedNearbyPos;
+
+  /// Émet la position du client pour s'abonner au flux des chauffeurs aux alentours
+  void requestNearbyDrivers({
+    required double lat,
+    required double lng,
+    double radius = 3000,
+  }) {
+    _lastRequestedNearbyPos = LatLng(lat, lng);
+    if (_socket != null && _socket!.connected) {
+      final payload = {
+        'lat': lat,
+        'lng': lng,
+        'latitude': lat,
+        'longitude': lng,
+        'radius': radius,
+        'radiusM': radius,
+      };
+      debugPrint('[RealtimeService] 📡 Demande chauffeurs proches via WS autour de ($lat, $lng)');
+      _socket?.emit('nearby:subscribe', payload);
+      _socket?.emit('nearby.subscribe', payload);
+      _socket?.emit('drivers:nearby', payload);
+      _socket?.emit('nearby:drivers', payload);
+      _socket?.emit('nearby.drivers', payload);
+      _socket?.emit('getNearbyDrivers', payload);
+      _socket?.emit('subscribe:nearby', payload);
+      _socket?.emit('join:nearby', payload);
+      _socket?.emit('location', payload);
+      _socket?.emit('user:location', payload);
+    }
+  }
+
   /// Configuration des écouteurs Socket.IO
   void _setupListeners() {
     final s = _socket;
@@ -569,6 +601,14 @@ class RealtimeService {
       // Re-rejoindre la course en cours si nécessaire
       if (_currentActiveRideId != null && _currentActiveRideId!.isNotEmpty) {
         joinRide(_currentActiveRideId!);
+      }
+
+      // Re-demander les chauffeurs aux alentours si une position était suivie
+      if (_lastRequestedNearbyPos != null) {
+        requestNearbyDrivers(
+          lat: _lastRequestedNearbyPos!.latitude,
+          lng: _lastRequestedNearbyPos!.longitude,
+        );
       }
     });
 
@@ -634,9 +674,16 @@ class RealtimeService {
     s.on('payment.paid', (data) => _handlePaymentStatus(data, defaultStatus: 'PAID'));
     s.on('payment:paid', (data) => _handlePaymentStatus(data, defaultStatus: 'PAID'));
 
-    // 6. Chauffeurs proches sur l'accueil (nearby.drivers / nearby:drivers)
+    // 6. Chauffeurs proches sur l'accueil et recherche (nearby.drivers / drivers:nearby)
     s.on('nearby.drivers', (data) => _handleNearbyDrivers(data));
     s.on('nearby:drivers', (data) => _handleNearbyDrivers(data));
+    s.on('drivers:nearby', (data) => _handleNearbyDrivers(data));
+    s.on('drivers.nearby', (data) => _handleNearbyDrivers(data));
+    s.on('nearby_drivers', (data) => _handleNearbyDrivers(data));
+    s.on('nearby', (data) => _handleNearbyDrivers(data));
+    s.on('drivers', (data) => _handleNearbyDrivers(data));
+    s.on('drivers:locations', (data) => _handleNearbyDrivers(data));
+    s.on('driver:locations', (data) => _handleNearbyDrivers(data));
 
     // 7. Messages de chat (ride.message / chat.message / chat:message)
     s.on('ride.message', (data) => _handleChatMessage(data));
@@ -734,7 +781,13 @@ class RealtimeService {
     // Chauffeurs proches
     if (lower == 'nearby.drivers' ||
         lower == 'nearby:drivers' ||
-        lower == 'drivers:nearby') {
+        lower == 'drivers:nearby' ||
+        lower == 'drivers.nearby' ||
+        lower == 'nearby_drivers' ||
+        lower == 'nearby' ||
+        lower == 'drivers' ||
+        lower == 'drivers:locations' ||
+        lower == 'driver:locations') {
       _handleNearbyDrivers(data);
       return;
     }
@@ -881,13 +934,24 @@ class RealtimeService {
           cars.add(NearbyCarModel.fromJson(item));
         }
       } else if (data is Map<String, dynamic>) {
-        if (data['cars'] is List) {
-          for (final item in data['cars'] as List) {
+        final effectiveData = (data['data'] is Map<String, dynamic>)
+            ? data['data'] as Map<String, dynamic>
+            : data;
+        final rawList = effectiveData['cars'] ??
+            effectiveData['drivers'] ??
+            effectiveData['nearbyDrivers'] ??
+            effectiveData['vehicles'] ??
+            effectiveData['nearby'] ??
+            (data['data'] is List ? data['data'] : null);
+        if (rawList is List) {
+          for (final item in rawList) {
             cars.add(NearbyCarModel.fromJson(item));
           }
-        } else if (data['categories'] is List) {
-          final res = NearbyDriversResponseModel.fromJson(data);
+        } else if (effectiveData['categories'] is List) {
+          final res = NearbyDriversResponseModel.fromJson(effectiveData);
           cars.addAll(res.allCars);
+        } else if (effectiveData['lat'] != null || effectiveData['latitude'] != null) {
+          cars.add(NearbyCarModel.fromJson(effectiveData));
         }
       }
       if (cars.isNotEmpty) {

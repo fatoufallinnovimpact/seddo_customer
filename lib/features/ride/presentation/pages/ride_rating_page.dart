@@ -6,9 +6,10 @@ import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
-import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
+import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_receipt_page.dart';
 import 'package:seddo/services/receipt_pdf_service.dart';
@@ -16,6 +17,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/data/services/ride_live_update_service_impl.dart';
 import 'package:seddo/features/ride/domain/models/ride_live_update_data.dart';
+import 'package:seddo/features/ride/presentation/utils/vehicle_color_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Screen displayed at the end of the trip to rate the driver matching the design:
 /// - Top bar: Circular back button and centered Seddo logo with decorative organic waves
@@ -85,7 +88,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
     'rating.safe_driving': 'SAFE_DRIVING',
     'rating.punctual': 'PUNCTUAL',
     'rating.clean_car': 'CLEAN_CAR',
-    'rating.friendly': 'POLITE',
+    'rating.friendly': 'FRIENDLY',
   };
 
   static const List<_FeedbackTag> _tags = [
@@ -114,6 +117,18 @@ class _RideRatingPageState extends State<RideRatingPage> {
     _rideService = widget.rideService ?? RideService();
     _paymentMethod = (widget.paymentMethod ?? 'ORANGE_MONEY').toUpperCase();
     _paymentPhone = widget.paymentPhone;
+
+    ActiveRideOfflineStorage.clearActiveRide();
+    final initialRideId = widget.rideId ??
+        RideService.lastCompletedRideId ??
+        RideService.lastCreatedRideId;
+    if (initialRideId != null && initialRideId.isNotEmpty) {
+      RideService.lastCompletedRideId = initialRideId;
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('seddo_last_completed_ride_id', initialRideId);
+      });
+    }
+
     _syncCompletedLiveUpdate();
     _fetchPaymentDetails();
   }
@@ -170,7 +185,9 @@ class _RideRatingPageState extends State<RideRatingPage> {
   }
 
   void _dismissLiveNotification() {
-    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    final effectiveRideId = widget.rideId ??
+        RideService.lastCompletedRideId ??
+        RideService.lastCreatedRideId;
     if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
       RideLiveUpdateServiceImpl().endLiveUpdate(rideId: effectiveRideId);
     }
@@ -198,34 +215,114 @@ class _RideRatingPageState extends State<RideRatingPage> {
     setState(() => _isSubmitting = true);
 
     try {
-      final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+      String? effectiveRideId = widget.rideId ??
+          RideService.lastCompletedRideId ??
+          RideService.lastCreatedRideId ??
+          RideService.lastCreatedRideData?['id']?.toString();
+
+      if (effectiveRideId == null || effectiveRideId.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        effectiveRideId = prefs.getString('seddo_last_completed_ride_id');
+      }
+
+      if (effectiveRideId == null || effectiveRideId.isEmpty) {
+        try {
+          final currentRes = await _rideService.getCurrentRide();
+          effectiveRideId = currentRes?['ride']?['id']?.toString();
+        } catch (_) {}
+      }
+
+      const allowedCompliments = {
+        'SAFE_DRIVING',
+        'PUNCTUAL',
+        'CLEAN_CAR',
+        'FRIENDLY',
+        'POLITE_CLIENT',
+      };
+
       final compliments = _selectedTags
           .map((tag) => _tagToCompliment[tag] ?? tag)
+          .map((c) => c.toUpperCase() == 'POLITE' ? 'FRIENDLY' : c.toUpperCase())
+          .where((c) => allowedCompliments.contains(c))
           .toList();
       final comment = _commentController.text.trim();
 
+      bool success = false;
       if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
-        await _rideService.submitRating(
+        success = await _rideService.submitRating(
           rideId: effectiveRideId,
           stars: _selectedStars,
           comment: comment.isNotEmpty ? comment : null,
           compliments: compliments,
         );
+      } else {
+        success = true;
       }
+
       _dismissLiveNotification();
-    } catch (_) {
-      // Ignorer silencieusement pour toujours afficher la confirmation visuelle
-    } finally {
+
+      if (success) {
+        RideService.lastCompletedRideId = null;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('seddo_last_completed_ride_id');
+        await ActiveRideOfflineStorage.clearActiveRide();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.slateDark,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+              ),
+              content: Text(
+                'rating.thanks_notice'.tr(),
+                style: GoogleFonts.inter(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          );
+          Navigator.of(context).pushAndRemoveUntil(
+            SlideRightToLeftRoute(
+              page: const HomePage(),
+            ),
+            (route) => false,
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
+              ),
+              content: Text(
+                'Impossible d\'envoyer votre avis pour le moment. Veuillez réessayer.',
+                style: GoogleFonts.inter(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[RideRatingPage] Erreur _submitRating: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: AppColors.slateDark,
+            backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
             ),
             content: Text(
-              'rating.thanks_notice'.tr(),
+              'Erreur de connexion. Veuillez réessayer.',
               style: GoogleFonts.inter(
                 color: AppColors.white,
                 fontWeight: FontWeight.w600,
@@ -233,7 +330,10 @@ class _RideRatingPageState extends State<RideRatingPage> {
             ),
           ),
         );
-        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
       }
     }
   }
@@ -465,13 +565,19 @@ class _RideRatingPageState extends State<RideRatingPage> {
     }
   }
 
-  void _redirectToPlaceSearch() {
+  void _redirectToHome() {
     _dismissLiveNotification();
+    ActiveRideOfflineStorage.clearActiveRide();
+    RideService.lastCompletedRideId = null;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.remove('seddo_last_completed_ride_id');
+    });
+    if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       SlideRightToLeftRoute(
-        page: const PlaceSearchPage(),
+        page: const HomePage(),
       ),
-      (route) => route.isFirst,
+      (route) => false,
     );
   }
 
@@ -505,7 +611,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
-          _redirectToPlaceSearch();
+          _redirectToHome();
         }
       },
       child: Scaffold(
@@ -530,7 +636,7 @@ class _RideRatingPageState extends State<RideRatingPage> {
                       children: [
                         // Circular Back Button
                         GestureDetector(
-                          onTap: _redirectToPlaceSearch,
+                          onTap: _redirectToHome,
                         child: Container(
                           width: 42,
                           height: 42,
@@ -577,11 +683,6 @@ class _RideRatingPageState extends State<RideRatingPage> {
                     ),
                     child: Column(
                       children: [
-                        const SizedBox(height: 4),
-
-                        // 2. Driver Avatar with Badge & Sparkles
-                        _DriverAvatarWithBadge(driver: widget.driver),
-
                         const SizedBox(height: 8),
 
                         // Nom complet du chauffeur
@@ -852,22 +953,36 @@ class _RideRatingPageState extends State<RideRatingPage> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: Image.asset(
-                widget.rideOption.type == RideType.confort
-                    ? 'assets/images/seddo_confort_3d_nobg.png'
-                    : 'assets/images/seddo_eco_3d_nobg.png',
-                fit: BoxFit.contain,
-                errorBuilder: (ctx, err, stack) => Image.asset(
-                  widget.rideOption.type == RideType.confort
-                      ? 'assets/images/seddo_confort_clean.png'
-                      : 'assets/images/seddo_eco_clean.png',
-                  fit: BoxFit.contain,
-                  errorBuilder: (ctx2, err2, stack2) => const Icon(
-                    Icons.directions_car_rounded,
-                    size: 36,
-                    color: AppColors.orangeVibrant,
-                  ),
-                ),
+              child: Builder(
+                builder: (context) {
+                  final colorFilter =
+                      VehicleColorHelper.getColorFilter(widget.driver.carColor);
+                  final carWidget = Image.asset(
+                    widget.rideOption.type == RideType.confort
+                        ? 'assets/images/seddo_confort_3d_nobg.png'
+                        : 'assets/images/seddo_eco_3d_nobg.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (ctx, err, stack) => Image.asset(
+                      widget.rideOption.type == RideType.confort
+                          ? 'assets/images/seddo_confort_clean.png'
+                          : 'assets/images/seddo_eco_clean.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (ctx2, err2, stack2) => const Icon(
+                        Icons.directions_car_rounded,
+                        size: 36,
+                        color: AppColors.orangeVibrant,
+                      ),
+                    ),
+                  );
+
+                  if (colorFilter != null) {
+                    return ColorFiltered(
+                      colorFilter: colorFilter,
+                      child: carWidget,
+                    );
+                  }
+                  return carWidget;
+                },
               ),
             ),
           ),
@@ -1447,227 +1562,6 @@ class _RideRatingPageState extends State<RideRatingPage> {
       ),
     );
   }
-}
-
-/// Driver avatar with character or photo, cap, verified shield badge, and sparkle accents
-class _DriverAvatarWithBadge extends StatelessWidget {
-  final DriverModel driver;
-
-  const _DriverAvatarWithBadge({required this.driver});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 120,
-      height: 104,
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          // Radiating accent sparkles around the avatar
-          CustomPaint(
-            size: const Size(120, 104),
-            painter: _DriverSparklesPainter(),
-          ),
-
-          // Circular Avatar with real driver photo or fallback character
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.avatarCircleBg,
-              border: Border.all(color: AppColors.white, width: 3),
-              boxShadow: const [
-                BoxShadow(
-                  color: AppColors.shadowSoftBlack,
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ClipOval(
-              child: (driver.photoUrl != null && driver.photoUrl!.isNotEmpty)
-                  ? Image.network(
-                      driver.photoUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => CustomPaint(
-                        painter: _DriverCharacterPainter(),
-                      ),
-                    )
-                  : CustomPaint(
-                      painter: _DriverCharacterPainter(),
-                    ),
-            ),
-          ),
-
-          // Verified shield badge on bottom right
-          Positioned(
-            right: 18,
-            bottom: 12,
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: AppColors.orangeVibrant,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.white, width: 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.orangeVibrantShadow,
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.check_rounded,
-                size: 14,
-                color: AppColors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Paints the friendly driver character with cap and orange uniform inside the avatar circle
-class _DriverCharacterPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-
-    // 1. Shoulders / Orange Polo Shirt
-    final shirtPaint = Paint()..color = AppColors.orangeVibrant;
-    final shirtPath = Path()
-      ..moveTo(8, size.height)
-      ..lineTo(8, size.height * 0.72)
-      ..cubicTo(
-        cx - 20,
-        size.height * 0.60,
-        cx + 20,
-        size.height * 0.60,
-        size.width - 8,
-        size.height * 0.72,
-      )
-      ..lineTo(size.width - 8, size.height)
-      ..close();
-    canvas.drawPath(shirtPath, shirtPaint);
-
-    // 2. Collar details
-    final collarPaint = Paint()..color = AppColors.avatarCollar;
-    final collarPath = Path()
-      ..moveTo(cx - 10, size.height * 0.64)
-      ..lineTo(cx, size.height * 0.76)
-      ..lineTo(cx + 10, size.height * 0.64)
-      ..close();
-    canvas.drawPath(collarPath, collarPaint);
-
-    // 3. Mini white car emblem on chest
-    final emblemPaint = Paint()
-      ..color = AppColors.white
-      ..style = PaintingStyle.fill;
-    final carEmblem = Path()
-      ..moveTo(cx - 5, size.height * 0.84)
-      ..lineTo(cx - 3, size.height * 0.81)
-      ..lineTo(cx + 3, size.height * 0.81)
-      ..lineTo(cx + 5, size.height * 0.84)
-      ..lineTo(cx + 6, size.height * 0.86)
-      ..lineTo(cx - 6, size.height * 0.86)
-      ..close();
-    canvas.drawPath(carEmblem, emblemPaint);
-
-    // 4. Neck (African skin tone)
-    final skinPaint = Paint()..color = AppColors.avatarSkin;
-    final neckRect = Rect.fromCenter(
-      center: Offset(cx, cy + 8),
-      width: 14,
-      height: 16,
-    );
-    canvas.drawRect(neckRect, skinPaint);
-
-    // 5. Head / Face
-    final faceRect = Rect.fromCenter(
-      center: Offset(cx, cy - 6),
-      width: 26,
-      height: 28,
-    );
-    canvas.drawOval(faceRect, skinPaint);
-
-    // 6. Ears
-    canvas.drawCircle(Offset(cx - 13, cy - 6), 3.2, skinPaint);
-    canvas.drawCircle(Offset(cx + 13, cy - 6), 3.2, skinPaint);
-
-    // 7. Eyes
-    final eyePaint = Paint()..color = AppColors.licensePlateBg;
-    canvas.drawCircle(Offset(cx - 5, cy - 7), 1.8, eyePaint);
-    canvas.drawCircle(Offset(cx + 5, cy - 7), 1.8, eyePaint);
-
-    // 8. Friendly Smile
-    final smilePaint = Paint()
-      ..color = AppColors.avatarHair
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap = StrokeCap.round;
-    final smilePath = Path()
-      ..moveTo(cx - 4, cy + 1)
-      ..quadraticBezierTo(cx, cy + 4, cx + 4, cy + 1);
-    canvas.drawPath(smilePath, smilePaint);
-
-    // 9. Orange Cap Crown
-    final capPaint = Paint()..color = AppColors.orangeVibrant;
-    final capPath = Path()
-      ..moveTo(cx - 14, cy - 10)
-      ..cubicTo(
-        cx - 14,
-        cy - 24,
-        cx + 14,
-        cy - 24,
-        cx + 14,
-        cy - 10,
-      )
-      ..close();
-    canvas.drawPath(capPath, capPaint);
-
-    // 10. Cap Visor / Brim
-    final visorPaint = Paint()..color = AppColors.avatarCollar;
-    final visorPath = Path()
-      ..moveTo(cx - 15, cy - 9)
-      ..lineTo(cx + 15, cy - 9)
-      ..lineTo(cx + 17, cy - 6)
-      ..lineTo(cx - 15, cy - 6)
-      ..close();
-    canvas.drawPath(visorPath, visorPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Radiating sparkle lines around driver avatar
-class _DriverSparklesPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.orangeAccent
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
-
-    // Top-left tick
-    canvas.drawLine(const Offset(30, 24), const Offset(24, 18), paint);
-    // Top-right tick
-    canvas.drawLine(const Offset(90, 24), const Offset(96, 18), paint);
-    // Upper-right tick
-    canvas.drawLine(const Offset(84, 12), const Offset(87, 6), paint);
-    // Far-left tick
-    canvas.drawLine(const Offset(18, 50), const Offset(12, 51), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 2 Slanted accent lines on the appreciation card

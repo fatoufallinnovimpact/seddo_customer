@@ -64,7 +64,7 @@ class RideLiveUpdateData extends Equatable {
       phase: RideLiveUpdatePhase.driverAssigned,
       statusLabel: 'Chauffeur assigné',
       etaMinutes: etaMinutes,
-      progress: 0.15,
+      progress: 0.05,
       departureText: departureText,
       destinationText: destinationText,
       updatedAtTimestamp: DateTime.now().millisecondsSinceEpoch,

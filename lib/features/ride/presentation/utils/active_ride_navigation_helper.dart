@@ -20,6 +20,12 @@ class ActiveRideNavigationHelper {
     RideService? rideService,
   }) {
     final status = (ride['status'] as String? ?? '').toUpperCase();
+    final rideId = ride['id']?.toString();
+    if (rideId != null &&
+        RideService.lastCompletedRideId != null &&
+        rideId == RideService.lastCompletedRideId) {
+      return null;
+    }
     if (status == 'COMPLETED' ||
         status.startsWith('CANCEL') ||
         status == 'NO_DRIVER' ||
@@ -134,7 +140,6 @@ class ActiveRideNavigationHelper {
     final routeRaw = ride['route'] as Map<String, dynamic>?;
     final phase = (routeRaw?['phase'] as String? ?? '').toUpperCase();
     final startedAt = ride['startedAt'];
-    final rideId = ride['id']?.toString();
 
     final driver = DriverModel.fromRideJson(
       ride,
