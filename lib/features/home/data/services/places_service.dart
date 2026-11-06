@@ -156,6 +156,15 @@ class PlacesService {
       category: 'neighborhood',
     ),
     PlaceSearchResult(
+      id: 'dakar_fann_hock',
+      mainText: 'Fann Hock',
+      secondaryText: 'Dakar, Sénégal',
+      fullAddress: 'Fann Hock, Dakar, Sénégal',
+      latitude: 14.6850,
+      longitude: -17.4580,
+      category: 'neighborhood',
+    ),
+    PlaceSearchResult(
       id: 'dakar_ucad',
       mainText: 'Université Cheikh Anta Diop (UCAD)',
       secondaryText: 'Fann, Dakar',

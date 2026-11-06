@@ -32,7 +32,7 @@ import androidx.core.app.NotificationCompat
  * - Prominent Lock Screen visibility (VISIBILITY_PUBLIC, IMPORTANCE_DEFAULT, Category Navigation).
  */
 object LiveUpdateNotificationManager {
-    const val CHANNEL_ID = "seddo_live_updates_channel_v6"
+    const val CHANNEL_ID = "seddo_live_updates_channel_v7"
     private const val CHANNEL_NAME = "Courses Seddo en direct"
     const val NOTIFICATION_ID = 2026
 
@@ -53,7 +53,8 @@ object LiveUpdateNotificationManager {
                     "seddo_live_updates_channel_v2",
                     "seddo_live_updates_channel_v3",
                     "seddo_live_updates_channel_v4",
-                    "seddo_live_updates_channel_v5"
+                    "seddo_live_updates_channel_v5",
+                    "seddo_live_updates_channel_v6"
                 ).forEach { oldId ->
                     try {
                         notificationManager.deleteNotificationChannel(oldId)
@@ -66,7 +67,7 @@ object LiveUpdateNotificationManager {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_HIGH
+                    NotificationManager.IMPORTANCE_LOW
                 ).apply {
                     description = "Affiche l'avancement en temps réel de votre course Seddo sur l'écran verrouillé et le panneau de notification."
                     setSound(null, null)
@@ -256,7 +257,7 @@ object LiveUpdateNotificationManager {
             .setSubText("Seddo Live")
             .setOngoing(!isFinished)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(pendingIntent)
@@ -275,7 +276,7 @@ object LiveUpdateNotificationManager {
             .setContentText(statusSubtitlePlain)
             .setOngoing(!isFinished)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(pendingIntent)

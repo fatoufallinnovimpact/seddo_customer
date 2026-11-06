@@ -134,6 +134,15 @@ class PlacesService {
       distanceKm: '3,4 km',
     ),
     PlaceSuggestion(
+      'dakar_fann_hock',
+      'Fann Hock, Dakar',
+      mainText: 'Fann Hock',
+      secondaryText: 'Fann Hock, Dakar · 2,8 km',
+      latitude: 14.6850,
+      longitude: -17.4580,
+      distanceKm: '2,8 km',
+    ),
+    PlaceSuggestion(
       'dakar_mermoz',
       'Mermoz, Dakar',
       mainText: 'Mermoz',
