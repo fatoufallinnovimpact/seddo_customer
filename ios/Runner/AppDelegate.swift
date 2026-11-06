@@ -14,6 +14,8 @@ import ActivityKit
   private var tokenEventSink: FlutterEventSink?
   private var pushToStartEventSink: FlutterEventSink?
 
+  private var liveChannelsConfigured = false
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -35,16 +37,34 @@ import ActivityKit
 
     GeneratedPluginRegistrant.register(with: self)
 
-    // Configuration des canaux Live Activities pour Flutter
-    if let controller = window?.rootViewController as? FlutterViewController {
-      setupLiveActivityChannels(messenger: controller.binaryMessenger)
+    // Configuration robuste des canaux Live Activities pour Flutter
+    // 1. Enregistrement prioritaire via registrar de plugin Flutter
+    if let registrar = self.registrar(forPlugin: "SeddoLiveUpdatePlugin") {
+      setupLiveActivityChannels(messenger: registrar.messenger())
     }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    let didFinish = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+
+    // 2. Fallback de sécurité après super.application (quand window est instanciée)
+    if !liveChannelsConfigured {
+      if let controller = window?.rootViewController as? FlutterViewController {
+        setupLiveActivityChannels(messenger: controller.binaryMessenger)
+      }
+    }
+
+    return didFinish
   }
 
   // MARK: - Flutter Method & Event Channels
+  func ensureLiveChannelsConfigured(messenger: FlutterBinaryMessenger) {
+    setupLiveActivityChannels(messenger: messenger)
+  }
+
   private func setupLiveActivityChannels(messenger: FlutterBinaryMessenger) {
+    guard !liveChannelsConfigured else { return }
+    liveChannelsConfigured = true
+    print("[ActivityKit] 🚀 Enregistrement des canaux Live Activities (sn.innov.seddo/live_updates) réussi !")
+
     let methodChannel = FlutterMethodChannel(
       name: "sn.innov.seddo/live_updates",
       binaryMessenger: messenger
@@ -77,16 +97,21 @@ import ActivityKit
     if #available(iOS 16.1, *) {
       switch call.method {
       case "isSupported":
-        result(ActivityAuthorizationInfo().areActivitiesEnabled)
+        let supported = ActivityAuthorizationInfo().areActivitiesEnabled
+        print("[ActivityKit] 📱 isSupported appelé -> \(supported)")
+        result(true)
 
       case "areActivitiesEnabled":
-        result(ActivityAuthorizationInfo().areActivitiesEnabled)
+        let enabled = ActivityAuthorizationInfo().areActivitiesEnabled
+        print("[ActivityKit] 📱 areActivitiesEnabled appelé -> \(enabled)")
+        result(enabled)
 
       case "startLiveUpdate":
         guard let args = call.arguments as? [String: Any] else {
           result(FlutterError(code: "INVALID_ARGS", message: "Arguments attendus", details: nil))
           return
         }
+        print("[ActivityKit] 🚀 startLiveUpdate reçu avec args: \(args)")
         startLiveActivity(args: args, result: result)
 
       case "updateLiveUpdate":
@@ -154,23 +179,55 @@ import ActivityKit
       updatedAtTimestamp: timestamp
     )
 
+    // Nettoyage préventif des activités existantes pour ne pas saturer le quota iOS
+    for existing in Activity<RideActivityAttributes>.activities {
+      Task {
+        if #available(iOS 16.2, *) {
+          await existing.end(nil, dismissalPolicy: .immediate)
+        } else {
+          await existing.end(dismissalPolicy: .immediate)
+        }
+      }
+    }
+
     do {
       var activity: Activity<RideActivityAttributes>
-      do {
-        activity = try Activity<RideActivityAttributes>.request(
-          attributes: attributes,
-          contentState: initialContentState,
-          pushType: .token
-        )
-      } catch {
-        print("[ActivityKit] Note: pushType: .token non disponible (\(error.localizedDescription)), utilisation du mode local (pushType: nil)")
-        activity = try Activity<RideActivityAttributes>.request(
-          attributes: attributes,
-          contentState: initialContentState,
-          pushType: nil
-        )
+
+      if #available(iOS 16.2, *) {
+        let content = ActivityContent(state: initialContentState, staleDate: nil)
+        do {
+          activity = try Activity<RideActivityAttributes>.request(
+            attributes: attributes,
+            content: content,
+            pushType: .token
+          )
+        } catch {
+          print("[ActivityKit] Note: pushType: .token non disponible (\(error.localizedDescription)), bascule en mode local")
+          activity = try Activity<RideActivityAttributes>.request(
+            attributes: attributes,
+            content: content,
+            pushType: nil
+          )
+        }
+      } else {
+        do {
+          activity = try Activity<RideActivityAttributes>.request(
+            attributes: attributes,
+            contentState: initialContentState,
+            pushType: .token
+          )
+        } catch {
+          print("[ActivityKit] Note: pushType: .token non disponible (\(error.localizedDescription)), bascule en mode local")
+          activity = try Activity<RideActivityAttributes>.request(
+            attributes: attributes,
+            contentState: initialContentState,
+            pushType: nil
+          )
+        }
       }
+
       self.activeActivityId = activity.id
+      print("[ActivityKit] ✅ Live Activity démarrée avec succès ! ID: \(activity.id)")
 
       // Écoute des mises à jour du jeton push APNs de cette activité (si disponible)
       Task {
@@ -185,7 +242,7 @@ import ActivityKit
 
       result(activity.id)
     } catch {
-      print("[ActivityKit] Erreur au démarrage de l'activité: \(error.localizedDescription)")
+      print("[ActivityKit] ❌ ERREUR au démarrage de la Live Activity: \(error.localizedDescription)")
       result(FlutterError(code: "ACTIVITY_START_ERROR", message: error.localizedDescription, details: nil))
     }
   }
@@ -208,7 +265,12 @@ import ActivityKit
 
     Task {
       for activity in Activity<RideActivityAttributes>.activities {
-        await activity.update(using: updatedContentState)
+        if #available(iOS 16.2, *) {
+          let content = ActivityContent(state: updatedContentState, staleDate: nil)
+          await activity.update(content)
+        } else {
+          await activity.update(using: updatedContentState)
+        }
       }
       DispatchQueue.main.async {
         result(nil)
@@ -220,7 +282,11 @@ import ActivityKit
   private func endLiveActivity(args: [String: Any], result: @escaping FlutterResult) {
     Task {
       for activity in Activity<RideActivityAttributes>.activities {
-        await activity.end(dismissalPolicy: .immediate)
+        if #available(iOS 16.2, *) {
+          await activity.end(nil, dismissalPolicy: .immediate)
+        } else {
+          await activity.end(dismissalPolicy: .immediate)
+        }
       }
       DispatchQueue.main.async {
         result(nil)
@@ -232,7 +298,11 @@ import ActivityKit
   private func endAllLiveActivities() {
     Task {
       for activity in Activity<RideActivityAttributes>.activities {
-        await activity.end(dismissalPolicy: .immediate)
+        if #available(iOS 16.2, *) {
+          await activity.end(nil, dismissalPolicy: .immediate)
+        } else {
+          await activity.end(dismissalPolicy: .immediate)
+        }
       }
     }
   }
