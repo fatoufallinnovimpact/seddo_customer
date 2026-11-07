@@ -7,9 +7,9 @@ import ActivityKit
 struct SeddoLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RideActivityAttributes.self) { context in
-            // Lock Screen / Notification Banner Presentation matching Uber card style
+            // Translucent glass Lock Screen / Notification Banner presentation
             SeddoLockScreenLiveView(context: context)
-                .activityBackgroundTint(Color.white)
+                .activityBackgroundTint(nil)
                 .activitySystemActionForegroundColor(Color(red: 251/255, green: 91/255, blue: 0/255))
         } dynamicIsland: { context in
             DynamicIsland {
@@ -117,10 +117,10 @@ struct SeddoLiveActivityWidget: Widget {
     }
 }
 
-/// Clean white Lock Screen card view matching the reference layout:
-/// - Top Row: Headline & arrival status on Left, Vehicle in REAL COLOR on Right (NO duplicate logo)
-/// - Middle Row: Route line with Departure pin on left, Arrival pin on right, and moving EcoCar
-/// - Bottom Row: Driver name & model on Left, styled license plate badge on Right (as in reference Image 2)
+/// Translucent Lock Screen card view matching the reference layout:
+/// - Top Row Left: Seddo brand icon + "Arrivée dans X min" + "[Couleur] [Modèle]"
+/// - Top Row Right: License plate in rounded badge + Car preview in REAL COLOR
+/// - Middle Row: Solid horizontal line (NO dashed/dotted line) + Top-Down car in REAL COLOR + Destination ring (○)
 @available(iOSApplicationExtension 16.1, *)
 struct SeddoLockScreenLiveView: View {
     let context: ActivityViewContext<RideActivityAttributes>
@@ -147,249 +147,229 @@ struct SeddoLockScreenLiveView: View {
         )
     }
 
-    private var arrivalTimeText: String {
-        let arrivalDate = Date().addingTimeInterval(TimeInterval(context.state.etaMinutes * 60))
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: arrivalDate)
-    }
-
     private var etaHeadline: String {
         if isFinished {
             return "Course terminée"
         }
         if isArrivedAtPickup {
-            return "Votre chauffeur est arrivé"
+            return "Chauffeur arrivé"
         }
-        if isTrip {
-            let dest = context.attributes.destinationText.trimmingCharacters(in: .whitespacesAndNewlines)
-            return dest.isEmpty ? "En route vers la destination" : "En route vers \(dest)"
+        if context.state.etaMinutes > 0 {
+            return "Arrivée dans \(context.state.etaMinutes) min"
         }
-        return context.state.etaMinutes > 0 ? "\(context.state.etaMinutes) min avant arrivée" : "Arrivée imminente"
+        return "Arrivée imminente"
     }
 
-    private var statusSubtitle: String {
-        if isFinished {
-            return "Arrivé à destination"
-        }
-        if isArrivedAtPickup {
-            return "Au point de départ"
-        }
-        if isTrip {
-            if context.state.etaMinutes > 0 {
-                return "Arrivée à \(arrivalTimeText) · \(context.state.etaMinutes) min"
-            } else {
-                return "Arrivée imminente"
-            }
-        }
-        return "\(context.attributes.driverName) arrive bientôt"
-    }
-
-    private var plateText: String {
-        context.attributes.licensePlate.isEmpty ? "DK-482-AB" : context.attributes.licensePlate
-    }
-
-    private var vehicleText: String {
+    private var vehicleSubtitle: String {
         let color = context.attributes.carColor.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = context.attributes.carModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !color.isEmpty && !model.isEmpty {
-            return "\(model) \(color)"
+            return "\(color.capitalized) \(model)"
         }
         return model.isEmpty ? "Véhicule Seddo" : model
     }
 
-    private func driverInitials(from name: String) -> String {
-        let parts = name.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: " ").filter { !$0.isEmpty }
-        if parts.count >= 2, let f = parts[0].first, let l = parts[1].first {
-            return "\(f.uppercased())\(l.uppercased())"
-        } else if let f = name.trimmingCharacters(in: .whitespacesAndNewlines).first {
-            return String(name.prefix(2)).uppercased()
-        }
-        return "S"
+    private var plateText: String {
+        context.attributes.licensePlate.isEmpty ? "AA-647-JZ" : context.attributes.licensePlate
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Top Row: Left Column (ETA Headline & Status Subtitle) & Right (Vehicle in REAL COLOR)
-            // NO duplicate brand logo inside the card, as requested!
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(etaHeadline)
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(red: 251/255, green: 91/255, blue: 0/255))
-                        .lineLimit(1)
-
-                    if isTrip && context.state.etaMinutes > 0 {
-                        HStack(spacing: 3) {
-                            Text("Arrivée à")
-                                .foregroundColor(Color(red: 75/255, green: 85/255, blue: 99/255))
-                            Text(arrivalTimeText)
-                                .foregroundColor(Color(red: 251/255, green: 91/255, blue: 0/255))
-                                .fontWeight(.bold)
-                            Text("· \(context.state.etaMinutes) min")
-                                .foregroundColor(Color(red: 75/255, green: 85/255, blue: 99/255))
-                        }
-                        .font(.system(size: 13, weight: .medium))
-                    } else {
-                        Text(statusSubtitle)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(Color(red: 75/255, green: 85/255, blue: 99/255))
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer()
-
-                // Vehicle side preview tinted to REAL car color
+        VStack(spacing: 12) {
+            // Top Row: App Icon + Headline + Vehicle Subtitle (Left), Plate Badge + Car Preview (Right)
+            HStack(alignment: .center, spacing: 10) {
+                // Seddo Brand Icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(red: 243/255, green: 244/255, blue: 246/255))
-                        .frame(width: 52, height: 28)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color(red: 229/255, green: 231/255, blue: 235/255), lineWidth: 1)
-                        )
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(red: 235/255, green: 25/255, blue: 25/255))
+                        .frame(width: 38, height: 38)
 
-                    Image(systemName: "car.fill")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(carTint(from: context.attributes.carColor))
-                }
-            }
-
-            // Middle Row: Route Track Line with Departure Pin (Left) and Destination Pin (Right)
-            if !isArrivedAtPickup && !isFinished {
-                SeddoRouteTrackView(progress: context.state.progress)
-                    .frame(height: 28)
-                    .padding(.top, 2)
-            }
-
-            // Bottom Row (Under the Track Line - Image 2): Driver Info (Left) + Plate Badge (Right)
-            HStack(alignment: .center, spacing: 8) {
-                // Driver Initials Avatar (Image 2)
-                ZStack {
-                    Circle()
-                        .fill(Color(red: 38/255, green: 50/255, blue: 56/255))
-                        .frame(width: 32, height: 32)
-                    Text(driverInitials(from: context.attributes.driverName))
-                        .font(.system(size: 12, weight: .bold))
+                    Text("seddo")
+                        .font(.system(size: 10, weight: .heavy, design: .rounded))
                         .foregroundColor(.white)
                 }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(context.attributes.driverName)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(Color(red: 17/255, green: 24/255, blue: 39/255))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(etaHeadline)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
                         .lineLimit(1)
 
-                    Text(vehicleText)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(red: 107/255, green: 114/255, blue: 128/255))
+                    Text(vehicleSubtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color.white.opacity(0.85))
                         .lineLimit(1)
                 }
 
                 Spacer()
 
-                // License plate in styled rounded badge with border (Image 2)
-                Text(plateText)
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundColor(Color(red: 15/255, green: 23/255, blue: 42/255))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color(red: 241/255, green: 245/255, blue: 249/255))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(Color(red: 148/255, green: 163/255, blue: 184/255), lineWidth: 1)
-                    )
+                // Right Column: License plate badge + Car preview in REAL COLOR
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(plateText)
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                        )
+
+                    // Side-view car preview colored with REAL vehicle color
+                    Image(systemName: "car.side.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(carTint(from: context.attributes.carColor))
+                        .padding(.trailing, 2)
+                }
             }
-            .padding(.top, 2)
+
+            // Middle Row: Continuous Solid Route Line with Top-Down Car in REAL COLOR and Destination Ring (○)
+            if !isArrivedAtPickup && !isFinished {
+                SeddoRouteTrackView(
+                    progress: context.state.progress,
+                    carColor: context.attributes.carColor
+                )
+                .frame(height: 28)
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color.black.opacity(0.65))
+        )
     }
 }
 
-/// Horizontal route track line with moving EcoCar:
-/// - Departure pin (green circle with white center) on extreme left
-/// - Destination pin (Seddo orange circle with white center) on extreme right
-/// - Continuous solid Seddo Orange (#FB5B00) line from start up to car
-/// - Moving EcoCar badge positioned directly on the track
-/// - Dashed neutral grey line from car to destination
+/// Realistic Top-Down car view matching the vehicle marker on maps:
+/// - Body tinted in REAL car color from API
+/// - Wheels, windshields, roof, headlights, drop shadow
+@available(iOSApplicationExtension 16.1, *)
+struct TopDownCarView: View {
+    let tintColor: Color
+
+    var body: some View {
+        ZStack {
+            // Soft drop shadow
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.black.opacity(0.35))
+                .frame(width: 38, height: 20)
+                .offset(y: 2)
+                .blur(radius: 2)
+
+            // 4 Wheels
+            HStack(spacing: 16) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color(white: 0.15))
+                    .frame(width: 7, height: 3)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color(white: 0.15))
+                    .frame(width: 7, height: 3)
+            }
+            .offset(y: -9)
+
+            HStack(spacing: 16) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color(white: 0.15))
+                    .frame(width: 7, height: 3)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(Color(white: 0.15))
+                    .frame(width: 7, height: 3)
+            }
+            .offset(y: 9)
+
+            // Car main body in real vehicle color
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(tintColor)
+                .frame(width: 36, height: 18)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.white.opacity(0.35), lineWidth: 0.8)
+                )
+
+            // Front Windshield (curved dark bar on right)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color(white: 0.2))
+                .frame(width: 4, height: 12)
+                .offset(x: 6)
+
+            // Rear Window (dark bar on left)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color(white: 0.2))
+                .frame(width: 3, height: 11)
+                .offset(x: -8)
+
+            // Roof
+            RoundedRectangle(cornerRadius: 3)
+                .fill(tintColor.opacity(0.85))
+                .frame(width: 13, height: 11)
+                .offset(x: -1)
+
+            // Headlights
+            VStack(spacing: 8) {
+                Circle()
+                    .fill(Color(red: 254/255, green: 240/255, blue: 138/255))
+                    .frame(width: 2.5, height: 2.5)
+                Circle()
+                    .fill(Color(red: 254/255, green: 240/255, blue: 138/255))
+                    .frame(width: 2.5, height: 2.5)
+            }
+            .offset(x: 17)
+        }
+    }
+}
+
+/// Horizontal route track line with moving top-down car:
+/// - Continuous solid line (NO dashed/dotted line, trait plein)
+/// - Solid Seddo Orange (#FB5B00) traveled track
+/// - Top-down car sitting on the track colored with REAL vehicle color
+/// - Destination circle ring (○) on the extreme right
 @available(iOSApplicationExtension 16.1, *)
 struct SeddoRouteTrackView: View {
     let progress: Double
+    let carColor: String
 
     var body: some View {
         GeometryReader { geo in
             let totalWidth = geo.size.width
             let centerY = geo.size.height / 2
-            let startX: CGFloat = 16
-            let endX: CGFloat = totalWidth - 16
+            let startX: CGFloat = 8
+            let endX: CGFloat = totalWidth - 14
             let trackWidth = endX - startX
-            let clampedProgress = min(max(progress, 0.06), 0.94)
+            let clampedProgress = min(max(progress, 0.05), 0.95)
             let carX = startX + trackWidth * CGFloat(clampedProgress)
 
             ZStack(alignment: .leading) {
-                // 1. Remaining route: Dashed line to destination
+                // 1. Full solid horizontal line across the track (NO dashed line, trait plein)
                 Path { path in
-                    path.move(to: CGPoint(x: carX + 12, y: centerY))
+                    path.move(to: CGPoint(x: startX, y: centerY))
                     path.addLine(to: CGPoint(x: endX - 10, y: centerY))
                 }
                 .stroke(
-                    Color(red: 203/255, green: 213/255, blue: 225/255),
-                    style: StrokeStyle(lineWidth: 6, lineCap: .round, dash: [8, 6])
+                    Color.white.opacity(0.35),
+                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
                 )
 
-                // 2. Traveled route: Solid Seddo Orange line from start
+                // 2. Traveled portion: Solid Seddo Orange line from start
                 Path { path in
-                    path.move(to: CGPoint(x: startX + 10, y: centerY))
+                    path.move(to: CGPoint(x: startX, y: centerY))
                     path.addLine(to: CGPoint(x: carX, y: centerY))
                 }
                 .stroke(
                     Color(red: 251/255, green: 91/255, blue: 0/255),
-                    style: StrokeStyle(lineWidth: 6, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
                 )
 
-                // 3. Departure point icon (Left extreme): Green pin circle with white center
-                ZStack {
-                    Circle()
-                        .fill(Color(red: 22/255, green: 163/255, blue: 74/255))
-                        .frame(width: 14, height: 14)
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 6, height: 6)
-                }
-                .position(x: startX, y: centerY)
+                // 3. Destination circle ring (○) on the right end
+                Circle()
+                    .stroke(Color.white.opacity(0.9), lineWidth: 2.5)
+                    .frame(width: 14, height: 14)
+                    .position(x: endX, y: centerY)
 
-                // 4. Arrival point icon (Right extreme): Seddo Orange pin circle with white center
-                ZStack {
-                    Circle()
-                        .fill(Color(red: 251/255, green: 91/255, blue: 0/255))
-                        .frame(width: 14, height: 14)
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 6, height: 6)
-                }
-                .position(x: endX, y: centerY)
-
-                // 5. Moving EcoCar badge sitting on track
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(Color.white)
-                        .frame(width: 32, height: 18)
-                        .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7)
-                                .stroke(Color(red: 226/255, green: 232/255, blue: 240/255), lineWidth: 1)
-                        )
-
-                    Image(systemName: "car.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(Color(red: 251/255, green: 91/255, blue: 0/255))
-                }
-                .position(x: carX, y: centerY)
+                // 4. Moving Top-Down Car on the track colored with the REAL vehicle color
+                TopDownCarView(tintColor: carTint(from: carColor))
+                    .position(x: carX, y: centerY)
             }
         }
     }
@@ -424,7 +404,7 @@ func carTint(from colorStr: String) -> Color {
         return Color(red: 234/255, green: 88/255, blue: 12/255)
     }
     if clean.contains("marron") || clean.contains("brown") {
-        return Color(red: 120/255, green: 53/255, blue: 15/255)
+        return Color(red: 140/255, green: 70/255, blue: 30/255)
     }
 
     // Hex parsing fallback

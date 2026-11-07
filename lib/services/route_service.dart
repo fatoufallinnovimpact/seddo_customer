@@ -52,8 +52,8 @@ class RouteService {
             'X-Goog-FieldMask':
                 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
           },
-          sendTimeout: const Duration(seconds: 4),
-          receiveTimeout: const Duration(seconds: 4),
+          sendTimeout: const Duration(seconds: 12),
+          receiveTimeout: const Duration(seconds: 12),
         ),
         data: {
           'origin': {
@@ -113,8 +113,8 @@ class RouteService {
       final response = await _dio.get(
         osrmUrl,
         options: Options(
-          sendTimeout: const Duration(seconds: 4),
-          receiveTimeout: const Duration(seconds: 4),
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
         ),
       );
 

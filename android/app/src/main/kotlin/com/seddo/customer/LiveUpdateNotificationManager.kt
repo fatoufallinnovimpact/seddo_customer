@@ -214,7 +214,7 @@ object LiveUpdateNotificationManager {
         // When driver is arrived at pickup point, NO horizontal line is drawn or shown.
         val showRouteLine = !isArrivedAtPickup && !isFinished
         val routeBitmap = if (showRouteLine) {
-            generateRouteTrackBitmap(context, rawProgress, isFinished)
+            generateRouteTrackBitmap(context, rawProgress, isFinished, carColor)
         } else {
             null
         }
@@ -401,12 +401,12 @@ object LiveUpdateNotificationManager {
 
     /**
      * Draws a single seamless horizontal route line:
-     * - Solid Seddo Orange (#FB5B00) line from left up to the moving car
-     * - Moving ecocar icon (assets/icons/ecocar.svg / ic_seddo_ecocar)
-     * - Dashed grey line (#CBD5E1) from car to right edge
-     * - STRICTLY NO CIRCLES (no origin circle, no intermediate circle stops, no destination circle)
+     * - Solid continuous horizontal track (NO dashed line, trait plein)
+     * - Solid Seddo Orange (#FB5B00) line up to the moving car
+     * - Moving Top-Down car sitting on the track colored with REAL vehicle color
+     * - Destination circle ring (○) on the extreme right
      */
-    private fun generateRouteTrackBitmap(context: Context, progress: Double, isFinished: Boolean): Bitmap {
+    private fun generateRouteTrackBitmap(context: Context, progress: Double, isFinished: Boolean, carColorStr: String): Bitmap {
         val width = 1000
         val height = 64
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -423,7 +423,17 @@ object LiveUpdateNotificationManager {
         val normalizedProgress = if (isFinished) 1.0f else progress.coerceIn(0.06, 0.94).toFloat()
         val carX = if (isFinished) endX else (startX + trackWidth * normalizedProgress)
 
-        // 1. Traveled Route Line: Continuous solid Seddo Orange (#FB5B00) line on the left
+        // 1. Full solid horizontal route line across the entire track (NO dashed line, trait plein)
+        val remainingPaint = Paint().apply {
+            isAntiAlias = true
+            color = Color.parseColor("#CBD5E1")
+            strokeWidth = trackHeight - 1.5f
+            strokeCap = Paint.Cap.ROUND
+            style = Paint.Style.STROKE
+        }
+        canvas.drawLine(startX + 10f, centerY, endX - 12f, centerY, remainingPaint)
+
+        // 2. Traveled Route Line: Continuous solid Seddo Orange (#FB5B00) line on the left
         val traveledPaint = Paint().apply {
             isAntiAlias = true
             color = Color.parseColor("#FB5B00")
@@ -433,23 +443,6 @@ object LiveUpdateNotificationManager {
         }
         val traveledEndX = if (isFinished) (endX - 12f) else carX
         canvas.drawLine(startX + 10f, centerY, traveledEndX, centerY, traveledPaint)
-
-        // 2. Remaining Route Line: Dashed neutral grey track (- - - - -) on the right
-        if (!isFinished && carX < endX - 14f) {
-            val dashedPaint = Paint().apply {
-                isAntiAlias = true
-                color = Color.parseColor("#CBD5E1")
-                strokeWidth = trackHeight - 1f
-                strokeCap = Paint.Cap.ROUND
-                style = Paint.Style.STROKE
-                pathEffect = DashPathEffect(floatArrayOf(18f, 14f), 0f)
-            }
-            val dashedPath = Path().apply {
-                moveTo(carX + 14f, centerY)
-                lineTo(endX - 14f, centerY)
-            }
-            canvas.drawPath(dashedPath, dashedPaint)
-        }
 
         // 3. Departure Point Icon (Left extreme): Green pin circle (#16A34A) with white core
         val departureOuterPaint = Paint().apply {
@@ -462,77 +455,111 @@ object LiveUpdateNotificationManager {
             color = Color.WHITE
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(startX, centerY, 11f, departureOuterPaint)
-        canvas.drawCircle(startX, centerY, 4.5f, departureInnerPaint)
+        canvas.drawCircle(startX, centerY, 10f, departureOuterPaint)
+        canvas.drawCircle(startX, centerY, 4f, departureInnerPaint)
 
-        // 4. Arrival Point Icon (Right extreme): Seddo Orange destination pin (#FB5B00) with white core
+        // 4. Arrival Point Icon (Right extreme): Destination circle ring (○) matching the map and iOS Live Activity
         val arrivalOuterPaint = Paint().apply {
             isAntiAlias = true
             color = Color.parseColor("#FB5B00")
-            style = Paint.Style.FILL
+            strokeWidth = 3f
+            style = Paint.Style.STROKE
         }
-        val arrivalInnerPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.WHITE
-            style = Paint.Style.FILL
-        }
-        canvas.drawCircle(endX, centerY, 11f, arrivalOuterPaint)
-        canvas.drawCircle(endX, centerY, 4.5f, arrivalInnerPaint)
+        canvas.drawCircle(endX, centerY, 10f, arrivalOuterPaint)
 
-        // 5. Draw the official EcoCar icon (assets/icons/ecocar.svg) facing forward along the track
-        drawEcoCar(context, canvas, carX, centerY)
+        // 5. Draw the realistic Top-Down car sitting on the track colored with REAL vehicle color
+        val parsedColor = parseCarColor(carColorStr)
+        drawTopDownCar(canvas, carX, centerY, parsedColor)
 
         return bitmap
     }
 
     /**
-     * Draws the official Seddo EcoCar icon (assets/icons/ecocar.svg / ic_seddo_ecocar)
-     * facing forward along the route track from left to right.
+     * Draws a realistic Top-Down car view on the route track matching the map marker
+     * and tinted with the driver's real vehicle color.
      */
-    private fun drawEcoCar(context: Context, canvas: Canvas, x: Float, y: Float) {
-        var carBmp = cachedEcoCarBitmap
-        if (carBmp == null) {
-            try {
-                val original = BitmapFactory.decodeResource(context.resources, R.drawable.ic_seddo_ecocar)
-                if (original != null) {
-                    val targetW = 50
-                    val targetH = (targetW * original.height) / original.width
-                    carBmp = Bitmap.createScaledBitmap(original, targetW, targetH, true)
-                    cachedEcoCarBitmap = carBmp
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
+    private fun drawTopDownCar(canvas: Canvas, x: Float, y: Float, carColor: Int) {
+        val carWidth = 52f
+        val carHeight = 26f
+        val left = x - carWidth / 2f
+        val top = y - carHeight / 2f
+        val right = x + carWidth / 2f
+        val bottom = y + carHeight / 2f
 
-        // 1. Soft drop shadow under the vehicle badge
+        // 1. Soft drop shadow under the vehicle
         val shadowPaint = Paint().apply {
             isAntiAlias = true
-            color = Color.parseColor("#22000000")
-            maskFilter = BlurMaskFilter(3f, BlurMaskFilter.Blur.NORMAL)
+            color = Color.parseColor("#33000000")
+            maskFilter = BlurMaskFilter(4f, BlurMaskFilter.Blur.NORMAL)
         }
-        canvas.drawOval(RectF(x - 28f, y - 9f, x + 28f, y + 14f), shadowPaint)
+        canvas.drawRoundRect(RectF(left - 2f, top + 2f, right + 2f, bottom + 4f), 8f, 8f, shadowPaint)
 
-        // 2. Crisp white rounded badge behind ecocar so the route line doesn't cut through the car
-        val badgePaint = Paint().apply {
+        // 2. Wheels (4 black rounded capsules peeking on sides)
+        val wheelPaint = Paint().apply {
             isAntiAlias = true
-            color = Color.WHITE
+            color = Color.parseColor("#1F2937")
             style = Paint.Style.FILL
         }
-        val strokePaint = Paint().apply {
+        val wheelW = 10f
+        val wheelH = 4f
+        // Front-top, front-bottom (moving left to right, front is at right)
+        canvas.drawRoundRect(RectF(right - 14f, top - 2f, right - 4f, top + wheelH - 2f), 2f, 2f, wheelPaint)
+        canvas.drawRoundRect(RectF(right - 14f, bottom - wheelH + 2f, right - 4f, bottom + 2f), 2f, 2f, wheelPaint)
+        // Rear-top, rear-bottom
+        canvas.drawRoundRect(RectF(left + 4f, top - 2f, left + 14f, top + wheelH - 2f), 2f, 2f, wheelPaint)
+        canvas.drawRoundRect(RectF(left + 4f, bottom - wheelH + 2f, left + 14f, bottom + 2f), 2f, 2f, wheelPaint)
+
+        // 3. Car Body: rounded rect filled with the driver's real vehicle color
+        val bodyPaint = Paint().apply {
             isAntiAlias = true
-            color = Color.parseColor("#E2E8F0")
+            color = carColor
+            style = Paint.Style.FILL
+        }
+        val bodyStrokePaint = Paint().apply {
+            isAntiAlias = true
+            color = Color.parseColor("#44000000")
             strokeWidth = 1.2f
             style = Paint.Style.STROKE
         }
-        val badgeRect = RectF(x - 26f, y - 14f, x + 26f, y + 14f)
-        canvas.drawRoundRect(badgeRect, 13f, 13f, badgePaint)
-        canvas.drawRoundRect(badgeRect, 13f, 13f, strokePaint)
+        val bodyRect = RectF(left, top, right, bottom)
+        canvas.drawRoundRect(bodyRect, 8f, 8f, bodyPaint)
+        canvas.drawRoundRect(bodyRect, 8f, 8f, bodyStrokePaint)
 
-        // 3. Draw ecocar bitmap centered inside the badge
-        if (carBmp != null) {
-            canvas.drawBitmap(carBmp, x - carBmp.width / 2f, y - carBmp.height / 2f, null)
+        // 4. Windows & Roof (top-down view)
+        val windowPaint = Paint().apply {
+            isAntiAlias = true
+            color = Color.parseColor("#374151")
+            style = Paint.Style.FILL
         }
+        // Front windshield (curved trapezoid or rounded rect towards front/right)
+        val windshieldRect = RectF(right - 18f, top + 3f, right - 13f, bottom - 3f)
+        canvas.drawRoundRect(windshieldRect, 2.5f, 2.5f, windowPaint)
+
+        // Rear window
+        val rearWindowRect = RectF(left + 9f, top + 3.5f, left + 13f, bottom - 3.5f)
+        canvas.drawRoundRect(rearWindowRect, 2f, 2f, windowPaint)
+
+        // Side windows
+        canvas.drawRect(RectF(left + 13f, top + 2.5f, right - 17f, top + 5f), windowPaint)
+        canvas.drawRect(RectF(left + 13f, bottom - 5f, right - 17f, bottom - 2.5f), windowPaint)
+
+        // Roof (body color in center)
+        val roofPaint = Paint().apply {
+            isAntiAlias = true
+            color = carColor
+            style = Paint.Style.FILL
+        }
+        val roofRect = RectF(left + 13f, top + 4f, right - 17f, bottom - 4f)
+        canvas.drawRoundRect(roofRect, 3f, 3f, roofPaint)
+
+        // Headlights at front (right)
+        val headlightPaint = Paint().apply {
+            isAntiAlias = true
+            color = Color.parseColor("#FEF08A") // Warm light yellow
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(right - 1.5f, top + 4.5f, 2f, headlightPaint)
+        canvas.drawCircle(right - 1.5f, bottom - 4.5f, 2f, headlightPaint)
     }
 
     fun cancelNotification(context: Context) {
