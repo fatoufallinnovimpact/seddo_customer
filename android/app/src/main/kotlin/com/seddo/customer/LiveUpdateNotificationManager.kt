@@ -413,8 +413,8 @@ object LiveUpdateNotificationManager {
         val canvas = Canvas(bitmap)
 
         val paddingX = 28f
-        val startX = paddingX + 12f
-        val endX = width - paddingX - 12f
+        val startX = paddingX
+        val endX = width - paddingX - 16f
         val trackWidth = endX - startX
         val centerY = height / 2f
         val trackHeight = 7f
@@ -431,7 +431,7 @@ object LiveUpdateNotificationManager {
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
         }
-        canvas.drawLine(startX + 10f, centerY, endX - 12f, centerY, remainingPaint)
+        canvas.drawLine(startX, centerY, endX, centerY, remainingPaint)
 
         // 2. Traveled Route Line: Continuous solid Seddo Orange (#FB5B00) line on the left
         val traveledPaint = Paint().apply {
@@ -441,37 +441,62 @@ object LiveUpdateNotificationManager {
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
         }
-        val traveledEndX = if (isFinished) (endX - 12f) else carX
-        canvas.drawLine(startX + 10f, centerY, traveledEndX, centerY, traveledPaint)
+        val traveledEndX = if (isFinished) endX else carX
+        canvas.drawLine(startX, centerY, traveledEndX, centerY, traveledPaint)
 
-        // 3. Departure Point Icon (Left extreme): Green pin circle (#16A34A) with white core
-        val departureOuterPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#16A34A")
-            style = Paint.Style.FILL
-        }
-        val departureInnerPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.WHITE
-            style = Paint.Style.FILL
-        }
-        canvas.drawCircle(startX, centerY, 10f, departureOuterPaint)
-        canvas.drawCircle(startX, centerY, 4f, departureInnerPaint)
+        // 3. Arrival Point Icon: White destination flag sitting directly at the end of the horizontal line
+        drawDestinationFlag(context, canvas, endX, centerY)
 
-        // 4. Arrival Point Icon (Right extreme): Destination circle ring (○) matching the map and iOS Live Activity
-        val arrivalOuterPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#FB5B00")
-            strokeWidth = 3f
-            style = Paint.Style.STROKE
-        }
-        canvas.drawCircle(endX, centerY, 10f, arrivalOuterPaint)
-
-        // 5. Draw the realistic Top-Down car sitting on the track colored with REAL vehicle color
+        // 4. Draw the realistic Top-Down car sitting on the track colored with REAL vehicle color
         val parsedColor = parseCarColor(carColorStr)
         drawTopDownCar(canvas, carX, centerY, parsedColor)
 
         return bitmap
+    }
+
+    /**
+     * Draws the white destination flag icon (assets/icons/flag-svgrepo-com.svg)
+     * positioned directly at the end of the route track.
+     */
+    private fun drawDestinationFlag(context: Context, canvas: Canvas, x: Float, y: Float) {
+        try {
+            val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_destination_flag_white)
+            if (drawable != null) {
+                val size = 17
+                val poleOffsetX = 4f
+                drawable.setBounds(
+                    (x - size / 2f + poleOffsetX).toInt(),
+                    (y - size / 2f - 1).toInt(),
+                    (x + size / 2f + poleOffsetX).toInt(),
+                    (y + size / 2f - 1).toInt()
+                )
+                drawable.draw(canvas)
+                return
+            }
+        } catch (_: Exception) {}
+
+        // Canvas fallback drawing compact white flagpole and flag with slate stroke
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#64748B")
+            strokeWidth = 1.0f
+            style = Paint.Style.STROKE
+        }
+        val flagPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val banner = Path().apply {
+            moveTo(x + 0.5f, y - 8f)
+            lineTo(x + 9f, y - 4.5f)
+            lineTo(x + 0.5f, y - 1f)
+            close()
+        }
+        canvas.drawPath(banner, flagPaint)
+        canvas.drawPath(banner, strokePaint)
+        canvas.drawRect(RectF(x - 1f, y - 8f, x + 0.5f, y + 7f), flagPaint)
+        canvas.drawRect(RectF(x - 1f, y - 8f, x + 0.5f, y + 7f), strokePaint)
+        canvas.drawCircle(x - 0.25f, y - 8.5f, 1.3f, flagPaint)
+        canvas.drawCircle(x - 0.25f, y - 8.5f, 1.3f, strokePaint)
     }
 
     /**

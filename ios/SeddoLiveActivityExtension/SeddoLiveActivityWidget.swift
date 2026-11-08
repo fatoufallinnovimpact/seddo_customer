@@ -173,14 +173,24 @@ struct SeddoLockScreenLiveView: View {
         context.attributes.licensePlate.isEmpty ? "AA-647-JZ" : context.attributes.licensePlate
     }
 
+    private func driverInitials(from name: String) -> String {
+        let parts = name.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: " ").filter { !$0.isEmpty }
+        if parts.count >= 2, let f = parts[0].first, let l = parts[1].first {
+            return "\(f.uppercased())\(l.uppercased())"
+        } else if let f = name.trimmingCharacters(in: .whitespacesAndNewlines).first {
+            return String(name.prefix(2)).uppercased()
+        }
+        return "S"
+    }
+
     var body: some View {
-        VStack(spacing: 12) {
-            // Top Row: App Icon + Headline + Vehicle Subtitle (Left), Plate Badge + Car Preview (Right)
+        VStack(spacing: 10) {
+            // Top Row: Seddo Orange Brand Icon + Headline (Left), Car Preview in REAL COLOR (Right)
             HStack(alignment: .center, spacing: 10) {
-                // Seddo Brand Icon
+                // Official Seddo Orange Brand Icon (#FB5B00, NOT red)
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color(red: 235/255, green: 25/255, blue: 25/255))
+                        .fill(Color(red: 251/255, green: 91/255, blue: 0/255))
                         .frame(width: 38, height: 38)
 
                     Text("seddo")
@@ -194,7 +204,7 @@ struct SeddoLockScreenLiveView: View {
                         .foregroundColor(.white)
                         .lineLimit(1)
 
-                    Text(vehicleSubtitle)
+                    Text(isTrip ? "En route vers la destination" : "\(context.attributes.driverName) arrive bientôt")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.white.opacity(0.85))
                         .lineLimit(1)
@@ -202,35 +212,56 @@ struct SeddoLockScreenLiveView: View {
 
                 Spacer()
 
-                // Right Column: License plate badge + Car preview in REAL COLOR
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text(plateText)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.white.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.5), lineWidth: 1)
-                        )
-
-                    // Side-view car preview colored with REAL vehicle color
-                    Image(systemName: "car.side.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(carTint(from: context.attributes.carColor))
-                        .padding(.trailing, 2)
-                }
+                // Side-view car preview colored with REAL vehicle color
+                Image(systemName: "car.side.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(carTint(from: context.attributes.carColor))
+                    .padding(.trailing, 4)
             }
 
-            // Middle Row: Continuous Solid Route Line with Top-Down Car in REAL COLOR and Destination Ring (○)
+            // Middle Row: Continuous Solid Route Line with Top-Down Car in REAL COLOR and White Destination Flag (flag-svgrepo-com.svg)
             if !isArrivedAtPickup && !isFinished {
                 SeddoRouteTrackView(
                     progress: context.state.progress,
                     carColor: context.attributes.carColor
                 )
                 .frame(height: 28)
+            }
+
+            // Bottom Row (Under the Horizontal Line): Real Driver Name + Vehicle Info (Left), Real Plate Badge (Right)
+            HStack(alignment: .center, spacing: 10) {
+                // Driver Initials Avatar (Image 2)
+                ZStack {
+                    Circle()
+                        .fill(Color(red: 38/255, green: 50/255, blue: 56/255))
+                        .frame(width: 34, height: 34)
+                    Text(driverInitials(from: context.attributes.driverName))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(context.attributes.driverName)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+
+                    Text(vehicleSubtitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.white.opacity(0.65))
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Real License plate in styled white rounded pill badge (Image 2)
+                Text(plateText)
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color(red: 17/255, green: 24/255, blue: 39/255))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         }
         .padding(.horizontal, 16)
@@ -344,7 +375,7 @@ struct SeddoRouteTrackView: View {
                 // 1. Full solid horizontal line across the track (NO dashed line, trait plein)
                 Path { path in
                     path.move(to: CGPoint(x: startX, y: centerY))
-                    path.addLine(to: CGPoint(x: endX - 10, y: centerY))
+                    path.addLine(to: CGPoint(x: endX, y: centerY))
                 }
                 .stroke(
                     Color.white.opacity(0.35),
@@ -354,18 +385,19 @@ struct SeddoRouteTrackView: View {
                 // 2. Traveled portion: Solid Seddo Orange line from start
                 Path { path in
                     path.move(to: CGPoint(x: startX, y: centerY))
-                    path.addLine(to: CGPoint(x: carX, y: centerY))
+                    path.addLine(to: CGPoint(x: min(carX, endX), y: centerY))
                 }
                 .stroke(
                     Color(red: 251/255, green: 91/255, blue: 0/255),
                     style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
                 )
 
-                // 3. Destination circle ring (○) on the right end
-                Circle()
-                    .stroke(Color.white.opacity(0.9), lineWidth: 2.5)
-                    .frame(width: 14, height: 14)
-                    .position(x: endX, y: centerY)
+                // 3. Destination white flag sitting directly at the end of the horizontal line
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 1)
+                    .position(x: endX + 4, y: centerY - 1)
 
                 // 4. Moving Top-Down Car on the track colored with the REAL vehicle color
                 TopDownCarView(tintColor: carTint(from: carColor))

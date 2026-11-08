@@ -87,6 +87,7 @@ class ActiveRidePage extends StatefulWidget {
 class _ActiveRidePageState extends State<ActiveRidePage>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final RideService _rideService;
+  late DriverModel _currentDriver;
   GoogleMapController? _mapController;
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupBadgeIcon;
@@ -164,6 +165,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
+    _currentDriver = widget.driver;
     _isOffline = widget.isOffline;
     _paymentMethod = widget.paymentMethod;
     _paymentPhone = widget.paymentPhone;
@@ -441,6 +443,24 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final driverObj = rideObj['driver'] is Map<String, dynamic>
         ? rideObj['driver'] as Map<String, dynamic>
         : null;
+
+    if (driverObj != null) {
+      final dName = driverObj['name'] as String? ?? (driverObj['fullName'] as String?);
+      final dPlate = driverObj['licensePlate'] as String? ?? (driverObj['plate'] as String?);
+      final dCarModel = driverObj['vehicleModel'] as String? ?? (driverObj['carModel'] as String?);
+      final dCarColor = driverObj['vehicleColor'] as String? ?? (driverObj['carColor'] as String?);
+      final dPhone = driverObj['phoneNumber'] as String? ?? (driverObj['phone'] as String?);
+
+      if (dName != null || dPlate != null || dCarModel != null || dCarColor != null) {
+        _currentDriver = _currentDriver.copyWith(
+          name: dName ?? _currentDriver.name,
+          licensePlate: dPlate ?? _currentDriver.licensePlate,
+          carModel: dCarModel ?? _currentDriver.carModel,
+          carColor: dCarColor ?? _currentDriver.carColor,
+          phone: dPhone ?? _currentDriver.phone,
+        );
+      }
+    }
     final posObj = driverObj?['position'] is Map<String, dynamic>
         ? driverObj!['position'] as Map<String, dynamic>
         : (driverObj?['location'] is Map<String, dynamic>
@@ -1021,10 +1041,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       RideLiveUpdateServiceImpl().updateLiveUpdate(
         RideLiveUpdateData(
           rideId: effectiveRideId,
-          driverName: widget.driver.name,
-          carModel: widget.driver.carModel,
-          carColor: widget.driver.carColor,
-          licensePlate: widget.driver.licensePlate,
+          driverName: _currentDriver.name,
+          carModel: _currentDriver.carModel,
+          carColor: _currentDriver.carColor,
+          licensePlate: _currentDriver.licensePlate,
           departureText: widget.departure.mainText,
           destinationText: widget.destination.mainText,
           statusLabel: effLabel,
