@@ -40,7 +40,7 @@ class RideLiveUpdateMapper {
       progress = overrideProgress ?? 0.05;
     } else if (statusString.contains('ARRIVED')) {
       phase = RideLiveUpdatePhase.driverArrived;
-      statusLabel = 'Chauffeur arrivé au point de prise en charge';
+      statusLabel = 'Votre chauffeur est arrivé au point de prise en charge';
       progress = overrideProgress ?? 1.0;
     } else if (statusString.contains('APPROACH') || (driver.etaMinutes > 0 && driver.etaMinutes <= 15)) {
       phase = RideLiveUpdatePhase.driverApproaching;

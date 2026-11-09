@@ -192,7 +192,7 @@ class RideLiveUpdateBloc
 
     if (upperStatus.contains('ARRIVED')) {
       newPhase = RideLiveUpdatePhase.driverArrived;
-      newLabel = 'Chauffeur arrivé au point de rendez-vous';
+      newLabel = 'Votre chauffeur est arrivé au point de rendez-vous';
       newProgress = 1.0;
     } else if (upperStatus.contains('IN_PROGRESS') ||
         upperStatus.contains('PROGRESS') ||

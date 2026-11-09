@@ -125,17 +125,23 @@ struct SeddoLiveActivityWidget: Widget {
 struct SeddoLockScreenLiveView: View {
     let context: ActivityViewContext<RideActivityAttributes>
 
-    private var isFinished: Bool {
-        context.state.progress >= 0.98 ||
-        context.state.statusLabel.localizedCaseInsensitiveContains("terminée") ||
-        context.state.statusLabel.localizedCaseInsensitiveContains("terminé")
-    }
-
     private var isArrivedAtPickup: Bool {
-        !isFinished && (
+        !context.state.statusLabel.localizedCaseInsensitiveContains("terminée") &&
+        !context.state.statusLabel.localizedCaseInsensitiveContains("terminé") && (
             context.state.status.localizedCaseInsensitiveContains("arrived") ||
+            context.state.status.localizedCaseInsensitiveContains("driverarrived") ||
             (context.state.statusLabel.localizedCaseInsensitiveContains("arrivé") && !context.state.statusLabel.localizedCaseInsensitiveContains("destination")) ||
             (context.state.statusLabel.localizedCaseInsensitiveContains("prise en charge") && context.state.statusLabel.localizedCaseInsensitiveContains("arrivé"))
+        )
+    }
+
+    private var isFinished: Bool {
+        !isArrivedAtPickup && (
+            context.state.status.localizedCaseInsensitiveContains("completed") ||
+            context.state.status.localizedCaseInsensitiveContains("cancel") ||
+            context.state.statusLabel.localizedCaseInsensitiveContains("terminée") ||
+            context.state.statusLabel.localizedCaseInsensitiveContains("terminé") ||
+            (isTrip && context.state.progress >= 0.99)
         )
     }
 
@@ -143,16 +149,17 @@ struct SeddoLockScreenLiveView: View {
         !isFinished && !isArrivedAtPickup && (
             context.state.statusLabel.localizedCaseInsensitiveContains("destination") ||
             context.state.statusLabel.localizedCaseInsensitiveContains("trajet") ||
-            context.state.status.localizedCaseInsensitiveContains("progress")
+            context.state.status.localizedCaseInsensitiveContains("progress") ||
+            context.state.status.localizedCaseInsensitiveContains("tripin")
         )
     }
 
     private var etaHeadline: String {
+        if isArrivedAtPickup {
+            return "Votre chauffeur est arrivé"
+        }
         if isFinished {
             return "Course terminée"
-        }
-        if isArrivedAtPickup {
-            return "Chauffeur arrivé"
         }
         if context.state.etaMinutes > 0 {
             return "Arrivée dans \(context.state.etaMinutes) min"
@@ -204,7 +211,7 @@ struct SeddoLockScreenLiveView: View {
                         .foregroundColor(.white)
                         .lineLimit(1)
 
-                    Text(isTrip ? "En route vers la destination" : "\(context.attributes.driverName) arrive bientôt")
+                    Text(isTrip ? "En route vers la destination" : (isArrivedAtPickup ? "Au point de départ" : "\(context.attributes.driverName) arrive bientôt"))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.white.opacity(0.85))
                         .lineLimit(1)

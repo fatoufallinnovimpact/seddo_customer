@@ -1,28 +1,49 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/help/data/models/support_ticket_model.dart';
+import 'package:seddo/features/help/data/repositories/help_repository.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 
 /// Modern incident reporting bottom sheet for passenger safety:
 /// - Categorized incident tags (Conduite, Véhicule, Tarif, Comportement)
 /// - Optional description text field
-/// - Immediate alert transmission to Seddo 24/7 security team
+/// - Immediate alert transmission to Seddo 24/7 security team via POST /v1/support/tickets
 class SafetyIncidentReportSheet extends StatefulWidget {
   final DriverModel driver;
+  final String? rideId;
+  final LatLng? currentPosition;
+  final HelpRepository? helpRepository;
 
   const SafetyIncidentReportSheet({
     super.key,
     required this.driver,
+    this.rideId,
+    this.currentPosition,
+    this.helpRepository,
   });
 
-  static Future<void> show(BuildContext context, {required DriverModel driver}) {
+  static Future<void> show(
+    BuildContext context, {
+    required DriverModel driver,
+    String? rideId,
+    LatLng? currentPosition,
+    HelpRepository? helpRepository,
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.transparent,
-      builder: (ctx) => SafetyIncidentReportSheet(driver: driver),
+      builder: (ctx) => SafetyIncidentReportSheet(
+        driver: driver,
+        rideId: rideId,
+        currentPosition: currentPosition,
+        helpRepository: helpRepository,
+      ),
     );
   }
 
@@ -33,6 +54,7 @@ class SafetyIncidentReportSheet extends StatefulWidget {
 class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
   final TextEditingController _commentController = TextEditingController();
   final Set<String> _selectedReasons = {};
+  bool _isSubmitting = false;
 
   static const List<String> _incidentCategoryKeys = [
     'safety.incident_cat_driving',
@@ -59,9 +81,100 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
     });
   }
 
-  void _submitReport() {
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
+  /// Maps selected UI reasons to backend categories defined in CreateTicketDto:
+  /// enum: [PAYMENT, REFUND, LOST_ITEM, DRIVER_BEHAVIOR, CLIENT_BEHAVIOR, SAFETY, PRICE, APP, OTHER]
+  String _resolveCategory() {
+    if (_selectedReasons.contains('safety.incident_cat_price')) {
+      return 'PRICE';
+    }
+    if (_selectedReasons.contains('safety.incident_cat_behavior') ||
+        _selectedReasons.contains('safety.incident_cat_detour')) {
+      return 'DRIVER_BEHAVIOR';
+    }
+    return 'SAFETY';
+  }
+
+  String _buildDescription() {
+    final List<String> reasonLabels = _selectedReasons.map((key) {
+      try {
+        final translated = key.tr();
+        if (translated != key && translated.isNotEmpty) return translated;
+      } catch (_) {}
+      return key;
+    }).toList();
+
+    final userComment = _commentController.text.trim();
+    final StringBuffer sb = StringBuffer();
+
+    if (reasonLabels.isNotEmpty) {
+      sb.write('Motifs : ${reasonLabels.join(', ')}.');
+    }
+    if (userComment.isNotEmpty) {
+      if (sb.isNotEmpty) sb.write(' ');
+      sb.write('Détails : $userComment');
+    }
+    if (sb.isEmpty) {
+      sb.write(
+        'Signalement de sécurité en cours de trajet avec ${widget.driver.name} (${widget.driver.carModel} - ${widget.driver.licensePlate})',
+      );
+    }
+    return sb.toString();
+  }
+
+  Future<void> _submitReport() async {
+    if (_isSubmitting) return;
+
+    final description = _buildDescription();
+    if (description.trim().length < 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Veuillez sélectionner un motif ou préciser votre signalement.',
+            style: GoogleFonts.inter(
+              fontWeight: FontWeight.w600,
+              color: AppColors.white,
+            ),
+          ),
+          backgroundColor: AppColors.slateDark,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    final category = _resolveCategory();
+
+    SupportTicketModel? ticket;
+    try {
+      final repo = widget.helpRepository ?? HelpRepository();
+      ticket = await repo.createSupportTicket(
+        rideId: effectiveRideId,
+        category: category,
+        description: description,
+      );
+    } catch (e) {
+      debugPrint('[SafetyIncidentReportSheet] Error creating support ticket: $e');
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isSubmitting = false;
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    }
+
+    final ticketRef = ticket?.ref ?? 'TK-SEDDO';
+    messenger.showSnackBar(
       SnackBar(
         backgroundColor: AppColors.buttonBlack,
         behavior: SnackBarBehavior.floating,
@@ -74,7 +187,7 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'safety.incident_success'.tr(),
+                '${'safety.incident_success'.tr()} ($ticketRef)',
                 style: GoogleFonts.inter(
                   color: AppColors.white,
                   fontSize: 13,
@@ -266,14 +379,23 @@ class _SafetyIncidentReportSheetState extends State<SafetyIncidentReportSheet> {
                 ),
                 elevation: 0,
               ),
-              onPressed: _submitReport,
-              child: Text(
-                'safety.incident_submit'.tr(),
-                style: GoogleFonts.inter(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+              onPressed: _isSubmitting ? null : _submitReport,
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: AppColors.white,
+                      ),
+                    )
+                  : Text(
+                      'safety.incident_submit'.tr(),
+                      style: GoogleFonts.inter(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
             ),
           ),
         ],

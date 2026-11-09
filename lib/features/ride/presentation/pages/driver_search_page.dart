@@ -624,6 +624,12 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   /// Récupère les vraies voitures disponibles autour du point de départ via GET /v1/drivers/nearby
   Future<void> _loadNearbyDrivers() async {
     try {
+      if (_carMarkerIcon == null) {
+        final icon = await MapMarkerHelper.get3DCarMarker();
+        if (mounted) {
+          _carMarkerIcon = icon;
+        }
+      }
       final result = await _rideService.getNearbyDrivers(
         lat: widget.departure.latitude,
         lng: widget.departure.longitude,

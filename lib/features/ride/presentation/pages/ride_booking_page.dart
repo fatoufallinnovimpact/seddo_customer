@@ -11,6 +11,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/auth/data/models/user_model.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
@@ -68,6 +69,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
   BitmapDescriptor? _pickupBadgeIcon;
   BitmapDescriptor? _destSquareIcon;
+  BitmapDescriptor? _carMarkerIcon;
+  List<NearbyCarModel> _nearbyCars = [];
 
   List<LatLng> _polylinePoints = [];
   List<TrafficSegmentModel> _traffic = [];
@@ -95,6 +98,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
     _computeRideOptions();
     _loadCustomMarkers();
     _fetchRoute();
+    _fetchNearbyDrivers();
     _loadConnectedUserPhone();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -210,13 +214,43 @@ class _RideBookingPageState extends State<RideBookingPage> {
   Future<void> _loadCustomMarkers() async {
     final pickup = await MapMarkerHelper.getDeparturePinMarker();
     final dest = await MapMarkerHelper.getDestinationPinMarker();
+    final car = await MapMarkerHelper.get3DCarMarker();
 
     if (mounted) {
       setState(() {
         _pickupBadgeIcon = pickup;
         _destSquareIcon = dest;
+        _carMarkerIcon = car;
       });
     }
+  }
+
+  /// Récupère les voitures disponibles autour du point de départ via GET /v1/drivers/nearby
+  Future<void> _fetchNearbyDrivers() async {
+    try {
+      final res = await _rideService.getNearbyDrivers(
+        lat: widget.departure.latitude,
+        lng: widget.departure.longitude,
+      );
+
+      if (res != null && mounted) {
+        setState(() {
+          _nearbyCars = res.allCars;
+          if (res.ecoEtaMinutes != null) {
+            _ecoOption = _ecoOption.copyWith(
+              pickupDuration: '${res.ecoEtaMinutes} min',
+              subtitle: '${_ecoOption.estimatedArrival} · ${'ride.arriving_in'.tr(args: [res.ecoEtaMinutes.toString()])}',
+            );
+          }
+          if (res.confortEtaMinutes != null) {
+            _confortOption = _confortOption.copyWith(
+              pickupDuration: '${res.confortEtaMinutes} min',
+              subtitle: '${_confortOption.estimatedArrival} · ${'ride.arriving_in'.tr(args: [res.confortEtaMinutes.toString()])}',
+            );
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchRoute() async {
@@ -440,7 +474,27 @@ class _RideBookingPageState extends State<RideBookingPage> {
       );
     }
 
-    // Pas de fausse voiture simulée par défaut sur la carte ! Tout vient de l'API.
+    // 3. Real nearby cars from GET /v1/drivers/nearby
+    if (_nearbyCars.isNotEmpty) {
+      final carIcon = _carMarkerIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+      for (int i = 0; i < _nearbyCars.length; i++) {
+        final car = _nearbyCars[i];
+        if (car.lat == 0.0 && car.lng == 0.0) continue;
+        markers.add(
+          Marker(
+            markerId: MarkerId('nearby_car_${car.id}_$i'),
+            position: LatLng(car.lat, car.lng),
+            icon: carIcon,
+            rotation: car.heading,
+            anchor: const Offset(0.5, 0.5),
+            flat: true,
+            zIndexInt: 5,
+          ),
+        );
+      }
+    }
+
     return markers;
   }
 

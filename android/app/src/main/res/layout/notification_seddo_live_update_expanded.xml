@@ -52,10 +52,10 @@
 
             <TextView
                 android:id="@+id/notification_status"
+                style="@style/TextAppearance.Compat.Notification.Line2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:textColor="#4B5563"
                 android:textSize="13sp"
                 android:maxLines="1"
                 android:ellipsize="end" />
@@ -106,9 +106,9 @@
 
             <TextView
                 android:id="@+id/notification_driver_name"
+                style="@style/TextAppearance.Compat.Notification.Title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="#111827"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:maxLines="1"
@@ -116,10 +116,10 @@
 
             <TextView
                 android:id="@+id/notification_car"
+                style="@style/TextAppearance.Compat.Notification.Line2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="1dp"
-                android:textColor="#6B7280"
                 android:textSize="12sp"
                 android:maxLines="1"
                 android:ellipsize="end" />

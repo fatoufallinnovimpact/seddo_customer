@@ -270,8 +270,7 @@ object LiveUpdateNotificationManager {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
-            .setColor(Color.WHITE)
-            .setColorized(true)
+            .setColor(seddoOrange)
             .setContentTitle(etaHeadline)
             .setContentText(statusSubtitlePlain)
             .setOngoing(!isFinished)

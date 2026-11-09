@@ -47,10 +47,10 @@
 
         <TextView
             android:id="@+id/notification_status"
+            style="@style/TextAppearance.Compat.Notification.Line2"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="#1F2937"
             android:textSize="12sp"
             android:textStyle="normal"
             android:includeFontPadding="false"

@@ -956,7 +956,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     final effLabel = statusLabel ??
-        (_driverArrived ? 'Chauffeur arrivé' : 'Chauffeur en approche');
+        (_driverArrived ? 'Votre chauffeur est arrivé' : 'Chauffeur en approche');
 
     try {
       RideLiveUpdateServiceImpl().updateLiveUpdate(
@@ -1078,7 +1078,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   void _onDriverReachedPickup() {
     if (!mounted) return;
     _setEtaLabel('ride.arrived'.tr(), 0);
-    _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Chauffeur arrivé');
+    _syncLiveUpdate(progress: 1.0, etaMinutes: 0, statusLabel: 'Votre chauffeur est arrivé');
     setState(() {
       _driverArrived = true;
       _totalApproachS = 0;
@@ -1402,10 +1402,13 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   void _openSafety() {
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
     SafetyModalWidget.show(
       context,
       destination: widget.destination,
       driver: _currentDriver,
+      rideId: effectiveRideId,
+      currentPosition: _pickupPosition,
     );
   }
 

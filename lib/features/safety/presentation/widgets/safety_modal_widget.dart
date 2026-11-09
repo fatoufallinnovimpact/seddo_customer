@@ -1,6 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -104,11 +105,50 @@ class SafetyModalWidget extends StatelessWidget {
 
   Future<void> _shareEmergencyLocation() async {
     try {
+      LatLng pos = currentPosition ?? driver.currentLocation;
+      if (currentPosition == null) {
+        try {
+          final geo = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              timeLimit: Duration(seconds: 3),
+            ),
+          );
+          pos = LatLng(geo.latitude, geo.longitude);
+        } catch (_) {}
+      }
+
+      final effectiveRideId = rideId ?? RideService.lastCreatedRideId;
+      String? trackingUrl;
+      if (effectiveRideId != null &&
+          effectiveRideId.isNotEmpty &&
+          effectiveRideId != 'current') {
+        try {
+          final shareResult = await RideService().shareRide(effectiveRideId);
+          if (shareResult != null && shareResult.url.isNotEmpty) {
+            trackingUrl = shareResult.url;
+          }
+        } catch (_) {}
+      }
+
+      final mapsLink =
+          'https://maps.google.com/?q=${pos.latitude.toStringAsFixed(6)},${pos.longitude.toStringAsFixed(6)}';
+
+      final StringBuffer sb = StringBuffer();
+      sb.writeln('🚨 URGENT - Trajet Seddo en cours');
+      if (destination.mainText.isNotEmpty) {
+        sb.writeln('Destination : ${destination.mainText}');
+      }
+      sb.writeln(
+          'Chauffeur : ${driver.name} (${driver.carModel} · ${driver.licensePlate})');
+      sb.writeln('📍 Ma position exacte en direct : $mapsLink');
+      if (trackingUrl != null && trackingUrl.isNotEmpty) {
+        sb.writeln('🔗 Suivi live Seddo : $trackingUrl');
+      }
+
       await SharePlus.instance.share(
         ShareParams(
-          text:
-              'URGENT - Trajet Seddo en cours vers ${destination.mainText} avec ${driver.name} (${driver.carModel} ${driver.licensePlate}). Suivi direct : https://suivi.seddo.sn/t/8K02F',
-          subject: 'URGENCE - Suivi de trajet Seddo',
+          text: sb.toString().trim(),
+          subject: '🚨 URGENCE - Ma position en direct (Trajet Seddo)',
         ),
       );
     } catch (_) {}
@@ -439,7 +479,12 @@ class SafetyModalWidget extends StatelessWidget {
                     subtitleText: _safeTr('safety.report_problem_sub', 'Notre équipe support vous répond'),
                     onTap: () {
                       Navigator.of(context).pop();
-                      SafetyIncidentReportSheet.show(context, driver: driver);
+                      SafetyIncidentReportSheet.show(
+                        context,
+                        driver: driver,
+                        rideId: rideId,
+                        currentPosition: currentPosition,
+                      );
                     },
                   ),
                 ],
