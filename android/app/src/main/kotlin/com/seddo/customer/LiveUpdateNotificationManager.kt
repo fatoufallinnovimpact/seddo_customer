@@ -383,7 +383,7 @@ object LiveUpdateNotificationManager {
         }
 
         return when {
-            clean.contains("blanc") || clean.contains("white") -> Color.parseColor("#FFFFFF")
+            clean.contains("blanc") || clean.contains("white") -> Color.parseColor("#E2E8F0")
             clean.contains("noir") || clean.contains("black") -> Color.parseColor("#1F2937")
             clean.contains("gris") || clean.contains("grey") || clean.contains("gray") || clean.contains("argent") || clean.contains("silver") ->
                 Color.parseColor("#9CA3AF")
@@ -499,91 +499,112 @@ object LiveUpdateNotificationManager {
     }
 
     /**
-     * Draws a realistic Top-Down car view on the route track matching the map marker
-     * and tinted with the driver's real vehicle color.
+     * Draws a realistic Top-Down car view on the route track matching the iOS Live Activity design
+     * and tinted with the driver's real vehicle color returned by the API.
      */
     private fun drawTopDownCar(canvas: Canvas, x: Float, y: Float, carColor: Int) {
-        val carWidth = 52f
-        val carHeight = 26f
+        val carWidth = 76f
+        val carHeight = 38f
         val left = x - carWidth / 2f
         val top = y - carHeight / 2f
         val right = x + carWidth / 2f
         val bottom = y + carHeight / 2f
 
         // 1. Soft drop shadow under the vehicle
-        val shadowPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#33000000")
+        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(90, 0, 0, 0)
             maskFilter = BlurMaskFilter(4f, BlurMaskFilter.Blur.NORMAL)
         }
-        canvas.drawRoundRect(RectF(left - 2f, top + 2f, right + 2f, bottom + 4f), 8f, 8f, shadowPaint)
+        canvas.drawRoundRect(RectF(left - 2f, top + 3f, right + 2f, bottom + 5f), 10f, 10f, shadowPaint)
 
-        // 2. Wheels (4 black rounded capsules peeking on sides)
-        val wheelPaint = Paint().apply {
-            isAntiAlias = true
+        // 2. Wheels (4 dark rounded capsules peeking on top & bottom)
+        val wheelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#1F2937")
             style = Paint.Style.FILL
         }
-        val wheelW = 10f
-        val wheelH = 4f
-        // Front-top, front-bottom (moving left to right, front is at right)
-        canvas.drawRoundRect(RectF(right - 14f, top - 2f, right - 4f, top + wheelH - 2f), 2f, 2f, wheelPaint)
-        canvas.drawRoundRect(RectF(right - 14f, bottom - wheelH + 2f, right - 4f, bottom + 2f), 2f, 2f, wheelPaint)
-        // Rear-top, rear-bottom
-        canvas.drawRoundRect(RectF(left + 4f, top - 2f, left + 14f, top + wheelH - 2f), 2f, 2f, wheelPaint)
-        canvas.drawRoundRect(RectF(left + 4f, bottom - wheelH + 2f, left + 14f, bottom + 2f), 2f, 2f, wheelPaint)
+        val wheelW = 15f
+        val wheelH = 6.5f
+        // Front wheels (facing right towards destination)
+        val frontWheelX = x + 20f
+        canvas.drawRoundRect(RectF(frontWheelX - wheelW / 2f, top - 3f, frontWheelX + wheelW / 2f, top - 3f + wheelH), 3f, 3f, wheelPaint)
+        canvas.drawRoundRect(RectF(frontWheelX - wheelW / 2f, bottom + 3f - wheelH, frontWheelX + wheelW / 2f, bottom + 3f), 3f, 3f, wheelPaint)
+        // Rear wheels
+        val rearWheelX = x - 20f
+        canvas.drawRoundRect(RectF(rearWheelX - wheelW / 2f, top - 3f, rearWheelX + wheelW / 2f, top - 3f + wheelH), 3f, 3f, wheelPaint)
+        canvas.drawRoundRect(RectF(rearWheelX - wheelW / 2f, bottom + 3f - wheelH, rearWheelX + wheelW / 2f, bottom + 3f), 3f, 3f, wheelPaint)
 
-        // 3. Car Body: rounded rect filled with the driver's real vehicle color
-        val bodyPaint = Paint().apply {
-            isAntiAlias = true
+        // 3. Car Body: rounded rectangle filled with the driver's real vehicle color
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = carColor
             style = Paint.Style.FILL
-        }
-        val bodyStrokePaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#44000000")
-            strokeWidth = 1.2f
-            style = Paint.Style.STROKE
         }
         val bodyRect = RectF(left, top, right, bottom)
-        canvas.drawRoundRect(bodyRect, 8f, 8f, bodyPaint)
-        canvas.drawRoundRect(bodyRect, 8f, 8f, bodyStrokePaint)
+        canvas.drawRoundRect(bodyRect, 11f, 11f, bodyPaint)
 
-        // 4. Windows & Roof (top-down view)
-        val windowPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#374151")
+        // Determine brightness of car color to apply matching subtle outline
+        val r = Color.red(carColor)
+        val g = Color.green(carColor)
+        val b = Color.blue(carColor)
+        val luminance = (0.299f * r + 0.587f * g + 0.114f * b) / 255f
+        val isLightColor = luminance > 0.72f
+
+        val bodyStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isLightColor) Color.argb(45, 0, 0, 0) else Color.argb(80, 255, 255, 255)
+            strokeWidth = 1.0f
+            style = Paint.Style.STROKE
+        }
+        canvas.drawRoundRect(bodyRect, 11f, 11f, bodyStrokePaint)
+
+        // 4. Windows (dark tinted automotive glass #334155)
+        val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#334155")
             style = Paint.Style.FILL
         }
-        // Front windshield (curved trapezoid or rounded rect towards front/right)
-        val windshieldRect = RectF(right - 18f, top + 3f, right - 13f, bottom - 3f)
-        canvas.drawRoundRect(windshieldRect, 2.5f, 2.5f, windowPaint)
+        // Front windshield (curved towards front/right)
+        val windshieldRect = RectF(x + 9f, y - 13f, x + 18f, y + 13f)
+        canvas.drawRoundRect(windshieldRect, 4f, 4f, glassPaint)
 
-        // Rear window
-        val rearWindowRect = RectF(left + 9f, top + 3.5f, left + 13f, bottom - 3.5f)
-        canvas.drawRoundRect(rearWindowRect, 2f, 2f, windowPaint)
+        // Rear window (left)
+        val rearWindowRect = RectF(x - 20f, y - 12f, x - 13.5f, y + 12f)
+        canvas.drawRoundRect(rearWindowRect, 4f, 4f, glassPaint)
 
-        // Side windows
-        canvas.drawRect(RectF(left + 13f, top + 2.5f, right - 17f, top + 5f), windowPaint)
-        canvas.drawRect(RectF(left + 13f, bottom - 5f, right - 17f, bottom - 2.5f), windowPaint)
+        // Side windows connecting front and rear
+        canvas.drawRect(RectF(x - 14f, y - 13.5f, x + 10f, y - 10f), glassPaint)
+        canvas.drawRect(RectF(x - 14f, y + 10f, x + 10f, y + 13.5f), glassPaint)
 
-        // Roof (body color in center)
-        val roofPaint = Paint().apply {
-            isAntiAlias = true
-            color = carColor
+        // 5. Roof Panel (matching car color with subtle shade/highlight)
+        val roofPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isLightColor) Color.parseColor("#F8FAFC") else carColor
+            style = Paint.Style.FILL
+            if (!isLightColor) {
+                alpha = 220
+            }
+        }
+        val roofRect = RectF(x - 16f, y - 11f, x + 12f, y + 11f)
+        canvas.drawRoundRect(roofRect, 5f, 5f, roofPaint)
+
+        val roofStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isLightColor) Color.argb(35, 0, 0, 0) else Color.argb(60, 255, 255, 255)
+            strokeWidth = 0.8f
+            style = Paint.Style.STROKE
+        }
+        canvas.drawRoundRect(roofRect, 5f, 5f, roofStrokePaint)
+
+        // 6. Headlights at front edge (warm light yellow beam)
+        val headlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#FEF08A")
             style = Paint.Style.FILL
         }
-        val roofRect = RectF(left + 13f, top + 4f, right - 17f, bottom - 4f)
-        canvas.drawRoundRect(roofRect, 3f, 3f, roofPaint)
+        canvas.drawCircle(right - 2f, top + 9f, 3.2f, headlightPaint)
+        canvas.drawCircle(right - 2f, bottom - 9f, 3.2f, headlightPaint)
 
-        // Headlights at front (right)
-        val headlightPaint = Paint().apply {
-            isAntiAlias = true
-            color = Color.parseColor("#FEF08A") // Warm light yellow
+        // 7. Red Taillights at rear edge
+        val taillightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#EF4444")
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(right - 1.5f, top + 4.5f, 2f, headlightPaint)
-        canvas.drawCircle(right - 1.5f, bottom - 4.5f, 2f, headlightPaint)
+        canvas.drawRoundRect(RectF(left - 0.5f, top + 7f, left + 2.5f, top + 12f), 1.5f, 1.5f, taillightPaint)
+        canvas.drawRoundRect(RectF(left - 0.5f, bottom - 12f, left + 2.5f, bottom - 7f), 1.5f, 1.5f, taillightPaint)
     }
 
     fun cancelNotification(context: Context) {
