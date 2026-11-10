@@ -370,6 +370,7 @@ object LiveUpdateNotificationManager {
 
     /**
      * Maps textual or hex vehicle color representation into an Android Color Int.
+     * Matches the exact color palette used in iOS Live Activity carTint(from:).
      */
     private fun parseCarColor(colorStr: String?): Int {
         if (colorStr.isNullOrBlank()) return Color.parseColor("#9CA3AF")
@@ -383,17 +384,16 @@ object LiveUpdateNotificationManager {
         }
 
         return when {
-            clean.contains("blanc") || clean.contains("white") -> Color.parseColor("#E2E8F0")
-            clean.contains("noir") || clean.contains("black") -> Color.parseColor("#1F2937")
+            clean.contains("noir") || clean.contains("black") -> Color.parseColor("#262626") // Color(white: 0.15)
+            clean.contains("blanc") || clean.contains("white") -> Color.parseColor("#D9D9D9") // Color(white: 0.85)
+            clean.contains("rouge") || clean.contains("red") || clean.contains("bordeaux") -> Color.parseColor("#DC2626") // rgb(220, 38, 38)
+            clean.contains("bleu") || clean.contains("blue") -> Color.parseColor("#2563EB") // rgb(37, 99, 235)
+            clean.contains("jaune") || clean.contains("yellow") -> Color.parseColor("#F59E0B") // rgb(245, 158, 11)
             clean.contains("gris") || clean.contains("grey") || clean.contains("gray") || clean.contains("argent") || clean.contains("silver") ->
-                Color.parseColor("#9CA3AF")
-            clean.contains("rouge") || clean.contains("red") || clean.contains("bordeaux") ->
-                Color.parseColor("#DC2626")
-            clean.contains("bleu") || clean.contains("blue") -> Color.parseColor("#2563EB")
-            clean.contains("jaune") || clean.contains("yellow") -> Color.parseColor("#F59E0B")
-            clean.contains("vert") || clean.contains("green") -> Color.parseColor("#16A34A")
-            clean.contains("orange") -> Color.parseColor("#EA580C")
-            clean.contains("marron") || clean.contains("brown") -> Color.parseColor("#78350F")
+                Color.parseColor("#9CA3AF") // rgb(156, 163, 175)
+            clean.contains("vert") || clean.contains("green") -> Color.parseColor("#16A34A") // rgb(22, 163, 74)
+            clean.contains("orange") -> Color.parseColor("#EA580C") // rgb(234, 88, 12)
+            clean.contains("marron") || clean.contains("brown") -> Color.parseColor("#8C461E") // rgb(140, 70, 30)
             else -> Color.parseColor("#9CA3AF")
         }
     }
@@ -402,12 +402,12 @@ object LiveUpdateNotificationManager {
      * Draws a single seamless horizontal route line:
      * - Solid continuous horizontal track (NO dashed line, trait plein)
      * - Solid Seddo Orange (#FB5B00) line up to the moving car
-     * - Moving Top-Down car sitting on the track colored with REAL vehicle color
-     * - Destination circle ring (○) on the extreme right
+     * - Moving Top-Down car sitting on the track colored with REAL vehicle color (1:1 replica of iOS TopDownCarView)
+     * - Destination flag on the extreme right
      */
     private fun generateRouteTrackBitmap(context: Context, progress: Double, isFinished: Boolean, carColorStr: String): Bitmap {
         val width = 1000
-        val height = 64
+        val height = 78
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
@@ -416,25 +416,23 @@ object LiveUpdateNotificationManager {
         val endX = width - paddingX - 16f
         val trackWidth = endX - startX
         val centerY = height / 2f
-        val trackHeight = 7f
+        val trackHeight = 3.5f * 2.8f // 9.8f matching iOS lineWidth 3.5
 
         // Progress goes strictly from left (startX) to right (endX)
         val normalizedProgress = if (isFinished) 1.0f else progress.coerceIn(0.06, 0.94).toFloat()
         val carX = if (isFinished) endX else (startX + trackWidth * normalizedProgress)
 
         // 1. Full solid horizontal route line across the entire track (NO dashed line, trait plein)
-        val remainingPaint = Paint().apply {
-            isAntiAlias = true
+        val remainingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#CBD5E1")
-            strokeWidth = trackHeight - 1.5f
+            strokeWidth = trackHeight
             strokeCap = Paint.Cap.ROUND
             style = Paint.Style.STROKE
         }
         canvas.drawLine(startX, centerY, endX, centerY, remainingPaint)
 
         // 2. Traveled Route Line: Continuous solid Seddo Orange (#FB5B00) line on the left
-        val traveledPaint = Paint().apply {
-            isAntiAlias = true
+        val traveledPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#FB5B00")
             strokeWidth = trackHeight
             strokeCap = Paint.Cap.ROUND
@@ -446,9 +444,9 @@ object LiveUpdateNotificationManager {
         // 3. Arrival Point Icon: White destination flag sitting directly at the end of the horizontal line
         drawDestinationFlag(context, canvas, endX, centerY)
 
-        // 4. Draw the realistic Top-Down car sitting on the track colored with REAL vehicle color
+        // 4. Draw the realistic moving car sitting on the track colored with REAL vehicle color (matching iOS car.side.fill badge)
         val parsedColor = parseCarColor(carColorStr)
-        drawTopDownCar(canvas, carX, centerY, parsedColor)
+        drawTrackCar(canvas, carX, centerY, parsedColor)
 
         return bitmap
     }
@@ -461,7 +459,7 @@ object LiveUpdateNotificationManager {
         try {
             val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_destination_flag_white)
             if (drawable != null) {
-                val size = 17
+                val size = 20
                 val poleOffsetX = 4f
                 drawable.setBounds(
                     (x - size / 2f + poleOffsetX).toInt(),
@@ -477,7 +475,7 @@ object LiveUpdateNotificationManager {
         // Canvas fallback drawing compact white flagpole and flag with slate stroke
         val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#64748B")
-            strokeWidth = 1.0f
+            strokeWidth = 1.5f
             style = Paint.Style.STROKE
         }
         val flagPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -485,126 +483,133 @@ object LiveUpdateNotificationManager {
             style = Paint.Style.FILL
         }
         val banner = Path().apply {
-            moveTo(x + 0.5f, y - 8f)
-            lineTo(x + 9f, y - 4.5f)
+            moveTo(x + 0.5f, y - 10f)
+            lineTo(x + 12f, y - 5.5f)
             lineTo(x + 0.5f, y - 1f)
             close()
         }
         canvas.drawPath(banner, flagPaint)
         canvas.drawPath(banner, strokePaint)
-        canvas.drawRect(RectF(x - 1f, y - 8f, x + 0.5f, y + 7f), flagPaint)
-        canvas.drawRect(RectF(x - 1f, y - 8f, x + 0.5f, y + 7f), strokePaint)
-        canvas.drawCircle(x - 0.25f, y - 8.5f, 1.3f, flagPaint)
-        canvas.drawCircle(x - 0.25f, y - 8.5f, 1.3f, strokePaint)
+        canvas.drawRect(RectF(x - 1.5f, y - 10f, x + 0.5f, y + 9f), flagPaint)
+        canvas.drawRect(RectF(x - 1.5f, y - 10f, x + 0.5f, y + 9f), strokePaint)
+        canvas.drawCircle(x - 0.5f, y - 10.5f, 1.8f, flagPaint)
+        canvas.drawCircle(x - 0.5f, y - 10.5f, 1.8f, strokePaint)
     }
 
     /**
-     * Draws a realistic Top-Down car view on the route track matching the iOS Live Activity design
-     * and tinted with the driver's real vehicle color returned by the API.
+     * Draws a realistic side-profile vehicle moving along the route track (matching iOS car.side.fill badge):
+     * - White rounded badge with drop shadow so the route line stays clean
+     * - Aerodynamic chassis & cabin tinted in the driver's REAL carColor from API
+     * - Dark automotive tinted windows (#1E293B) with center pillar
+     * - Two wheels with dark rubber tires (#18181B) and silver rims (#D4D4D8)
+     * - Warm LED headlight at front right (#FEF08A) and red taillight at rear left (#EF4444)
      */
-    private fun drawTopDownCar(canvas: Canvas, x: Float, y: Float, carColor: Int) {
-        val carWidth = 76f
-        val carHeight = 38f
-        val left = x - carWidth / 2f
-        val top = y - carHeight / 2f
-        val right = x + carWidth / 2f
-        val bottom = y + carHeight / 2f
-
-        // 1. Soft drop shadow under the vehicle
+    private fun drawTrackCar(canvas: Canvas, x: Float, y: Float, carColor: Int) {
+        // 1. Soft drop shadow under the vehicle badge
         val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(90, 0, 0, 0)
-            maskFilter = BlurMaskFilter(4f, BlurMaskFilter.Blur.NORMAL)
+            color = Color.argb(60, 0, 0, 0)
+            maskFilter = BlurMaskFilter(6f, BlurMaskFilter.Blur.NORMAL)
         }
-        canvas.drawRoundRect(RectF(left - 2f, top + 3f, right + 2f, bottom + 5f), 10f, 10f, shadowPaint)
+        val badgeW = 68f
+        val badgeH = 38f
+        canvas.drawRoundRect(
+            RectF(x - badgeW / 2f, y - badgeH / 2f + 3f, x + badgeW / 2f, y + badgeH / 2f + 5f),
+            12f, 12f, shadowPaint
+        )
 
-        // 2. Wheels (4 dark rounded capsules peeking on top & bottom)
-        val wheelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1F2937")
+        // 2. Crisp white rounded badge under car matching iOS ZStack RoundedRectangle
+        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
             style = Paint.Style.FILL
         }
-        val wheelW = 15f
-        val wheelH = 6.5f
-        // Front wheels (facing right towards destination)
-        val frontWheelX = x + 20f
-        canvas.drawRoundRect(RectF(frontWheelX - wheelW / 2f, top - 3f, frontWheelX + wheelW / 2f, top - 3f + wheelH), 3f, 3f, wheelPaint)
-        canvas.drawRoundRect(RectF(frontWheelX - wheelW / 2f, bottom + 3f - wheelH, frontWheelX + wheelW / 2f, bottom + 3f), 3f, 3f, wheelPaint)
-        // Rear wheels
-        val rearWheelX = x - 20f
-        canvas.drawRoundRect(RectF(rearWheelX - wheelW / 2f, top - 3f, rearWheelX + wheelW / 2f, top - 3f + wheelH), 3f, 3f, wheelPaint)
-        canvas.drawRoundRect(RectF(rearWheelX - wheelW / 2f, bottom + 3f - wheelH, rearWheelX + wheelW / 2f, bottom + 3f), 3f, 3f, wheelPaint)
+        val badgeStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#E2E8F0")
+            strokeWidth = 1.2f
+            style = Paint.Style.STROKE
+        }
+        val badgeRect = RectF(x - badgeW / 2f, y - badgeH / 2f, x + badgeW / 2f, y + badgeH / 2f)
+        canvas.drawRoundRect(badgeRect, 10f, 10f, badgePaint)
+        canvas.drawRoundRect(badgeRect, 10f, 10f, badgeStroke)
 
-        // 3. Car Body: rounded rectangle filled with the driver's real vehicle color
+        // 3. Lower chassis & car body in real vehicle color
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = carColor
             style = Paint.Style.FILL
         }
-        val bodyRect = RectF(left, top, right, bottom)
-        canvas.drawRoundRect(bodyRect, 11f, 11f, bodyPaint)
-
-        // Determine brightness of car color to apply matching subtle outline
-        val r = Color.red(carColor)
-        val g = Color.green(carColor)
-        val b = Color.blue(carColor)
-        val luminance = (0.299f * r + 0.587f * g + 0.114f * b) / 255f
-        val isLightColor = luminance > 0.72f
-
-        val bodyStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (isLightColor) Color.argb(45, 0, 0, 0) else Color.argb(80, 255, 255, 255)
-            strokeWidth = 1.0f
-            style = Paint.Style.STROKE
-        }
-        canvas.drawRoundRect(bodyRect, 11f, 11f, bodyStrokePaint)
-
-        // 4. Windows (dark tinted automotive glass #334155)
-        val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#334155")
-            style = Paint.Style.FILL
-        }
-        // Front windshield (curved towards front/right)
-        val windshieldRect = RectF(x + 9f, y - 13f, x + 18f, y + 13f)
-        canvas.drawRoundRect(windshieldRect, 4f, 4f, glassPaint)
-
-        // Rear window (left)
-        val rearWindowRect = RectF(x - 20f, y - 12f, x - 13.5f, y + 12f)
-        canvas.drawRoundRect(rearWindowRect, 4f, 4f, glassPaint)
-
-        // Side windows connecting front and rear
-        canvas.drawRect(RectF(x - 14f, y - 13.5f, x + 10f, y - 10f), glassPaint)
-        canvas.drawRect(RectF(x - 14f, y + 10f, x + 10f, y + 13.5f), glassPaint)
-
-        // 5. Roof Panel (matching car color with subtle shade/highlight)
-        val roofPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (isLightColor) Color.parseColor("#F8FAFC") else carColor
-            style = Paint.Style.FILL
-            if (!isLightColor) {
-                alpha = 220
-            }
-        }
-        val roofRect = RectF(x - 16f, y - 11f, x + 12f, y + 11f)
-        canvas.drawRoundRect(roofRect, 5f, 5f, roofPaint)
-
-        val roofStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (isLightColor) Color.argb(35, 0, 0, 0) else Color.argb(60, 255, 255, 255)
+        val bodyStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(50, 0, 0, 0)
             strokeWidth = 0.8f
             style = Paint.Style.STROKE
         }
-        canvas.drawRoundRect(roofRect, 5f, 5f, roofStrokePaint)
 
-        // 6. Headlights at front edge (warm light yellow beam)
+        // Lower body rectangle (chassis)
+        val chassisRect = RectF(x - 24f, y - 2f, x + 24f, y + 8f)
+        canvas.drawRoundRect(chassisRect, 3.5f, 3.5f, bodyPaint)
+        canvas.drawRoundRect(chassisRect, 3.5f, 3.5f, bodyStroke)
+
+        // Cabin / Roof / Windshield (trapezoid driving right)
+        val cabinPath = Path().apply {
+            moveTo(x - 14f, y - 2f)
+            lineTo(x - 8f, y - 11f)
+            lineTo(x + 7f, y - 11f)
+            lineTo(x + 16f, y - 2f)
+            close()
+        }
+        canvas.drawPath(cabinPath, bodyPaint)
+        canvas.drawPath(cabinPath, bodyStroke)
+
+        // 4. Windows (dark tinted glass #1E293B)
+        val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1E293B")
+            style = Paint.Style.FILL
+        }
+        val winPath = Path().apply {
+            moveTo(x - 12f, y - 3f)
+            lineTo(x - 7f, y - 10f)
+            lineTo(x + 5f, y - 10f)
+            lineTo(x + 13f, y - 3f)
+            close()
+        }
+        canvas.drawPath(winPath, glassPaint)
+
+        // Center window pillar in car color
+        val pillarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = carColor
+            strokeWidth = 2.2f
+            style = Paint.Style.STROKE
+        }
+        canvas.drawLine(x - 1f, y - 10f, x - 1f, y - 3f, pillarPaint)
+
+        // 5. Two Wheels at bottom sitting on the track
+        val tirePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#18181B")
+            style = Paint.Style.FILL
+        }
+        val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#D4D4D8")
+            style = Paint.Style.FILL
+        }
+        val wheelRadius = 6f
+        val rimRadius = 2.8f
+        // Rear wheel (left) & Front wheel (right)
+        for (wheelX in floatArrayOf(x - 13f, x + 14f)) {
+            canvas.drawCircle(wheelX, y + 8f, wheelRadius, tirePaint)
+            canvas.drawCircle(wheelX, y + 8f, rimRadius, rimPaint)
+        }
+
+        // 6. Front Headlight (warm bright LED on front right)
         val headlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#FEF08A")
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(right - 2f, top + 9f, 3.2f, headlightPaint)
-        canvas.drawCircle(right - 2f, bottom - 9f, 3.2f, headlightPaint)
+        canvas.drawCircle(x + 23.5f, y + 2f, 2.5f, headlightPaint)
 
-        // 7. Red Taillights at rear edge
+        // 7. Rear Taillight (red LED on rear left)
         val taillightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#EF4444")
             style = Paint.Style.FILL
         }
-        canvas.drawRoundRect(RectF(left - 0.5f, top + 7f, left + 2.5f, top + 12f), 1.5f, 1.5f, taillightPaint)
-        canvas.drawRoundRect(RectF(left - 0.5f, bottom - 12f, left + 2.5f, bottom - 7f), 1.5f, 1.5f, taillightPaint)
+        canvas.drawRoundRect(RectF(x - 24.5f, y + 1.5f, x - 22f, y + 5f), 1f, 1f, taillightPaint)
     }
 
     fun cancelNotification(context: Context) {

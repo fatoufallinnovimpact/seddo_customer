@@ -174,7 +174,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _persistLocalState();
     _startOfflineMonitor();
     _loadCustomMarkers();
-    _syncLiveUpdate(progress: 0.05, etaMinutes: _remainingEtaMinutes);
+    _startOrSyncLiveUpdate();
 
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
@@ -1025,6 +1025,29 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     if (now.difference(_lastLiveUpdateSync).inMilliseconds > 2000) {
       _lastLiveUpdateSync = now;
       _syncLiveUpdate(progress: clampedS, etaMinutes: remainingMinutes);
+    }
+  }
+  void _startOrSyncLiveUpdate() {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
+    final data = RideLiveUpdateData(
+      rideId: effectiveRideId,
+      driverName: _currentDriver.name,
+      carModel: _currentDriver.carModel,
+      carColor: _currentDriver.carColor,
+      licensePlate: _currentDriver.licensePlate,
+      departureText: widget.departure.mainText,
+      destinationText: widget.destination.mainText,
+      statusLabel: 'En route vers la destination',
+      phase: RideLiveUpdatePhase.inProgress,
+      etaMinutes: _remainingEtaMinutes,
+      progress: 0.05,
+      updatedAtTimestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+    try {
+      RideLiveUpdateServiceImpl().startLiveUpdate(data);
+    } catch (_) {
+      RideLiveUpdateServiceImpl().updateLiveUpdate(data);
     }
   }
 

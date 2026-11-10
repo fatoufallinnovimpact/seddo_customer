@@ -249,6 +249,12 @@ import ActivityKit
 
   @available(iOS 16.1, *)
   private func updateLiveActivity(args: [String: Any], result: @escaping FlutterResult) {
+    if Activity<RideActivityAttributes>.activities.isEmpty {
+      print("[ActivityKit] ⚠️ Aucune activité active trouvée lors de la mise à jour, auto-démarrage de la Live Activity...")
+      startLiveActivity(args: args, result: result)
+      return
+    }
+
     let status = args["phase"] as? String ?? "inProgress"
     let statusLabel = args["statusLabel"] as? String ?? ""
     let etaMinutes = args["etaMinutes"] as? Int ?? 0

@@ -135,6 +135,15 @@ struct SeddoLockScreenLiveView: View {
         )
     }
 
+    private var isTrip: Bool {
+        !isArrivedAtPickup && (
+            context.state.statusLabel.localizedCaseInsensitiveContains("destination") ||
+            context.state.statusLabel.localizedCaseInsensitiveContains("trajet") ||
+            context.state.status.localizedCaseInsensitiveContains("progress") ||
+            context.state.status.localizedCaseInsensitiveContains("tripin")
+        )
+    }
+
     private var isFinished: Bool {
         !isArrivedAtPickup && (
             context.state.status.localizedCaseInsensitiveContains("completed") ||
@@ -142,15 +151,6 @@ struct SeddoLockScreenLiveView: View {
             context.state.statusLabel.localizedCaseInsensitiveContains("terminée") ||
             context.state.statusLabel.localizedCaseInsensitiveContains("terminé") ||
             (isTrip && context.state.progress >= 0.99)
-        )
-    }
-
-    private var isTrip: Bool {
-        !isFinished && !isArrivedAtPickup && (
-            context.state.statusLabel.localizedCaseInsensitiveContains("destination") ||
-            context.state.statusLabel.localizedCaseInsensitiveContains("trajet") ||
-            context.state.status.localizedCaseInsensitiveContains("progress") ||
-            context.state.status.localizedCaseInsensitiveContains("tripin")
         )
     }
 
@@ -406,9 +406,18 @@ struct SeddoRouteTrackView: View {
                     .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 1)
                     .position(x: endX + 4, y: centerY - 1)
 
-                // 4. Moving Top-Down Car on the track colored with the REAL vehicle color
-                TopDownCarView(tintColor: carTint(from: carColor))
-                    .position(x: carX, y: centerY)
+                // 4. Moving Car Badge on the track colored with the REAL vehicle color (matching iOS car.side.fill badge)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white)
+                        .frame(width: 36, height: 22)
+                        .shadow(color: Color.black.opacity(0.35), radius: 2.5, x: 0, y: 1.5)
+
+                    Image(systemName: "car.side.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(carTint(from: carColor))
+                }
+                .position(x: carX, y: centerY)
             }
         }
     }
