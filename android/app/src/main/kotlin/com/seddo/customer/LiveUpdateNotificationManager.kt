@@ -505,40 +505,14 @@ object LiveUpdateNotificationManager {
      * - Warm LED headlight at front right (#FEF08A) and red taillight at rear left (#EF4444)
      */
     private fun drawTrackCar(canvas: Canvas, x: Float, y: Float, carColor: Int) {
-        // 1. Soft drop shadow under the vehicle badge
-        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(60, 0, 0, 0)
-            maskFilter = BlurMaskFilter(6f, BlurMaskFilter.Blur.NORMAL)
-        }
-        val badgeW = 68f
-        val badgeH = 38f
-        canvas.drawRoundRect(
-            RectF(x - badgeW / 2f, y - badgeH / 2f + 3f, x + badgeW / 2f, y + badgeH / 2f + 5f),
-            12f, 12f, shadowPaint
-        )
-
-        // 2. Crisp white rounded badge under car matching iOS ZStack RoundedRectangle
-        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.FILL
-        }
-        val badgeStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#E2E8F0")
-            strokeWidth = 1.2f
-            style = Paint.Style.STROKE
-        }
-        val badgeRect = RectF(x - badgeW / 2f, y - badgeH / 2f, x + badgeW / 2f, y + badgeH / 2f)
-        canvas.drawRoundRect(badgeRect, 10f, 10f, badgePaint)
-        canvas.drawRoundRect(badgeRect, 10f, 10f, badgeStroke)
-
-        // 3. Lower chassis & car body in real vehicle color
+        // Car body stroke for clean crisp silhouette directly on the route line
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = carColor
             style = Paint.Style.FILL
         }
         val bodyStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(50, 0, 0, 0)
-            strokeWidth = 0.8f
+            color = Color.argb(90, 0, 0, 0)
+            strokeWidth = 1.2f
             style = Paint.Style.STROKE
         }
 

@@ -219,10 +219,11 @@ struct SeddoLockScreenLiveView: View {
 
                 Spacer()
 
-                // Side-view car preview colored with REAL vehicle color
+                // Side-view car preview colored with REAL vehicle color (facing right)
                 Image(systemName: "car.side.fill")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(carTint(from: context.attributes.carColor))
+                    .scaleEffect(x: -1, y: 1)
                     .padding(.trailing, 4)
             }
 
@@ -406,18 +407,13 @@ struct SeddoRouteTrackView: View {
                     .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 1)
                     .position(x: endX + 4, y: centerY - 1)
 
-                // 4. Moving Car Badge on the track colored with the REAL vehicle color (matching iOS car.side.fill badge)
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white)
-                        .frame(width: 36, height: 22)
-                        .shadow(color: Color.black.opacity(0.35), radius: 2.5, x: 0, y: 1.5)
-
-                    Image(systemName: "car.side.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(carTint(from: carColor))
-                }
-                .position(x: carX, y: centerY)
+                // 4. Moving Car directly on the track colored with the REAL vehicle color (flipped to face right/forward towards destination)
+                Image(systemName: "car.side.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(carTint(from: carColor))
+                    .scaleEffect(x: -1, y: 1)
+                    .shadow(color: Color.black.opacity(0.45), radius: 2, x: 0, y: 1)
+                    .position(x: carX, y: centerY)
             }
         }
     }
