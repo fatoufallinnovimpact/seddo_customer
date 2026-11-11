@@ -1220,72 +1220,112 @@ class _HomePageContentState extends State<_HomePageContent>
           child: Stack(
             children: [
 
+              // 2. Éclats orange en haut à droite
+              const Positioned(
+                right: 18,
+                top: 12,
+                child: SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: CustomPaint(
+                    painter: _TcuSparkPainter(),
+                  ),
+                ),
+              ),
 
-              // Train TER Dakar sur la droite du card : taille réduite, harmonieuse et compacte
+              // 3. Lignes courbes décoratives bleu et orange (swoosh)
+              const Positioned(
+                right: 0,
+                bottom: 8,
+                width: 175,
+                height: 36,
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _TcuSwooshPainter(),
+                  ),
+                ),
+              ),
+
+              // 4. Bus DDD (en arrière-plan à droite)
               Positioned(
-                right: AppConstants.tcuBannerTrainRightOffset,
-                top: AppConstants.spacingXs,
-                bottom: AppConstants.spacingXs,
-                width: AppConstants.tcuBannerTrainWidth,
+                right: 2,
+                bottom: 28,
+                width: 138,
+                height: 66,
                 child: IgnorePointer(
                   child: Image.asset(
-                    'assets/images/tcu/ter_train.png',
+                    'assets/transit/dddk.png',
                     fit: BoxFit.contain,
-                    alignment: Alignment.centerRight,
                     errorBuilder: (context, error, stackTrace) =>
                         const SizedBox.shrink(),
                   ),
                 ),
               ),
 
-              // Contenu gauche compact : titre, sous-titre et bouton "Itinéraires"
+              // 5. Bus AFTU (au premier plan devant le bus DDD, sans fond blanc)
+              Positioned(
+                right: 46,
+                bottom: 14,
+                width: 118,
+                height: 80,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/transit/aftu.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+
+              // 6. Contenu gauche : titre, sous-titre sans TER, et bouton "Itinéraires"
               Padding(
                 padding: const EdgeInsets.only(
-                  left: AppConstants.spacingMd,
-                  top: AppConstants.spacingUnitLg,
-                  bottom: AppConstants.spacingUnitLg,
-                  right: AppConstants.tcuBannerContentRightPadding,
+                  left: 18,
+                  top: 18,
+                  bottom: 18,
+                  right: 155,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Titre "Voyagez en toute simplicité"
+                    // Titre "Voyagez en toute simplicité" - bold adouci (w700 au lieu de w900)
                     Text(
                       'home.tcu_banner_title'.tr(),
                       style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontTitle,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.pureBlack,
-                        height: AppConstants.titleLineHeight,
-                        letterSpacing: AppConstants.titleLetterSpacing,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                        height: 1.15,
+                        letterSpacing: -0.3,
                       ),
                     ),
-                    const SizedBox(height: AppConstants.spacingXs),
+                    const SizedBox(height: 6),
 
-                    // Sous-titre "TER, BRT, bus AFTU et DDD : planifiez vos déplacements"
+                    // Sous-titre "BRT, bus AFTU et DDD : planifiez vos déplacements" (sans TER)
                     Text(
                       'home.tcu_banner_subtitle'.tr(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontSm,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
-                        height: AppConstants.bannerLineHeight,
+                        color: const Color(0xFF64748B),
+                        height: 1.25,
                       ),
                     ),
-                    const SizedBox(height: AppConstants.spacingUnit),
+                    const SizedBox(height: 14),
 
-                    // Bouton orange "Itinéraires" avec icône boussole
+                    // Bouton orange doux "Itinéraires" (comme 'Naviguer vers cet arrêt')
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: AppConstants.spacingUnitLg,
-                        vertical: AppConstants.spacingS,
+                        horizontal: 14,
+                        vertical: 7,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(AppConstants.radiusPill),
+                        color: const Color(0xFFE65100).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(100),
                       ),
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
@@ -1295,16 +1335,16 @@ class _HomePageContentState extends State<_HomePageContent>
                             Text(
                               'home.tcu_banner_button'.tr(),
                               style: GoogleFonts.inter(
-                                fontSize: AppConstants.fontSm,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.white,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFE65100),
                               ),
                             ),
-                            const SizedBox(width: AppConstants.spacingXs),
+                            const SizedBox(width: 8),
                             const Icon(
                               Icons.explore_outlined,
-                              color: AppColors.white,
-                              size: AppConstants.iconSizeSm,
+                              color: Color(0xFFE65100),
+                              size: 19,
                             ),
                           ],
                         ),
@@ -1670,5 +1710,75 @@ class _HomePageContentState extends State<_HomePageContent>
     );
   }
 }
+
+/// Custom painter pour les éclats orange au-dessus du cercle de la bannière TCU
+class _TcuSparkPainter extends CustomPainter {
+  const _TcuSparkPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFF05A22)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round;
+
+    // Rayon 1 (gauche)
+    canvas.drawLine(const Offset(6, 22), const Offset(2, 9), paint);
+    // Rayon 2 (milieu, ~45°)
+    canvas.drawLine(const Offset(15, 18), const Offset(24, 6), paint);
+    // Rayon 3 (droite)
+    canvas.drawLine(const Offset(20, 27), const Offset(31, 21), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Custom painter pour les lignes courbes bleu et orange (swoosh) sous les bus de la bannière TCU
+class _TcuSwooshPainter extends CustomPainter {
+  const _TcuSwooshPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bluePaint = Paint()
+      ..color = const Color(0xFF0D47A1)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round;
+
+    final orangePaint = Paint()
+      ..color = const Color(0xFFF05A22)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round;
+
+    // Ligne bleue (supérieure)
+    final bluePath = Path();
+    bluePath.moveTo(0, size.height * 0.65);
+    bluePath.quadraticBezierTo(
+      size.width * 0.45,
+      size.height * 0.95,
+      size.width,
+      size.height * 0.28,
+    );
+    canvas.drawPath(bluePath, bluePaint);
+
+    // Ligne orange (inférieure)
+    final orangePath = Path();
+    orangePath.moveTo(size.width * 0.08, size.height * 0.90);
+    orangePath.quadraticBezierTo(
+      size.width * 0.52,
+      size.height * 1.08,
+      size.width,
+      size.height * 0.56,
+    );
+    canvas.drawPath(orangePath, orangePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 
 

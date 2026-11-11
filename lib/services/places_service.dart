@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -49,6 +50,10 @@ class PlacesService {
                 : MapConfig.apiKey),
         _dio = dio ?? Dio(),
         _locationFetcher = locationFetcher;
+
+  /// Clé API effective pour les requêtes Google Maps & Places
+  String get effectiveApiKey =>
+      _apiKey.isNotEmpty ? _apiKey : MapConfig.apiKey;
 
   /// Curated database of verified Dakar places for instant fallback & matching
   static final List<PlaceSuggestion> _dakarPresets = [
@@ -186,12 +191,14 @@ class PlacesService {
       return _dakarPresets.take(5).toList();
     }
 
+    final key = effectiveApiKey;
     try {
+      debugPrint('[PlacesService] 🔍 Autocomplete Google Places API (New) pour "$query" avec clé: ${key.substring(0, 8)}...');
       final res = await _dio.post(
         'https://places.googleapis.com/v1/places:autocomplete',
         options: Options(
           headers: {
-            'X-Goog-Api-Key': _apiKey,
+            'X-Goog-Api-Key': key,
             'Content-Type': 'application/json',
           },
           sendTimeout: const Duration(seconds: 4),
@@ -234,10 +241,11 @@ class PlacesService {
           .toList();
 
       if (apiResults.isNotEmpty) {
+        debugPrint('[PlacesService] ✅ Google Places a retourné ${apiResults.length} résultats réels.');
         return apiResults;
       }
-    } catch (_) {
-      // Graceful fallback to local Dakar matching
+    } catch (e) {
+      debugPrint('[PlacesService] ⚠️ Erreur Google Places Autocomplete: $e (repli sur presets locaux)');
     }
 
     // Local matching with prefix scoring (exact prefix 'o' -> 'Ouakam', 'almad' -> 'Almadies')
@@ -286,12 +294,14 @@ class PlacesService {
       );
     }
 
+    final key = effectiveApiKey;
     try {
+      debugPrint('[PlacesService] 📍 Google Places Details pour placeId="$placeId"...');
       final res = await _dio.get(
         'https://places.googleapis.com/v1/places/$placeId',
         options: Options(
           headers: {
-            'X-Goog-Api-Key': _apiKey,
+            'X-Goog-Api-Key': key,
             'X-Goog-FieldMask': 'formattedAddress,location',
           },
           sendTimeout: const Duration(seconds: 4),
@@ -301,12 +311,13 @@ class PlacesService {
       );
 
       _sessionToken = const Uuid().v4(); // nouvelle session après la sélection
-      return PlaceDetails(
-        res.data['formattedAddress'] ?? '',
-        (res.data['location']['latitude'] as num).toDouble(),
-        (res.data['location']['longitude'] as num).toDouble(),
-      );
-    } catch (_) {
+      final lat = (res.data['location']['latitude'] as num).toDouble();
+      final lng = (res.data['location']['longitude'] as num).toDouble();
+      final addr = res.data['formattedAddress'] as String? ?? '';
+      debugPrint('[PlacesService] ✅ Coordonnées Google reçues: ($lat, $lng) - $addr');
+      return PlaceDetails(addr, lat, lng);
+    } catch (e) {
+      debugPrint('[PlacesService] ⚠️ Erreur Google Places Details: $e');
       _sessionToken = const Uuid().v4();
       return PlaceDetails(
         'Dakar, Sénégal',
@@ -318,12 +329,14 @@ class PlacesService {
 
   /// Reverse geocode coordinates (lat, lng) to a clean human-readable address in any country
   Future<PlaceSearchResult> reverseGeocode(double lat, double lng) async {
+    final key = effectiveApiKey;
     try {
+      debugPrint('[PlacesService] 🗺️ Google Geocoding pour ($lat, $lng)...');
       final res = await _dio.get(
         'https://maps.googleapis.com/maps/api/geocode/json',
         queryParameters: {
           'latlng': '$lat,$lng',
-          'key': _apiKey,
+          'key': key,
           'language': 'fr',
         },
         options: Options(
@@ -431,8 +444,8 @@ class PlacesService {
           longitude: lng,
         );
       }
-    } catch (_) {
-      // Graceful fallback
+    } catch (e) {
+      debugPrint('[PlacesService] ⚠️ Erreur Google Geocoding: $e');
     }
 
     return _findNearestDakarPreset(lat, lng);

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 /// Configuration constants for Google Maps & Places API.
 abstract class MapConfig {
@@ -45,6 +46,12 @@ abstract class MapConfig {
     }
     if (ios != null && ios.isNotEmpty) {
       _googleMapsApiKeyIos = ios;
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+        try {
+          const MethodChannel('sn.innov.seddo/maps_config')
+              .invokeMethod('setMapsApiKey', {'apiKey': ios});
+        } catch (_) {}
+      }
     }
     if (web != null && web.isNotEmpty) {
       _googleMapsApiKeyWeb = web;

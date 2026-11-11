@@ -120,12 +120,12 @@ class RideEtaCalculator {
     return TrafficSpeed.normal;
   }
 
-  /// Libellé d'affichage de l'ETA selon la note technique (page 2) :
-  /// - remainingM < 50 => 'Arrivé'
-  /// - min <= 1 => '1 min'
+  /// Libellé d'affichage de l'ETA :
+  /// - isDriverArrived == true => 'Arrivé' (uniquement quand le chauffeur a validé "Je suis arrivé")
+  /// - min <= 1 ou remainingM < 50 => '1 min'
   /// - sinon => '$min min'
-  static String etaLabel(int seconds, double remainingM) {
-    if (remainingM < 50) return 'Arrivé';
+  static String etaLabel(int seconds, double remainingM, {bool isDriverArrived = false}) {
+    if (isDriverArrived) return 'Arrivé';
     final min = (seconds / 60).ceil();
     return min <= 1 ? '1 min' : '$min min';
   }

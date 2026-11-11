@@ -338,26 +338,34 @@ class PlacesService {
     return scored.map((e) => e.value).toList();
   }
 
-  /// Queries Google Places Autocomplete API restricted to Senegal around Dakar
+  /// Queries Google Places Autocomplete API (New) restricted to Senegal around Dakar
   Future<List<PlaceSearchResult>> _queryGooglePlacesAutocomplete(
     String query,
   ) async {
     final apiKey = MapConfig.apiKey;
-    final uri = Uri.https(
-      'maps.googleapis.com',
-      '/maps/api/place/autocomplete/json',
-      {
-        'input': query,
-        'key': apiKey,
-        'components': 'country:sn',
-        'location':
-            '${MapConfig.dakarCenterLat},${MapConfig.dakarCenterLng}',
-        'radius': '${MapConfig.dakarSearchRadiusMeters}',
-        'language': 'fr',
-      },
-    );
+    if (apiKey.isEmpty) return [];
 
-    final request = await _httpClient.getUrl(uri);
+    final uri = Uri.parse('https://places.googleapis.com/v1/places:autocomplete');
+    final request = await _httpClient.postUrl(uri);
+    request.headers.set('Content-Type', 'application/json');
+    request.headers.set('X-Goog-Api-Key', apiKey);
+
+    final payload = json.encode({
+      'input': query,
+      'languageCode': 'fr',
+      'includedRegionCodes': ['sn'],
+      'locationBias': {
+        'circle': {
+          'center': {
+            'latitude': MapConfig.dakarCenterLat,
+            'longitude': MapConfig.dakarCenterLng,
+          },
+          'radius': MapConfig.dakarSearchRadiusMeters.toDouble(),
+        }
+      },
+    });
+    request.write(payload);
+
     final response =
         await request.close().timeout(const Duration(seconds: 4));
 
@@ -367,32 +375,24 @@ class PlacesService {
 
     final responseBody = await response.transform(utf8.decoder).join();
     final data = json.decode(responseBody) as Map<String, dynamic>;
-    final status = data['status'] as String?;
-
-    if (status != 'OK') {
-      return [];
-    }
-
-    final predictions = data['predictions'] as List? ?? [];
+    final suggestions = data['suggestions'] as List? ?? [];
     final results = <PlaceSearchResult>[];
 
-    for (final p in predictions) {
-      final structured =
-          p['structured_formatting'] as Map<String, dynamic>?;
-      final mainText = structured?['main_text'] as String? ??
-          p['description'] as String? ??
-          '';
-      final secondaryText = structured?['secondary_text'] as String? ??
-          'Dakar, Sénégal';
-      final fullAddress = p['description'] as String? ?? mainText;
-      final placeId = p['place_id'] as String? ?? '';
+    for (final s in suggestions) {
+      final p = s['placePrediction'] as Map<String, dynamic>?;
+      if (p == null) continue;
+      final structured = p['structuredFormat'] as Map<String, dynamic>?;
+      final fullText = p['text']?['text'] as String? ?? '';
+      final mainText = structured?['mainText']?['text'] as String? ?? fullText;
+      final secondaryText = structured?['secondaryText']?['text'] as String? ?? 'Dakar, Sénégal';
+      final placeId = p['placeId'] as String? ?? '';
 
       results.add(
         PlaceSearchResult(
           id: placeId,
           mainText: mainText,
           secondaryText: secondaryText,
-          fullAddress: fullAddress,
+          fullAddress: fullText.isNotEmpty ? fullText : mainText,
           latitude: MapConfig.dakarCenterLat,
           longitude: MapConfig.dakarCenterLng,
           category: 'google_place',

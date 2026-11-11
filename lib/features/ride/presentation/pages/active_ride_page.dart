@@ -129,6 +129,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   bool get hasReceivedRealGps => _hasReceivedRealGps;
   double _progressRatio = 0.0;
   bool _isStopped = false;
+  bool _driverArrivedAtDestination = false;
   final String _stopReason = 'Arrêt temporaire';
   bool _followCar = true;
   bool _isProgrammaticCameraMove = false;
@@ -199,14 +200,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       })
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
-          if (mounted && !_hasReceivedRealGps) {
-            // Arrivée automatique à destination après les 2 minutes de simulation
-            Future.delayed(const Duration(milliseconds: 800), () {
-              if (mounted && !_hasReceivedRealGps) {
-                _onTripCompleted();
-              }
-            });
-          }
+          // La voiture a atteint la fin du tracé sur la carte, mais tant que le chauffeur
+          // n'a pas cliqué sur "Je suis arrivé" / terminé la course, la course reste en direct.
         }
       });
 
@@ -269,7 +264,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           RealtimeService().rideStatusStream.listen((event) {
         if (!mounted) return;
         if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
-          if (event.status == 'COMPLETED') {
+          if (event.status == 'ARRIVED' || event.status == 'DRIVER_ARRIVED') {
+            setState(() {
+              _driverArrivedAtDestination = true;
+            });
+          } else if (event.status == 'COMPLETED') {
             _cleanupRealtime();
             _onTripCompleted();
           } else if (event.status.startsWith('CANCELLED')) {
@@ -388,8 +387,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     final status = (rideObj['status'] as String? ?? '').toUpperCase();
 
-    // 1. Course terminée
-    if (status == 'COMPLETED') {
+    // 1. Course arrivée ou terminée
+    if (status == 'ARRIVED' || status == 'DRIVER_ARRIVED') {
+      setState(() {
+        _driverArrivedAtDestination = true;
+      });
+    } else if (status == 'COMPLETED') {
       _cleanupRealtime();
       _onTripCompleted();
       return;
@@ -2122,7 +2125,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                                     decoration: BoxDecoration(
                                       color: _isStopped
                                           ? AppColors.orangeMoneyOrange
-                                          : (_progressRatio >= 0.99
+                                          : (_driverArrivedAtDestination
                                               ? AppColors.success
                                               : AppColors.yangoRouteGreen),
                                       shape: BoxShape.circle,
@@ -2130,7 +2133,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                                   ),
                                   const SizedBox(width: 5),
                                   Text(
-                                    _progressRatio >= 0.99
+                                    _driverArrivedAtDestination
                                         ? 'ride.arrived'.tr()
                                         : (_isStopped
                                             ? _stopReason

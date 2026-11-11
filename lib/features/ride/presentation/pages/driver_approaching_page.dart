@@ -227,7 +227,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       ..addListener(_onApproachTick)
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
-          _onDriverReachedPickup();
+          // Tant que le chauffeur n'a pas cliqué sur "Je suis arrivé"
+          // (statut DRIVER_ARRIVED/ARRIVED via WebSocket ou API), le modal ne doit pas afficher "Arrivé".
         }
       });
 
@@ -380,11 +381,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     if (status == 'DRIVER_ARRIVED' || status == 'ARRIVED') {
-      setState(() {
-        _driverArrived = true;
-        _isPositionUpdating = false;
-        _setEtaLabel('ride.arrived'.tr(), 0);
-      });
+      _onDriverReachedPickup();
     }
 
     if (event.departureCode != null && event.departureCode!.isNotEmpty) {
@@ -762,10 +759,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       _currentDriver = updatedDriver;
     });
 
-    if (isArrived) {
-      _driverArrived = true;
-      _setEtaLabel('ride.arrived'.tr(), 0);
-    } else if (etaFromApi != null && etaFromApi > 0) {
+    if (isArrived && !_driverArrived) {
+      _onDriverReachedPickup();
+    } else if (!_driverArrived && etaFromApi != null && etaFromApi > 0) {
       _setEtaLabel('$etaFromApi min', etaFromApi);
     }
 
@@ -924,14 +920,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       );
     }
 
-    final label = RideEtaCalculator.etaLabel(remS, remM);
+    final label = RideEtaCalculator.etaLabel(
+      remS,
+      remM,
+      isDriverArrived: _driverArrived,
+    );
     final remainingMinutes = (remS / 60.0).ceil();
 
-    _setEtaLabel(label, remainingMinutes);
+    _setEtaLabel(
+      _driverArrived ? 'ride.arrived'.tr() : label,
+      remainingMinutes,
+    );
 
-    if (remM < 50 && !_driverArrived) {
-      _onDriverReachedPickup();
-    }
+    // Tant que le chauffeur n'a pas cliqué sur "Je suis arrivé" sur son téléphone,
+    // le statut d'arrivée reste strictement false et le modal n'affiche jamais "Arrivé".
   }
 
   void _syncLiveUpdate({double? progress, int? etaMinutes, String? statusLabel}) {
@@ -1608,8 +1610,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             .toUpperCase()
         : 'MS';
 
-    final etaDisplay = (_driverArrived ||
-            (_remainingDistanceM > 0 && _remainingDistanceM < 50))
+    final etaDisplay = _driverArrived
         ? 'ride.arrived'.tr()
         : _currentEtaLabel;
 

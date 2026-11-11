@@ -13,6 +13,7 @@ import 'package:seddo/services/fcm_service.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/notification_service.dart';
 import 'package:seddo/services/app_params_service.dart';
+import 'package:seddo/core/maps/seddo_maps.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +73,7 @@ void main() async {
   await NotificationService().initialize();
   await MapStyleService.loadMapStyle();
   await AppParamsService().initParams();
+  await MapServiceManager.instance.init();
 
   try {
     await Firebase.initializeApp(

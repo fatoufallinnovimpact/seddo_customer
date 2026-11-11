@@ -21,8 +21,12 @@ import ActivityKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
 
-    // Initialisation Google Maps SDK
-    GMSServices.provideAPIKey("AIzaSyAy0NF-94Jy_2pDVX8_X5vtvs3_RPH40wk")
+    // Initialisation Google Maps SDK (priorité au cache dynamique distant, fallback sur clé par défaut)
+    let cachedIosKey = UserDefaults.standard.string(forKey: "flutter.seddo_maps_key_ios")
+    let activeIosKey = (cachedIosKey != nil && !cachedIosKey!.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      ? cachedIosKey!
+      : "AIzaSyAy0NF-94Jy_2pDVX8_X5vtvs3_RPH40wk"
+    GMSServices.provideAPIKey(activeIosKey)
 
     // Initialisation sécurisée de Firebase avec GoogleService-Info.plist
     if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
@@ -90,6 +94,24 @@ import ActivityKit
       self?.pushToStartEventSink = sink
       self?.listenToPushToStartTokens()
     })
+
+    let mapsChannel = FlutterMethodChannel(
+      name: "sn.innov.seddo/maps_config",
+      binaryMessenger: messenger
+    )
+    mapsChannel.setMethodCallHandler { (call, result) in
+      if call.method == "setMapsApiKey",
+         let args = call.arguments as? [String: Any],
+         let key = args["apiKey"] as? String,
+         !key.isEmpty {
+        UserDefaults.standard.set(key, forKey: "flutter.seddo_maps_key_ios")
+        GMSServices.provideAPIKey(key)
+        print("[MapsConfig] 🗺️ Clé iOS Google Maps synchronisée: \(key.prefix(8))...")
+        result(true)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func handleLiveUpdateMethodCall(call: FlutterMethodCall, result: @escaping FlutterResult) {
