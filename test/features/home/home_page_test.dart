@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/core/localization/wolof_localizations_delegate.dart';
 import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 
 class MockHomeTestAssetLoader extends AssetLoader {
   const MockHomeTestAssetLoader();
@@ -97,6 +98,11 @@ void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
     await EasyLocalization.ensureInitialized();
+  });
+
+  setUp(() {
+    UserLocationStorage.resetCache();
+    SharedPreferences.setMockInitialValues({});
   });
 
   testWidgets(

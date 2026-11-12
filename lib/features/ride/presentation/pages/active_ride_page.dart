@@ -94,32 +94,27 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   BitmapDescriptor? _pickupBadgeIcon;
   BitmapDescriptor? _destBadgeIcon;
 
-  // Route & Simulation State
-  AnimationController? _animController;
+  // Route & Realtime Tracking State
   AnimationController? _smoothCarController;
   bool _hasReceivedRealGps = false;
-  bool _isSnappedMovement = true;
-  double _startProgressRatio = 0.0;
-  double _targetProgressRatio = 0.0;
   LatLng? _animStartPos;
   LatLng? _animEndPos;
   double? _animStartHeading;
   double? _animEndHeading;
   late List<LatLng> _effectiveRoute;
-  late List<double> _segmentLengths;
-  late double _totalRouteDistanceMeters;
   late LatLng _currentCarPosition;
   double _currentCarHeading = 0.0;
   List<LatLng> _traveledPoints = [];
   List<LatLng> _remainingPoints = [];
   List<TrafficSegmentModel> _traffic = [];
-  late double _initialDistanceKm;
   late double _remainingDistanceKm;
-  late int _initialEtaMinutes;
   late int _remainingEtaMinutes;
 
   @visibleForTesting
   int get remainingEtaMinutes => _remainingEtaMinutes;
+
+  @visibleForTesting
+  double get remainingDistanceKm => _remainingDistanceKm;
 
   @visibleForTesting
   LatLng get currentCarPosition => _currentCarPosition;
@@ -130,7 +125,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   @visibleForTesting
   bool get hasReceivedRealGps => _hasReceivedRealGps;
   double _progressRatio = 0.0;
-  bool _isStopped = false;
+  final bool _isStopped = false;
   bool _driverArrivedAtDestination = false;
   final String _stopReason = 'Arrêt temporaire';
   bool _followCar = true;
@@ -153,6 +148,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   StreamSubscription<void>? _realtimeReconnectSub;
 
   DateTime _lastDriverLocationTime = DateTime.now();
+  DateTime _lastRerouteFetchTime = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _stalePositionCheckTimer;
   Timer? _pollTimer;
   bool _isPositionUpdating = false;
@@ -189,35 +185,17 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       });
     }
 
-
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(minutes: 2),
-    )
-      ..addListener(() {
-        if (!_hasReceivedRealGps && !_isOffline) {
-          _updateProgress(_animController!.value);
-        }
-      })
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          // La voiture a atteint la fin du tracé sur la carte, mais tant que le chauffeur
-          // n'a pas cliqué sur "Je suis arrivé" / terminé la course, la course reste en direct.
-        }
-      });
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
 
     // Contrôleur de déplacement fluide de la voiture lors des mises à jour GPS en direct
     _smoothCarController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1000),
     )..addListener(() {
         if (!mounted || _isOffline) return;
         final t = _smoothCarController!.value;
-        if (_isSnappedMovement) {
-          final curS = _startProgressRatio +
-              (_targetProgressRatio - _startProgressRatio) * t;
-          _setProgressOnRoute(curS, updateCamera: true);
-        } else if (_animStartPos != null && _animEndPos != null) {
+        if (_animStartPos != null && _animEndPos != null) {
           final curLat = _animStartPos!.latitude +
               (_animEndPos!.latitude - _animStartPos!.latitude) * t;
           final curLng = _animStartPos!.longitude +
@@ -232,29 +210,23 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           setState(() {
             _currentCarPosition = curPos;
             _currentCarHeading = curHead;
-            if (_remainingPoints.isNotEmpty) {
-              _remainingPoints[0] = curPos;
-            } else {
-              _remainingPoints = [curPos, _effectiveRoute.isNotEmpty ? _effectiveRoute.last : curPos];
-            }
+            _updateRouteProgressForCar(curPos);
           });
         }
-      });
-
-    // Ne lancer la simulation locale QUE s'il n'y a PAS de course réelle connectée au backend
-    final effectiveRideId =
-        widget.rideId ?? RideService.lastCreatedRideId ?? '';
-    if (!isTest && widget.autoStartSimulation && effectiveRideId.isEmpty) {
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (mounted &&
-            !_hasReceivedRealGps &&
-            !_isOffline &&
-            _animController != null &&
-            !_animController!.isAnimating) {
-          _startSimulation();
+      })
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          if (_animEndPos != null && mounted && !_isOffline) {
+            setState(() {
+              _currentCarPosition = _animEndPos!;
+              if (_animEndHeading != null) {
+                _currentCarHeading = _animEndHeading!;
+              }
+              _updateRouteProgressForCar(_animEndPos!);
+            });
+          }
         }
       });
-    }
 
     // Connexion WebSocket en direct pour suivre la course (PDF Seddo)
     if (effectiveRideId.isNotEmpty) {
@@ -295,6 +267,19 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           if (_isPositionUpdating) {
             setState(() {
               _isPositionUpdating = false;
+            });
+          }
+          if (event.etaMinutes != null && event.etaMinutes! > 0) {
+            setState(() {
+              _remainingEtaMinutes = event.etaMinutes!;
+            });
+            _syncLiveUpdate(etaMinutes: event.etaMinutes!);
+          }
+          if (event.distanceMeters != null && event.distanceMeters! > 0) {
+            setState(() {
+              _remainingDistanceKm = event.distanceMeters! > 100
+                  ? event.distanceMeters! / 1000.0
+                  : event.distanceMeters!;
             });
           }
           updateCarLocation(event.location, heading: event.heading);
@@ -509,6 +494,28 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             rideObj['heading'] as num?)
         ?.toDouble();
 
+    final durS = (rideObj['durationSeconds'] ??
+            rideObj['duration'] ??
+            routeObj?['durationSeconds'] ??
+            routeObj?['duration'] as num?)
+        ?.toInt();
+    final etaM = (rideObj['etaMinutes'] ??
+            rideObj['eta'] ??
+            (durS != null && durS > 0 ? (durS / 60.0).ceil() : null) as num?)
+        ?.toInt();
+    final distM = (rideObj['distanceMeters'] ??
+            rideObj['distance'] ??
+            routeObj?['distanceMeters'] ??
+            routeObj?['distance'] as num?)
+        ?.toDouble();
+
+    if (etaM != null && etaM > 0) {
+      _remainingEtaMinutes = etaM;
+    }
+    if (distM != null && distM > 0) {
+      _remainingDistanceKm = distM > 100 ? distM / 1000.0 : distM;
+    }
+
     if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
       _lastDriverLocationTime = DateTime.now();
       if (_isPositionUpdating) {
@@ -554,7 +561,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             setState(() {
               _isOffline = true;
             });
-            _animController?.stop();
             _smoothCarController?.stop();
           }
         } else {
@@ -575,25 +581,22 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _consecutiveOfflineFailures = 0;
     NetworkConnectivityService.markOnline();
 
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+
     // 1. Débloquer immédiatement l'interface utilisateur et masquer la bannière
     if (mounted) {
       setState(() {
         _isOffline = false;
         _currentSheetExtent = 0.38;
       });
-      if (!_hasReceivedRealGps &&
-          widget.autoStartSimulation &&
-          _animController != null &&
-          !_animController!.isAnimating &&
-          _progressRatio < 0.99) {
-        _animController!.forward();
+      if (_effectiveRoute.length < 2) {
+        _loadRoadRoute();
       }
     }
 
     // 2. Reconnexion WebSocket en tâche de fond
     RealtimeService().connect();
-    final effectiveRideId =
-        widget.rideId ?? RideService.lastCreatedRideId ?? '';
     if (effectiveRideId.isNotEmpty) {
       RealtimeService().joinRide(effectiveRideId);
       _fetchRideDetails(effectiveRideId);
@@ -678,62 +681,56 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     if (effectiveRideId.isNotEmpty) {
       RealtimeService().leaveRide(effectiveRideId);
     }
-    _animController?.dispose();
     _smoothCarController?.dispose();
     _mapController?.dispose();
     super.dispose();
   }
 
   void _initRoute() {
-    if (widget.polylinePoints.length >= 5) {
+    // Prioriser la polyline passée en paramètre si elle contient un tracé routier valide
+    if (widget.polylinePoints.length >= 2) {
       _effectiveRoute = List<LatLng>.from(widget.polylinePoints);
     } else {
-      final start =
+      // Ne JAMAIS tracer de vol d'oiseau artificiel (lignes droites entre départ et destination)
+      _effectiveRoute = [];
+    }
+
+    // Position initiale du véhicule
+    if (_effectiveRoute.isNotEmpty) {
+      _currentCarPosition = _effectiveRoute.first;
+      if (_effectiveRoute.length >= 2) {
+        _currentCarHeading =
+            _calculateBearing(_effectiveRoute[0], _effectiveRoute[1]);
+      }
+    } else {
+      _currentCarPosition =
           LatLng(widget.departure.latitude, widget.departure.longitude);
-      final end =
-          LatLng(widget.destination.latitude, widget.destination.longitude);
-      const steps = 30;
-      _effectiveRoute = List.generate(steps, (i) {
-        final t = i / (steps - 1);
-        return LatLng(
-          start.latitude + (end.latitude - start.latitude) * t,
-          start.longitude + (end.longitude - start.longitude) * t,
-        );
-      });
-      // Récupération asynchrone des vraies routes de Dakar via RouteService
-      _loadRoadRoute();
+      _currentCarHeading = 0.0;
     }
 
-    _recomputeRouteMetrics();
-
-    // Car starts at departure point of the ride
-    _currentCarPosition = _effectiveRoute.first;
-    if (_effectiveRoute.length >= 2) {
-      _currentCarHeading =
-          _calculateBearing(_effectiveRoute[0], _effectiveRoute[1]);
-    }
-
-    _initialDistanceKm = widget.driver.distanceKm > 0
+    final optDistKm = (widget.rideOption.distanceM != null &&
+            widget.rideOption.distanceM! > 0)
+        ? widget.rideOption.distanceM! / 1000.0
+        : 5.0;
+    _remainingDistanceKm = widget.driver.distanceKm > 0
         ? widget.driver.distanceKm
-        : (_totalRouteDistanceMeters / 1000.0);
-    _remainingDistanceKm = _initialDistanceKm;
+        : optDistKm;
 
-    _initialEtaMinutes =
-        widget.driver.etaMinutes > 0 ? widget.driver.etaMinutes : 12;
-    _remainingEtaMinutes = _initialEtaMinutes;
+    final optEtaMin = (widget.rideOption.durationS != null &&
+            widget.rideOption.durationS! > 0)
+        ? (widget.rideOption.durationS! / 60).ceil()
+        : 12;
+    _remainingEtaMinutes = widget.driver.etaMinutes > 0
+        ? widget.driver.etaMinutes
+        : optEtaMin;
 
     _traveledPoints = [_currentCarPosition];
     _remainingPoints = List<LatLng>.from(_effectiveRoute);
     _progressRatio = 0.0;
-  }
 
-  void _recomputeRouteMetrics() {
-    _segmentLengths = [];
-    _totalRouteDistanceMeters = 0.0;
-    for (int i = 0; i < _effectiveRoute.length - 1; i++) {
-      final len = _haversineMeters(_effectiveRoute[i], _effectiveRoute[i + 1]);
-      _segmentLengths.add(len);
-      _totalRouteDistanceMeters += len;
+    // Si pas de route routière valide, charger les vraies routes
+    if (_effectiveRoute.length < 2) {
+      _loadRoadRoute();
     }
   }
 
@@ -741,32 +738,118 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     if (newRoute.length < 2) return;
     setState(() {
       _effectiveRoute = List<LatLng>.from(newRoute);
-      _recomputeRouteMetrics();
-      final proj = _findClosestProjectionOnRoute(_currentCarPosition);
-      _progressRatio = proj.progressRatio;
-      
-      final traveled = <LatLng>[];
-      for (int i = 0; i <= proj.segmentIndex && i < _effectiveRoute.length; i++) {
-        traveled.add(_effectiveRoute[i]);
+      // Si aucun GPS réel n'a encore été reçu, positionner le véhicule au début
+      if (!_hasReceivedRealGps) {
+        _currentCarPosition = _effectiveRoute.first;
+        if (_effectiveRoute.length >= 2) {
+          _currentCarHeading =
+              _calculateBearing(_effectiveRoute[0], _effectiveRoute[1]);
+        }
       }
-      traveled.add(proj.projectedPoint);
-
-      final remaining = <LatLng>[proj.projectedPoint];
-      for (int i = proj.segmentIndex + 1; i < _effectiveRoute.length; i++) {
-        remaining.add(_effectiveRoute[i]);
-      }
-      if (remaining.length < 2 && _effectiveRoute.isNotEmpty) {
-        remaining.add(_effectiveRoute.last);
-      }
-
-      _currentCarPosition = proj.projectedPoint;
-      _currentCarHeading = proj.heading;
-      _traveledPoints = traveled;
-      _remainingPoints = remaining;
+      _updateRouteProgressForCar(_currentCarPosition);
     });
   }
 
+  int _findNearestRouteIndex(LatLng point) {
+    if (_effectiveRoute.isEmpty) return 0;
+    int nearestIndex = 0;
+    double minDistance = double.infinity;
+    for (int i = 0; i < _effectiveRoute.length; i++) {
+      final p = _effectiveRoute[i];
+      final dLat = p.latitude - point.latitude;
+      final dLon = p.longitude - point.longitude;
+      final distSq = dLat * dLat + dLon * dLon;
+      if (distSq < minDistance) {
+        minDistance = distSq;
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
+  }
+
+  /// Découpe la route réelle en tronçon parcouru et tronçon restant basé sur
+  /// la vraie position du chauffeur reçue en direct sans jamais déplacer ou contraindre la voiture.
+  void _updateRouteProgressForCar(LatLng curPos) {
+    if (_effectiveRoute.length < 2) {
+      _traveledPoints = [curPos];
+      _remainingPoints = [];
+      return;
+    }
+
+    final nearestIdx = _findNearestRouteIndex(curPos);
+    final nearestPt = _effectiveRoute[nearestIdx];
+    final distToRoute = _haversineMeters(curPos, nearestPt);
+
+    final traveled = <LatLng>[];
+    for (int i = 0; i <= nearestIdx && i < _effectiveRoute.length; i++) {
+      traveled.add(_effectiveRoute[i]);
+    }
+    // N'ajouter curPos que si le véhicule est tout proche de la route (<= 50m)
+    // afin d'éradiquer tout tracé en vol d'oiseau diagonal à travers la ville
+    if (distToRoute <= 50.0) {
+      traveled.add(curPos);
+    }
+
+    final remaining = <LatLng>[];
+    if (distToRoute <= 50.0) {
+      remaining.add(curPos);
+    }
+    for (int i = nearestIdx + 1; i < _effectiveRoute.length; i++) {
+      remaining.add(_effectiveRoute[i]);
+    }
+
+    _traveledPoints = traveled;
+    _remainingPoints = remaining;
+    _progressRatio = (_effectiveRoute.length > 1)
+        ? (nearestIdx / (_effectiveRoute.length - 1)).clamp(0.0, 1.0)
+        : 0.0;
+
+    // SUPPRESSION STRICTE DE TOUT CALCUL CÔTÉ FRONT DU TRAJET :
+    // Dès qu'une course est active côté backend ou qu'un signal GPS réel est reçu,
+    // toutes les métriques (ETA, distance restante) proviennent EXCLUSIVEMENT du backend (WebSocket / REST).
+    // Aucun recalcul local n'est effectué pour garantir une concordance 100% avec le chauffeur.
+
+    final isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty &&
+        distToRoute > 100.0 &&
+        mounted &&
+        !isTest &&
+        !_isOffline &&
+        DateTime.now().difference(_lastRerouteFetchTime).inSeconds > 15) {
+      _lastRerouteFetchTime = DateTime.now();
+      _fetchRideDetails(effectiveRideId);
+    }
+
+    final now = DateTime.now();
+    if (now.difference(_lastLiveUpdateSync).inMilliseconds > 2000) {
+      _lastLiveUpdateSync = now;
+      _syncLiveUpdate();
+    }
+
+    if (_followCar && _mapController != null) {
+      if (now.difference(_lastCameraUpdateTime).inMilliseconds > 1000) {
+        _lastCameraUpdateTime = now;
+        _isProgrammaticCameraMove = true;
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLng(curPos),
+        );
+      }
+    }
+  }
+
   Future<void> _loadRoadRoute() async {
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    // Pour une course réelle connectée au backend, le client ne calcule JAMAIS la route lui-même.
+    // L'itinéraire provient EXCLUSIVEMENT du backend (plannedPolyline / ride.route.updated).
+    if (effectiveRideId.isNotEmpty) {
+      _fetchRideDetails(effectiveRideId);
+      return;
+    }
+
     try {
       final origin =
           LatLng(widget.departure.latitude, widget.departure.longitude);
@@ -776,108 +859,22 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           await RouteService().getRoute(origin: origin, destination: dest);
       if (details.polylinePoints.length >= 2 && mounted) {
         _setNewRoute(details.polylinePoints);
-        if (details.distanceKm > 0) {
-          setState(() {
-            _initialDistanceKm = details.distanceKm;
-            _remainingDistanceKm = details.distanceKm;
-          });
-        }
-        if (details.durationMinutes > 0) {
-          setState(() {
-            _initialEtaMinutes = details.durationMinutes;
-            _remainingEtaMinutes = details.durationMinutes;
-          });
+        if (!_hasReceivedRealGps) {
+          if (details.distanceKm > 0) {
+            setState(() {
+              _remainingDistanceKm = details.distanceKm;
+            });
+          }
+          if (details.durationMinutes > 0) {
+            setState(() {
+              _remainingEtaMinutes = details.durationMinutes;
+            });
+          }
         }
       }
     } catch (e) {
       debugPrint('[ActiveRidePage] Note route loading fallback: $e');
     }
-  }
-
-  ({
-    LatLng projectedPoint,
-    int segmentIndex,
-    double distanceMeters,
-    double segmentRatio,
-    double heading,
-    double progressRatio,
-  }) _findClosestProjectionOnRoute(LatLng point) {
-    if (_effectiveRoute.length < 2) {
-      return (
-        projectedPoint: point,
-        segmentIndex: 0,
-        distanceMeters: 0.0,
-        segmentRatio: 0.0,
-        heading: _currentCarHeading,
-        progressRatio: 0.0,
-      );
-    }
-
-    double minDistance = double.infinity;
-    LatLng bestProjected = point;
-    int bestSegmentIndex = 0;
-    double bestRatio = 0.0;
-    double bestHeading = _currentCarHeading;
-    double bestAccumulatedDistance = 0.0;
-
-    double runningDistance = 0.0;
-    for (int i = 0; i < _effectiveRoute.length - 1; i++) {
-      final p1 = _effectiveRoute[i];
-      final p2 = _effectiveRoute[i + 1];
-      final segLen = i < _segmentLengths.length
-          ? _segmentLengths[i]
-          : _haversineMeters(p1, p2);
-
-      final dLat = p2.latitude - p1.latitude;
-      final dLon = p2.longitude - p1.longitude;
-      final meanLatRad =
-          (p1.latitude + p2.latitude) / 2.0 * (math.pi / 180.0);
-      final cosLat = math.cos(meanLatRad);
-      final dx = dLon * cosLat;
-      final dy = dLat;
-      final px = (point.longitude - p1.longitude) * cosLat;
-      final py = point.latitude - p1.latitude;
-
-      final lenSq = dx * dx + dy * dy;
-      final t =
-          lenSq == 0 ? 0.0 : ((px * dx + py * dy) / lenSq).clamp(0.0, 1.0);
-      final proj = LatLng(p1.latitude + t * dLat, p1.longitude + t * dLon);
-      final dist = _haversineMeters(point, proj);
-
-      if (dist < minDistance) {
-        minDistance = dist;
-        bestProjected = proj;
-        bestSegmentIndex = i;
-        bestRatio = t;
-        bestAccumulatedDistance = runningDistance + t * segLen;
-
-        final rawBearing = _calculateBearing(p1, p2);
-        if (i < _effectiveRoute.length - 2 && t > 0.65) {
-          final nextBearing = _calculateBearing(
-            _effectiveRoute[i + 1],
-            _effectiveRoute[i + 2],
-          );
-          final turnRatio = (t - 0.65) / 0.35;
-          bestHeading = _interpolateAngle(rawBearing, nextBearing, turnRatio);
-        } else {
-          bestHeading = rawBearing;
-        }
-      }
-      runningDistance += segLen;
-    }
-
-    final totalDist =
-        _totalRouteDistanceMeters > 0 ? _totalRouteDistanceMeters : 1.0;
-    final progress = (bestAccumulatedDistance / totalDist).clamp(0.0, 1.0);
-
-    return (
-      projectedPoint: bestProjected,
-      segmentIndex: bestSegmentIndex,
-      distanceMeters: minDistance,
-      segmentRatio: bestRatio,
-      heading: bestHeading,
-      progressRatio: progress,
-    );
   }
 
   double _haversineMeters(LatLng p1, LatLng p2) {
@@ -915,117 +912,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     return (from + diff * t) % 360.0;
   }
 
-  ({LatLng position, double heading, int segmentIndex}) _getPositionAtProgress(
-      double s) {
-    if (_effectiveRoute.isEmpty) {
-      return (position: const LatLng(0, 0), heading: 0.0, segmentIndex: 0);
-    }
-    if (_effectiveRoute.length == 1 ||
-        _segmentLengths.isEmpty ||
-        _totalRouteDistanceMeters <= 0) {
-      return (
-        position: _effectiveRoute.first,
-        heading: _currentCarHeading,
-        segmentIndex: 0
-      );
-    }
-
-    final clampedS = s.clamp(0.0, 1.0);
-    final targetDistance = clampedS * _totalRouteDistanceMeters;
-
-    double acc = 0.0;
-    int segIndex = 0;
-    double segRatio = 0.0;
-
-    for (int i = 0; i < _segmentLengths.length; i++) {
-      final segLen = _segmentLengths[i];
-      if (acc + segLen >= targetDistance || i == _segmentLengths.length - 1) {
-        segIndex = i;
-        segRatio =
-            segLen > 0 ? ((targetDistance - acc) / segLen).clamp(0.0, 1.0) : 0.0;
-        break;
-      }
-      acc += segLen;
-    }
-
-    final p1 = _effectiveRoute[segIndex];
-    final p2 = _effectiveRoute[segIndex + 1];
-
-    final curLat = p1.latitude + (p2.latitude - p1.latitude) * segRatio;
-    final curLng = p1.longitude + (p2.longitude - p1.longitude) * segRatio;
-    final newPos = LatLng(curLat, curLng);
-
-    final rawHeading = _calculateBearing(p1, p2);
-    double heading = rawHeading;
-    if (segIndex < _effectiveRoute.length - 2 && segRatio > 0.65) {
-      final nextHeading = _calculateBearing(
-        _effectiveRoute[segIndex + 1],
-        _effectiveRoute[segIndex + 2],
-      );
-      final turnRatio = (segRatio - 0.65) / 0.35;
-      heading = _interpolateAngle(rawHeading, nextHeading, turnRatio);
-    }
-
-    return (position: newPos, heading: heading, segmentIndex: segIndex);
-  }
-
-  void _setProgressOnRoute(double s, {bool updateCamera = true}) {
-    if (!mounted || _effectiveRoute.length < 2) return;
-
-    final clampedS = s.clamp(0.0, 1.0);
-    final posInfo = _getPositionAtProgress(clampedS);
-    final newPos = posInfo.position;
-    final heading = posInfo.heading;
-    final segIndex = posInfo.segmentIndex;
-
-    final traveled = <LatLng>[];
-    for (int i = 0; i <= segIndex && i < _effectiveRoute.length; i++) {
-      traveled.add(_effectiveRoute[i]);
-    }
-    traveled.add(newPos);
-
-    final remaining = <LatLng>[newPos];
-    for (int i = segIndex + 1; i < _effectiveRoute.length; i++) {
-      remaining.add(_effectiveRoute[i]);
-    }
-    if (remaining.length < 2 && _effectiveRoute.isNotEmpty) {
-      remaining.add(_effectiveRoute.last);
-    }
-
-    final remDist = (_initialDistanceKm * (1.0 - clampedS))
-        .clamp(0.0, _initialDistanceKm);
-    final remainingMinutes = (_initialEtaMinutes * (1.0 - clampedS))
-        .ceil()
-        .clamp(1, _initialEtaMinutes);
-
-    if (updateCamera && _followCar && _mapController != null) {
-      final now = DateTime.now();
-      if (now.difference(_lastCameraUpdateTime).inMilliseconds > 1000) {
-        _lastCameraUpdateTime = now;
-        _isProgrammaticCameraMove = true;
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLng(newPos),
-        );
-      }
-    }
-
-    setState(() {
-      _currentCarPosition = newPos;
-      _currentCarHeading = heading;
-      _traveledPoints = traveled;
-      _remainingPoints = remaining;
-      _remainingDistanceKm = remDist;
-      _remainingEtaMinutes = remainingMinutes;
-      _progressRatio = clampedS;
-      _isStopped = false;
-    });
-
-    final now = DateTime.now();
-    if (now.difference(_lastLiveUpdateSync).inMilliseconds > 2000) {
-      _lastLiveUpdateSync = now;
-      _syncLiveUpdate(progress: clampedS, etaMinutes: remainingMinutes);
-    }
-  }
   void _startOrSyncLiveUpdate() {
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
@@ -1079,28 +965,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     } catch (_) {}
   }
 
-  void _updateProgress(double progress) {
-    if (!mounted ||
-        _hasReceivedRealGps ||
-        _isOffline ||
-        _effectiveRoute.length < 2 ||
-        _totalRouteDistanceMeters <= 0) {
-      return;
-    }
-    _setProgressOnRoute(progress.clamp(0.0, 1.0));
-  }
-
-  void _startSimulation() {
-    if (_hasReceivedRealGps || _isOffline || _animController == null) return;
-    if (_animController!.value >= 1.0) {
-      _animController!.reset();
-    }
-    _animController!.forward();
-  }
-
-  /// Méthode publique prête pour connecter l'API backend / WebSockets en temps réel.
-  /// Lorsque le serveur ou l'application chauffeur envoie une mise à jour GPS,
-  /// cette méthode projette le véhicule sur la route réelle et anime son déplacement fluide.
+  /// Méthode appelée lorsque le serveur envoie une mise à jour GPS du chauffeur (via WebSocket driverLocationStream).
+  /// Positionne le véhicule exactement là où se trouve le chauffeur en animant son déplacement de manière fluide.
   void updateCarLocation(LatLng newPosition, {double? heading}) {
     if (_isOffline) {
       // Hors-ligne: conserver strictement la dernière position connue sur la carte
@@ -1108,123 +974,61 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     }
 
     _hasReceivedRealGps = true;
-    _animController?.stop();
+
+    final targetHeading = (heading != null && heading != 0.0)
+        ? heading
+        : _calculateBearing(_currentCarPosition, newPosition);
 
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
-    final proj = _findClosestProjectionOnRoute(newPosition);
-    // Tolérance d'accrochage à la route adaptée à la précision GPS urbaine (100 mètres)
-    final bool isSnapped = proj.distanceMeters <= 100.0;
-    final targetPos = isSnapped ? proj.projectedPoint : newPosition;
-    final targetHeading = heading ??
-        (isSnapped
-            ? proj.heading
-            : _calculateBearing(_currentCarPosition, newPosition));
-
     if (isTest) {
-      if (isSnapped) {
-        _setProgressOnRoute(proj.progressRatio);
-      } else {
-        _applyExternalGpsLocation(targetPos, heading: targetHeading);
-      }
+      setState(() {
+        _currentCarPosition = newPosition;
+        _currentCarHeading = targetHeading;
+        _updateRouteProgressForCar(newPosition);
+      });
       return;
     }
 
-    // Anti-jitter: si le déplacement est négligeable (< 0.8m), ignorer
-    final distChange = _haversineMeters(_currentCarPosition, targetPos);
-    if (distChange < 0.8) {
+    // Anti-jitter: si le déplacement est négligeable (< 0.5m), ignorer
+    final distChange = _haversineMeters(_currentCarPosition, newPosition);
+    if (distChange < 0.5) {
+      return;
+    }
+
+    // Si le déplacement est important (> 80m, ex: après reconnexion ou grand déplacement sans connexion),
+    // positionner immédiatement et exactement le véhicule à l'endroit du chauffeur sans délai
+    if (distChange > 80) {
+      _smoothCarController?.stop();
+      setState(() {
+        _currentCarPosition = newPosition;
+        _currentCarHeading = targetHeading;
+        _updateRouteProgressForCar(newPosition);
+      });
       return;
     }
 
     _smoothCarController?.stop();
 
-    if (isSnapped) {
-      _isSnappedMovement = true;
-      _startProgressRatio = _progressRatio;
+    _animStartPos = _currentCarPosition;
+    _animEndPos = newPosition;
+    _animStartHeading = _currentCarHeading;
+    _animEndHeading = targetHeading;
 
-      // Filtre anti-retour arrière strict: le véhicule avance de manière fluide vers la destination
-      // Les fluctuations GPS mineures (< 40m) ne font pas reculer le véhicule sur la ligne
-      double targetRatio = proj.progressRatio;
-      if (targetRatio < _startProgressRatio) {
-        final backwardDist =
-            (_startProgressRatio - targetRatio) * _totalRouteDistanceMeters;
-        if (backwardDist < 40.0) {
-          targetRatio = _startProgressRatio;
-        }
-      }
-      _targetProgressRatio = targetRatio;
-
-      _animStartPos = _currentCarPosition;
-      _animEndPos = targetPos;
-      _animStartHeading = _currentCarHeading;
-      _animEndHeading = targetHeading;
-
-      _smoothCarController?.forward(from: 0.0);
-    } else {
-      _isSnappedMovement = false;
-      _animStartPos = _currentCarPosition;
-      _animEndPos = targetPos;
-      _animStartHeading = _currentCarHeading;
-      _animEndHeading = targetHeading;
-
-      _smoothCarController?.forward(from: 0.0);
-    }
+    _smoothCarController?.forward(from: 0.0);
   }
 
-  void _applyExternalGpsLocation(LatLng newPosition, {double? heading}) {
-    if (!mounted || _effectiveRoute.isEmpty) return;
-
-    final proj = _findClosestProjectionOnRoute(newPosition);
-    final bool isSnapped = proj.distanceMeters <= 100.0;
-    final finalPos = isSnapped ? proj.projectedPoint : newPosition;
-    final computedHeading = heading ??
-        (isSnapped
-            ? proj.heading
-            : (proj.segmentIndex < _effectiveRoute.length - 1
-                ? _calculateBearing(_effectiveRoute[proj.segmentIndex],
-                    _effectiveRoute[proj.segmentIndex + 1])
-                : _currentCarHeading));
-
-    final traveled = <LatLng>[];
-    for (int i = 0; i <= proj.segmentIndex && i < _effectiveRoute.length; i++) {
-      traveled.add(_effectiveRoute[i]);
-    }
-    traveled.add(finalPos);
-
-    final remaining = <LatLng>[finalPos];
-    for (int i = proj.segmentIndex + 1; i < _effectiveRoute.length; i++) {
-      remaining.add(_effectiveRoute[i]);
-    }
-    if (remaining.length < 2 && _effectiveRoute.isNotEmpty) {
-      remaining.add(_effectiveRoute.last);
-    }
-
-    final ratio = proj.progressRatio;
-
-    // Recentrage automatique fluide si le mode suivi est activé
-    if (_followCar && _mapController != null) {
-      final now = DateTime.now();
-      if (now.difference(_lastCameraUpdateTime).inMilliseconds > 1000) {
-        _lastCameraUpdateTime = now;
-        _isProgrammaticCameraMove = true;
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLng(finalPos),
-        );
-      }
-    }
-
+  @visibleForTesting
+  void applyExternalGpsLocation(LatLng newPosition, {double? heading}) {
+    if (!mounted) return;
+    final targetHeading = (heading != null && heading != 0.0)
+        ? heading
+        : _calculateBearing(_currentCarPosition, newPosition);
     setState(() {
-      _currentCarPosition = finalPos;
-      _currentCarHeading = computedHeading;
-      _traveledPoints = traveled;
-      _remainingPoints = remaining;
-      _progressRatio = ratio;
-      _remainingDistanceKm =
-          (_initialDistanceKm * (1.0 - ratio)).clamp(0.0, _initialDistanceKm);
-      _remainingEtaMinutes = (_initialEtaMinutes * (1.0 - ratio))
-          .ceil()
-          .clamp(1, _initialEtaMinutes);
+      _currentCarPosition = newPosition;
+      _currentCarHeading = targetHeading;
+      _updateRouteProgressForCar(newPosition);
     });
   }
 
@@ -1506,7 +1310,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _isOffline = !_isOffline;
     });
     if (_isOffline) {
-      _animController?.stop();
       _smoothCarController?.stop();
     } else {
       _onNetworkRestored();
@@ -1636,7 +1439,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Set<Polyline> _buildPolylines() {
-    if (_effectiveRoute.isEmpty) return {};
+    if (_effectiveRoute.length < 2) return {};
 
     final polylines = <Polyline>{};
 
@@ -1656,18 +1459,20 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     }
 
     // 2. Distance restante avec couleurs dynamiques de trafic (Vert fluide, ambre ralenti, rouge bouchon)
+    // Ne JAMAIS tracer de ligne droite artificielle en vol d'oiseau
     final activePts = _remainingPoints.length >= 2
         ? _remainingPoints
-        : (_effectiveRoute.length >= 2
-            ? _effectiveRoute
-            : [_currentCarPosition, LatLng(widget.destination.latitude, widget.destination.longitude)]);
-    final activePolylines = RideEtaCalculator.buildTrafficPolylines(
-      baseId: 'active_route',
-      points: activePts,
-      traffic: _traffic.isNotEmpty ? _traffic : widget.rideOption.traffic,
-      width: 4,
-    );
-    polylines.addAll(activePolylines);
+        : _effectiveRoute;
+
+    if (activePts.length >= 2) {
+      final activePolylines = RideEtaCalculator.buildTrafficPolylines(
+        baseId: 'active_route',
+        points: activePts,
+        traffic: _traffic.isNotEmpty ? _traffic : widget.rideOption.traffic,
+        width: 4,
+      );
+      polylines.addAll(activePolylines);
+    }
 
     return polylines;
   }

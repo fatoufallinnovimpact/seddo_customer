@@ -158,8 +158,8 @@ void main() {
     expect(find.text('Sécurité'), findsOneWidget);
     expect(find.text('Contacts d’urgence, partage de trajet'), findsOneWidget);
 
-    expect(find.text('Notifications'), findsNothing);
-    expect(find.text('Push et SMS'), findsNothing);
+    expect(find.text('Notifications'), findsOneWidget);
+    expect(find.text('Push et SMS'), findsOneWidget);
 
     expect(find.text('Langue'), findsOneWidget);
 
@@ -371,11 +371,43 @@ void main() {
     await tester.tap(avatarButton);
     await tester.pumpAndSettle();
 
-    // Verify modal bottom sheet is shown with both options
+    // Verify modal bottom sheet is shown with options
     expect(find.text('Photo de profil'), findsOneWidget);
+    expect(find.byKey(const Key('photo_option_edit_profile')), findsOneWidget);
     expect(find.text('Prendre une photo'), findsOneWidget);
     expect(find.text('Choisir depuis la galerie'), findsOneWidget);
     expect(find.byKey(const Key('photo_option_camera')), findsOneWidget);
     expect(find.byKey(const Key('photo_option_gallery')), findsOneWidget);
+  });
+
+  testWidgets('SeddoDrawerWidget displays Nouveau when user rating is null from API',
+      (tester) async {
+    const testUserNoRating = UserModel(
+      id: 'usr_no_rating',
+      phone: '77 100 43 13',
+      firstName: 'Fatou',
+      lastName: 'Fall',
+      rating: null,
+      ratingCount: 0,
+    );
+    AuthRepository().setCurrentUser(testUserNoRating);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      AuthRepository().setCurrentUser(null);
+    });
+
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const Key('drawer_user_rating')), findsOneWidget);
+    expect(find.text('Nouveau'), findsOneWidget);
+    expect(find.byKey(const Key('drawer_edit_profile_button')), findsOneWidget);
+    expect(find.text('Modifier'), findsOneWidget);
   });
 }

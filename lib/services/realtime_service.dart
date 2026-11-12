@@ -113,6 +113,8 @@ class RealtimeDriverLocationEvent {
   final double heading;
   final double? speed;
   final double? accuracy;
+  final int? etaMinutes;
+  final double? distanceMeters;
   final DateTime? timestamp;
   final int version;
   final Map<String, dynamic> raw;
@@ -124,6 +126,8 @@ class RealtimeDriverLocationEvent {
     this.heading = 0.0,
     this.speed,
     this.accuracy,
+    this.etaMinutes,
+    this.distanceMeters,
     this.timestamp,
     this.version = 0,
     this.raw = const {},
@@ -212,6 +216,29 @@ class RealtimeDriverLocationEvent {
       time = DateTime.fromMillisecondsSinceEpoch(rawTime);
     }
 
+    final durS = (json['durationSeconds'] ??
+            json['duration'] ??
+            dataMap?['durationSeconds'] ??
+            dataMap?['duration'] ??
+            posObj['durationSeconds'] ??
+            posObj['duration'] as num?)
+        ?.toInt();
+    final etaM = (json['etaMinutes'] ??
+            json['eta'] ??
+            dataMap?['etaMinutes'] ??
+            dataMap?['eta'] ??
+            posObj['etaMinutes'] ??
+            posObj['eta'] ??
+            (durS != null && durS > 0 ? (durS / 60.0).ceil() : null) as num?)
+        ?.toInt();
+    final distM = (json['distanceMeters'] ??
+            json['distance'] ??
+            dataMap?['distanceMeters'] ??
+            dataMap?['distance'] ??
+            posObj['distanceMeters'] ??
+            posObj['distance'] as num?)
+        ?.toDouble();
+
     return RealtimeDriverLocationEvent(
       rideId: rideId,
       driverId: driverId,
@@ -219,6 +246,8 @@ class RealtimeDriverLocationEvent {
       heading: heading,
       speed: speed,
       accuracy: accuracy,
+      etaMinutes: etaM,
+      distanceMeters: distM,
       timestamp: time,
       version: version,
       raw: json,

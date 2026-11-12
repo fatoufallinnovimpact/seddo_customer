@@ -20,6 +20,7 @@ import 'package:seddo/features/auth/data/models/user_model.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
+import 'package:seddo/features/profile/presentation/pages/edit_profile_page.dart';
 
 /// Lateral navigation drawer matching the design mockup:
 /// - User profile: Real avatar photo or initials, real user name, rating from GET /v1/users/me and phone number
@@ -74,6 +75,25 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
       setState(() {
         _currentUser = remote;
       });
+    }
+  }
+
+  Future<void> _openEditProfile(BuildContext context) async {
+    Navigator.of(context).pop();
+    final updated = await Navigator.of(context).push<UserModel?>(
+      SlideRightToLeftRoute(
+        page: EditProfilePage(
+          currentUser: _currentUser ?? _authRepo.currentUser,
+        ),
+      ),
+    );
+    if (mounted) {
+      if (updated != null) {
+        setState(() {
+          _currentUser = updated;
+        });
+      }
+      _loadUser();
     }
   }
 
@@ -192,6 +212,17 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
 
                         _buildMenuItem(
                           context: context,
+                          iconPath: 'assets/icons/notification-svgrepo-com.svg',
+                          title: 'drawer.notifications'.tr(),
+                          subtitle: 'drawer.notifications_sub'.tr(),
+                          onTap: () {
+                            _openEditProfile(context);
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        _buildMenuItem(
+                          context: context,
                           iconPath: 'assets/icons/language-svgrepo-com.svg',
                           title: 'drawer.language'.tr(),
                           subtitle: context.locale.languageCode == 'wo'
@@ -286,9 +317,11 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                 ? user.formattedDisplayPhone
                 : '';
 
-    final displayRating = (user != null && user.rating != null)
+    final bool hasRating =
+        user != null && user.rating != null && user.rating! > 0;
+    final displayRating = hasRating
         ? user.rating!.toStringAsFixed(1).replaceAll('.', ',')
-        : (user != null ? user.displayRating : '5,0');
+        : 'Nouveau';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -366,16 +399,59 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                displayName,
-                style: GoogleFonts.inter(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.6,
+              InkWell(
+                key: const Key('drawer_user_name_button'),
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _openEditProfile(context),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        displayName,
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.6,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      key: const Key('drawer_edit_profile_button'),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3.5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.edit_outlined,
+                            size: 12,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 3.5),
+                          Text(
+                            'Modifier',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 3),
               FittedBox(
@@ -384,10 +460,14 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.star_rounded,
+                    Icon(
+                      hasRating
+                          ? Icons.star_rounded
+                          : Icons.star_outline_rounded,
                       size: 18,
-                      color: AppColors.amberWarning,
+                      color: hasRating
+                          ? AppColors.amberWarning
+                          : AppColors.textSecondary,
                     ),
                     const SizedBox(width: 3),
                     Text(
@@ -396,7 +476,9 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                       style: GoogleFonts.inter(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+                        color: hasRating
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
                       ),
                     ),
                     Text(
@@ -439,7 +521,9 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     if (photoUrl != null && photoUrl.isNotEmpty) {
       final fullUrl = photoUrl.startsWith('http')
           ? photoUrl
-          : '${ApiEndpoints.baseUrl}$photoUrl';
+          : (photoUrl.startsWith('/')
+              ? '${ApiEndpoints.baseUrl}$photoUrl'
+              : '${ApiEndpoints.baseUrl}/$photoUrl');
       return Image.network(
         fullUrl,
         headers: _accessToken != null
@@ -505,7 +589,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Prenez une photo ou choisissez une image depuis votre galerie.',
+                    'Modifiez vos informations ou mettez à jour votre photo.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                       fontSize: 13,
@@ -513,6 +597,53 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  Material(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    child: ListTile(
+                      key: const Key('photo_option_edit_profile'),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      leading: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.edit_outlined,
+                          color: AppColors.primary,
+                          size: 22,
+                        ),
+                      ),
+                      title: Text(
+                        'Modifier mon profil',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Nom, prénom et préférences de notification',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF94A3B8),
+                      ),
+                      onTap: () {
+                        Navigator.of(bottomSheetContext).pop();
+                        _openEditProfile(context);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   Material(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(14),

@@ -10,6 +10,7 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.dart';
 import 'package:seddo/features/home/data/models/home_suggestions_model.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/home/domain/bloc/home_event.dart';
 import 'package:seddo/features/home/domain/bloc/home_state.dart';
@@ -71,9 +72,11 @@ class _HomePageContentState extends State<_HomePageContent>
   HomeSuggestionsModel? _suggestions;
   List<RecentSuggestionModel> _localRecentTrips = [];
 
-  String _currentAddressShort = 'Rue YF-557, 20';
-  String _currentAddressDetails = 'Yoff, Almadies, Département de Dakar';
-  LatLng? _currentUserLocation;
+  String _currentAddressShort =
+      UserLocationStorage.cached?.addressShort ?? 'Rue YF-557, 20';
+  String _currentAddressDetails =
+      UserLocationStorage.cached?.addressDetails ?? 'Yoff, Almadies, Département de Dakar';
+  LatLng? _currentUserLocation = UserLocationStorage.cached?.location;
   GoogleMapController? _miniMapController;
 
   @override
@@ -84,6 +87,19 @@ class _HomePageContentState extends State<_HomePageContent>
     // Initialisation instantanée depuis le cache mémoire et local pour un affichage 100% fluide sans délai
     _suggestions = HomeSuggestionsStorage.cachedSuggestions;
     _localRecentTrips = RecentTripStorage.cachedRecentTrips;
+
+    // Charger immédiatement la dernière position connue depuis SharedPreferences si pas encore en mémoire
+    if (UserLocationStorage.cached == null) {
+      UserLocationStorage.loadCachedLocation().then((cached) {
+        if (cached != null && mounted) {
+          setState(() {
+            _currentAddressShort = cached.addressShort;
+            _currentAddressDetails = cached.addressDetails;
+            _currentUserLocation = cached.location;
+          });
+        }
+      });
+    }
 
     HomeSuggestionsStorage.loadSuggestions().then((cached) {
       if (cached != null && mounted && _suggestions == null) {
@@ -134,9 +150,12 @@ class _HomePageContentState extends State<_HomePageContent>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final bloc = context.read<HomeBloc>();
-        _currentUserLocation = bloc.state.userLocation;
-        _resolveUserLocationAddress(bloc.state.userLocation);
-        _fetchNearbyDrivers(bloc.state.userLocation);
+        _currentUserLocation ??= bloc.state.userLocation;
+        // Ne résoudre sur les coordonnées génériques que si aucune adresse n'est connue
+        if (UserLocationStorage.cached == null) {
+          _resolveUserLocationAddress(_currentUserLocation ?? bloc.state.userLocation);
+        }
+        _fetchNearbyDrivers(_currentUserLocation ?? bloc.state.userLocation);
         _fetchSuggestions();
         _initRealUserLocation();
         _checkActiveRide();
@@ -197,7 +216,17 @@ class _HomePageContentState extends State<_HomePageContent>
             ),
           ),
         );
-        _resolveUserLocationAddress(loc);
+        final currentCached = UserLocationStorage.cached;
+        if (currentCached == null ||
+            Geolocator.distanceBetween(
+                  currentCached.location.latitude,
+                  currentCached.location.longitude,
+                  loc.latitude,
+                  loc.longitude,
+                ) >
+                30) {
+          _resolveUserLocationAddress(loc);
+        }
       }
     } catch (_) {}
 
@@ -231,7 +260,17 @@ class _HomePageContentState extends State<_HomePageContent>
             ),
           ),
         );
-        _resolveUserLocationAddress(loc);
+        final currentCached = UserLocationStorage.cached;
+        if (currentCached == null ||
+            Geolocator.distanceBetween(
+                  currentCached.location.latitude,
+                  currentCached.location.longitude,
+                  loc.latitude,
+                  loc.longitude,
+                ) >
+                30) {
+          _resolveUserLocationAddress(loc);
+        }
         if (mounted) {
           context.read<HomeBloc>().add(HomeUserLocationUpdatedEvent(loc));
           _fetchNearbyDrivers(loc);
@@ -270,7 +309,7 @@ class _HomePageContentState extends State<_HomePageContent>
       context.read<HomeBloc>().add(HomeUserLocationUpdatedEvent(newLoc));
       _fetchNearbyDrivers(newLoc);
     }
-    // Si déplacement de plus de 20m, actualiser l'adresse affichée
+    // Si déplacement de plus de 30m, actualiser l'adresse affichée
     if (oldLoc == null ||
         Geolocator.distanceBetween(
               oldLoc.latitude,
@@ -278,28 +317,47 @@ class _HomePageContentState extends State<_HomePageContent>
               newLoc.latitude,
               newLoc.longitude,
             ) >
-            20) {
+            30) {
       _resolveUserLocationAddress(newLoc);
     }
   }
 
   /// Résout le vrai nom de rue et le quartier pour la position actuelle
   Future<void> _resolveUserLocationAddress(LatLng location) async {
+    // 1. Vérifier si l'adresse est déjà en cache mémoire instantané
+    final cachedGeocode = UserLocationStorage.getCachedGeocode(location);
+    if (cachedGeocode != null) {
+      if (mounted) {
+        setState(() {
+          _currentAddressShort = cachedGeocode.short;
+          _currentAddressDetails = cachedGeocode.details;
+          _currentUserLocation = location;
+        });
+      }
+      return;
+    }
+
     try {
       final res = await _placesService.reverseGeocode(
         location.latitude,
         location.longitude,
       );
       if (mounted) {
+        final short = res.mainText.isNotEmpty ? res.mainText : _currentAddressShort;
+        final details = res.secondaryText.isNotEmpty ? res.secondaryText : _currentAddressDetails;
+
         setState(() {
-          if (res.mainText.isNotEmpty) {
-            _currentAddressShort = res.mainText;
-          }
-          if (res.secondaryText.isNotEmpty) {
-            _currentAddressDetails = res.secondaryText;
-          }
+          _currentAddressShort = short;
+          _currentAddressDetails = details;
           _currentUserLocation = location;
         });
+
+        UserLocationStorage.saveLocation(
+          addressShort: short,
+          addressDetails: details,
+          location: location,
+        );
+
         _miniMapController?.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(

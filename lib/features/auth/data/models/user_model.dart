@@ -14,6 +14,8 @@ class UserModel extends Equatable {
   final double? rating;
   final int? ratingCount;
   final String? photoUrl;
+  final bool notifyPush;
+  final bool notifySms;
 
   const UserModel({
     required this.id,
@@ -27,14 +29,16 @@ class UserModel extends Equatable {
     this.rating,
     this.ratingCount,
     this.photoUrl,
+    this.notifyPush = true,
+    this.notifySms = false,
   });
 
-  /// Formatted rating string from GET /v1/users/me (e.g. "4,8" or "5,0" default)
+  /// Formatted rating string from GET /v1/users/me (e.g. "4,8" or "Nouveau")
   String get displayRating {
-    if (rating != null) {
+    if (rating != null && rating! > 0) {
       return rating!.toStringAsFixed(1).replaceAll('.', ',');
     }
-    return '5,0';
+    return 'Nouveau';
   }
 
   /// Full display name
@@ -177,6 +181,14 @@ class UserModel extends Equatable {
         map['needs_profile'] ??
         false) as bool? ?? false;
 
+    final notifyPush = (map['notifyPush'] ??
+        map['notify_push'] ??
+        true) as bool? ?? true;
+
+    final notifySms = (map['notifySms'] ??
+        map['notify_sms'] ??
+        false) as bool? ?? false;
+
     return UserModel(
       id: (map['id'] ?? map['_id'] ?? '') as String? ?? '',
       phone: phone,
@@ -189,6 +201,8 @@ class UserModel extends Equatable {
       rating: parsedRating,
       ratingCount: parsedRatingCount,
       photoUrl: photoUrl,
+      notifyPush: notifyPush,
+      notifySms: notifySms,
     );
   }
 
@@ -205,6 +219,8 @@ class UserModel extends Equatable {
       'rating': rating,
       'ratingCount': ratingCount,
       'photoUrl': photoUrl,
+      'notifyPush': notifyPush,
+      'notifySms': notifySms,
     };
   }
 
@@ -220,6 +236,8 @@ class UserModel extends Equatable {
     double? rating,
     int? ratingCount,
     String? photoUrl,
+    bool? notifyPush,
+    bool? notifySms,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -233,6 +251,8 @@ class UserModel extends Equatable {
       rating: rating ?? this.rating,
       ratingCount: ratingCount ?? this.ratingCount,
       photoUrl: photoUrl ?? this.photoUrl,
+      notifyPush: notifyPush ?? this.notifyPush,
+      notifySms: notifySms ?? this.notifySms,
     );
   }
 
@@ -249,5 +269,7 @@ class UserModel extends Equatable {
         rating,
         ratingCount,
         photoUrl,
+        notifyPush,
+        notifySms,
       ];
 }

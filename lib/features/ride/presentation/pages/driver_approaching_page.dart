@@ -232,10 +232,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
 
-    // Contrôleur de déplacement fluide de la voiture (interpolation 4 secondes - PDF Seddo)
+    // Contrôleur de déplacement fluide de la voiture (interpolation fluide 1000ms)
     _smoothCarController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: const Duration(milliseconds: 1000),
     )..addListener(() {
         if (_animStartPos != null && _animEndPos != null && mounted) {
           final t = _smoothCarController!.value;
@@ -256,6 +256,19 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
             _currentCarHeading = curHead;
           });
           _updateEtaAndDistance(newPos);
+        }
+      })
+      ..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          if (_animEndPos != null && mounted) {
+            setState(() {
+              _currentCarPosition = _animEndPos!;
+              if (_animEndHeading != null) {
+                _currentCarHeading = _animEndHeading!;
+              }
+            });
+            _updateEtaAndDistance(_animEndPos!);
+          }
         }
       });
 
@@ -411,6 +424,15 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final heading = event.heading != 0.0
         ? event.heading
         : _calculateBearing(_currentCarPosition, event.location);
+
+    if (event.etaMinutes != null && event.etaMinutes! > 0) {
+      _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
+    }
+    if (event.distanceMeters != null && event.distanceMeters! > 0) {
+      setState(() {
+        _remainingDistanceM = event.distanceMeters!.toDouble();
+      });
+    }
 
     updateDriverGpsLocation(event.location, heading: heading);
   }
@@ -800,6 +822,15 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     // Si l'itinéraire routier réel a déjà été initialisé (ex. depuis l'API backend), ne pas l'écraser
     if (_approachRoutePoints.length >= 2) return;
 
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      // Pour une course réelle connectée au backend, le client ne recalcule JAMAIS la route lui-même.
+      // L'itinéraire provient EXCLUSIVEMENT du backend via WebSocket (ride.route.updated) ou REST.
+      _fetchRideDetails(effectiveRideId);
+      return;
+    }
+
     final bool isTest =
         WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTest) {
@@ -872,6 +903,15 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       _currentApproachIndex,
     );
     _currentApproachIndex = idx;
+
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty && overrideEtaSeconds == null) {
+      // Pour une course réelle connectée au backend, toutes les valeurs d'ETA et de distance
+      // proviennent EXCLUSIVEMENT du backend via WebSocket (ride.eta, driver.location) ou REST.
+      // Aucun recalcul local côté front !
+      return;
+    }
 
     final remM = RideEtaCalculator.remainingMeters(
       _approachRoutePoints,
@@ -1133,9 +1173,16 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final calcHeading =
         heading ?? _calculateBearing(_currentCarPosition, position);
 
-    // Si la position a très peu changé (< 1m), mise à jour instantanée
-    if ((_currentCarPosition.latitude - position.latitude).abs() < 0.00001 &&
-        (_currentCarPosition.longitude - position.longitude).abs() < 0.00001) {
+    // Si la position a très peu changé (< 0.5m), ignorer
+    final distChange = RideEtaCalculator.dist(_currentCarPosition, position);
+    if (distChange < 0.5) {
+      return;
+    }
+
+    // Si le déplacement est important (> 80m, ex: reconnexion ou grand déplacement),
+    // positionner immédiatement et exactement le véhicule à l'endroit du chauffeur
+    if (distChange > 80) {
+      _smoothCarController?.stop();
       setState(() {
         _currentCarPosition = position;
         _currentCarHeading = calcHeading;

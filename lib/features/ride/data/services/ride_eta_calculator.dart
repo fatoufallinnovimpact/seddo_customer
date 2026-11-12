@@ -165,8 +165,13 @@ class RideEtaCalculator {
     if (points.isEmpty) return {};
 
     final effectiveStart = startIndex.clamp(0, points.length - 1);
+    final bool canConnectCar = currentCarPosition != null &&
+        effectiveStart > 0 &&
+        effectiveStart < points.length &&
+        dist(currentCarPosition, points[effectiveStart]) <= 50.0;
+
     final List<LatLng> remainingPoints;
-    if (currentCarPosition != null && effectiveStart > 0) {
+    if (canConnectCar) {
       final nextIdx = (effectiveStart + 1).clamp(0, points.length);
       remainingPoints = [
         currentCarPosition,
@@ -213,7 +218,7 @@ class RideEtaCalculator {
       final actualTo = math.min(segTo, points.length - 1);
 
       final List<LatLng> segPoints;
-      if (currentCarPosition != null &&
+      if (canConnectCar &&
           actualFrom == effectiveStart &&
           effectiveStart > 0) {
         final nextIdx = (actualFrom + 1).clamp(0, points.length);
@@ -273,9 +278,14 @@ class RideEtaCalculator {
     final polylines = <Polyline>{};
 
     // Si aucune donnée de trafic n'est disponible, tracer toute la ligne restante en vert trafic fluide
+    final bool canConnectCar = currentCarPosition != null &&
+        effectiveStart > 0 &&
+        effectiveStart < points.length &&
+        dist(currentCarPosition, points[effectiveStart]) <= 50.0;
+
     if (traffic.isEmpty) {
       final List<LatLng> pts;
-      if (currentCarPosition != null && effectiveStart > 0) {
+      if (canConnectCar) {
         pts = [
           currentCarPosition,
           ...points.sublist((effectiveStart + 1).clamp(0, points.length)),
@@ -310,7 +320,7 @@ class RideEtaCalculator {
       final speed = _speedAtPointIndex(i - 1, traffic);
       if (speed != curSpeed) {
         final List<LatLng> segPts;
-        if (segIndex == 0 && currentCarPosition != null && curFrom > 0) {
+        if (segIndex == 0 && canConnectCar && curFrom > 0) {
           final nextIdx = (curFrom + 1).clamp(0, points.length);
           segPts = [
             currentCarPosition,

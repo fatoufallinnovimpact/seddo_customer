@@ -14,6 +14,7 @@ import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/notification_service.dart';
 import 'package:seddo/services/app_params_service.dart';
 import 'package:seddo/core/maps/seddo_maps.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,6 +75,7 @@ void main() async {
   await MapStyleService.loadMapStyle();
   await AppParamsService().initParams();
   await MapServiceManager.instance.init();
+  await UserLocationStorage.loadCachedLocation();
 
   try {
     await Firebase.initializeApp(

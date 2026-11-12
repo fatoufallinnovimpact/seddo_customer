@@ -296,6 +296,43 @@ class AuthRepository {
     }
   }
 
+  /// Updates user profile details via PATCH /v1/users/me
+  Future<UserModel> updateProfile({
+    String? firstName,
+    String? lastName,
+    String? lang,
+    bool? notifyPush,
+    bool? notifySms,
+  }) async {
+    if (_isTest) {
+      final updated = (_currentUser ??
+              const UserModel(id: 'test', phone: '771234512'))
+          .copyWith(
+        firstName: firstName,
+        lastName: lastName,
+        lang: lang,
+        notifyPush: notifyPush,
+        notifySms: notifySms,
+      );
+      _currentUser = updated;
+      await _persistUser(updated);
+      return updated;
+    }
+
+    final token = await getAccessToken();
+    final updated = await _apiService.updateMe(
+      firstName: firstName,
+      lastName: lastName,
+      lang: lang,
+      notifyPush: notifyPush,
+      notifySms: notifySms,
+      accessToken: token,
+    );
+    _currentUser = updated;
+    await _persistUser(updated);
+    return updated;
+  }
+
   /// Uploads user profile photo via PUT /v1/users/me/photo
   Future<UserModel> uploadProfilePhoto(String filePath) async {
     if (_isTest) {

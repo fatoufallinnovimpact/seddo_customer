@@ -140,6 +140,52 @@ class AuthApiService {
     }
   }
 
+  /// PATCH /v1/users/me
+  /// Updates user identity (firstName, lastName) and notification preferences (notifyPush, notifySms).
+  Future<UserModel> updateMe({
+    String? firstName,
+    String? lastName,
+    String? lang,
+    bool? notifyPush,
+    bool? notifySms,
+    String? accessToken,
+  }) async {
+    try {
+      final options = Options();
+      if (accessToken != null && accessToken.isNotEmpty) {
+        options.headers = {'Authorization': 'Bearer $accessToken'};
+      }
+
+      final payload = <String, dynamic>{};
+      if (firstName != null && firstName.trim().isNotEmpty) {
+        payload['firstName'] = firstName.trim();
+      }
+      if (lastName != null && lastName.trim().isNotEmpty) {
+        payload['lastName'] = lastName.trim();
+      }
+      if (lang != null && lang.trim().isNotEmpty) {
+        payload['lang'] = lang.trim();
+      }
+      if (notifyPush != null) {
+        payload['notifyPush'] = notifyPush;
+      }
+      if (notifySms != null) {
+        payload['notifySms'] = notifySms;
+      }
+
+      final response = await _dio.patch(
+        ApiEndpoints.userMe,
+        data: payload,
+        options: options,
+      );
+
+      final data = _parseResponseData(response.data);
+      return UserModel.fromJson(data);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
   /// PUT /v1/users/me/photo
   /// Multipart upload with field `file`: JPEG or PNG. Returns the updated UserModel.
   Future<UserModel> uploadPhoto({

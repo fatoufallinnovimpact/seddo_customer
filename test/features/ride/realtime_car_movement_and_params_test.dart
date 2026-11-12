@@ -285,5 +285,63 @@ void main() {
       final activeRidePage = widget as ActiveRidePage;
       expect(activeRidePage.autoStartSimulation, isTrue);
     });
+
+    test('RealtimeDriverLocationEvent parses etaMinutes and distanceMeters from backend', () {
+      final json = {
+        'rideId': 'ride_live_123',
+        'lat': 14.6937,
+        'lng': -17.4440,
+        'heading': 45.0,
+        'etaMinutes': 7,
+        'distanceMeters': 2400.0,
+      };
+
+      final event = RealtimeDriverLocationEvent.fromJson(json);
+      expect(event.rideId, equals('ride_live_123'));
+      expect(event.etaMinutes, equals(7));
+      expect(event.distanceMeters, equals(2400.0));
+      expect(event.location.latitude, closeTo(14.6937, 0.0001));
+    });
+
+    testWidgets('ActiveRidePage with connected rideId does not recalculate ETA/distance on car movement',
+        (tester) async {
+      final polylinePoints = [
+        const LatLng(14.6698, -17.4326),
+        const LatLng(14.6750, -17.4400),
+        const LatLng(14.6850, -17.4500),
+        const LatLng(14.7431, -17.5195),
+      ];
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            rideId: 'backend_ride_xyz',
+            departure: departure,
+            destination: destination,
+            driver: driver.copyWith(etaMinutes: 15, distanceKm: 8.5),
+            rideOption: rideOption,
+            polylinePoints: polylinePoints,
+            isOffline: false,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(ActiveRidePage));
+      expect(state.remainingEtaMinutes, equals(15));
+      expect(state.remainingDistanceKm, equals(8.5));
+
+      // Move car along the route - should NOT recalculate or overwrite backend values
+      const driverExactGps = LatLng(14.6800, -17.4450);
+      state.updateCarLocation(driverExactGps, heading: 45.0);
+      await tester.pump();
+
+      // Car is positioned exactly where the driver is
+      expect(state.currentCarPosition, equals(driverExactGps));
+      // Backend values must remain strictly unchanged (no front-end recalculation)
+      expect(state.remainingEtaMinutes, equals(15));
+      expect(state.remainingDistanceKm, equals(8.5));
+    });
   });
 }
