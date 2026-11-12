@@ -17,12 +17,13 @@ class AuthTokensModel extends Equatable {
   });
 
   factory AuthTokensModel.fromJson(Map<String, dynamic> json) {
+    final rawUser = json['user'] ?? json['data']?['user'] ?? json['profile'];
     return AuthTokensModel(
-      accessToken: json['accessToken'] as String? ?? '',
-      refreshToken: json['refreshToken'] as String? ?? '',
-      expiresIn: json['expiresIn'] as int?,
-      user: json['user'] != null
-          ? UserModel.fromJson(json['user'] as Map<String, dynamic>)
+      accessToken: (json['accessToken'] ?? json['access_token'] ?? '') as String? ?? '',
+      refreshToken: (json['refreshToken'] ?? json['refresh_token'] ?? '') as String? ?? '',
+      expiresIn: (json['expiresIn'] ?? json['expires_in']) as int?,
+      user: rawUser is Map<String, dynamic>
+          ? UserModel.fromJson(rawUser)
           : null,
     );
   }

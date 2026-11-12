@@ -118,6 +118,16 @@ void main() {
     tester.view.devicePixelRatio = 2.0;
     addTearDown(() => tester.view.resetPhysicalSize());
 
+    const testUser = UserModel(
+      id: 'usr_default',
+      phone: '77 123 45 12',
+      firstName: 'Fatou',
+      lastName: 'Fall',
+      rating: 4.8,
+    );
+    AuthRepository().setCurrentUser(testUser);
+    addTearDown(() => AuthRepository().setCurrentUser(null));
+
     await tester.pumpWidget(
       buildTestableWidget(child: const SeddoDrawerWidget()),
     );
@@ -125,9 +135,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(seconds: 1));
 
-    // 1. Profile
-    expect(find.text('AWA DIOP'), findsOneWidget);
-    expect(find.text('AD'), findsOneWidget);
+    // 1. Profile with real user
+    expect(find.text('FATOU FALL'), findsOneWidget);
+    expect(find.text('FF'), findsOneWidget);
     expect(find.text('4,8'), findsOneWidget);
     expect(find.text('77 123 45 12'), findsOneWidget);
 

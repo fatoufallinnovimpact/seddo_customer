@@ -21,6 +21,7 @@ import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/utils/active_ride_navigation_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
@@ -139,6 +140,7 @@ class _HomePageContentState extends State<_HomePageContent>
         _fetchSuggestions();
         _initRealUserLocation();
         _checkActiveRide();
+        AuthRepository().fetchUserProfile();
       }
     });
 

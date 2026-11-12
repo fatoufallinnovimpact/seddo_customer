@@ -22,7 +22,7 @@ import 'package:seddo/features/saved_places/presentation/pages/saved_places_page
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 
 /// Lateral navigation drawer matching the design mockup:
-/// - User profile: Orange circular avatar (AD), "AWA DIOP", rating (★ 4,8 · 77 123 45 12)
+/// - User profile: Real avatar photo or initials, real user name, rating from GET /v1/users/me and phone number
 /// - Menu list items:
 ///   - Activité (refresh-ccw-clock-svgrepo-com.svg / Courses et remboursements)
 ///   - TCU (bus-svgrepo-com.svg / Bus, BRT et TER)
@@ -261,21 +261,34 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
 
   // Profile Header: Displays real user initials/photo, name, rating from GET /v1/users/me, and phone
   Widget _buildProfileHeader(BuildContext context, UserModel? user) {
-    final displayName = (user != null && user.fullName.isNotEmpty)
-        ? user.fullName.toUpperCase()
-        : 'AWA DIOP';
-    final initials = (user != null && user.initials.isNotEmpty)
+    final hasRealFullName = user != null &&
+        user.fullName.trim().isNotEmpty &&
+        user.fullName.trim() != 'Utilisateur Seddo';
+
+    final displayName = hasRealFullName
+        ? user.fullName.trim().toUpperCase()
+        : (user != null && user.firstName != null && user.firstName!.trim().isNotEmpty)
+            ? user.firstName!.trim().toUpperCase()
+            : (user != null && user.formattedNationalPhone.isNotEmpty)
+                ? user.formattedNationalPhone
+                : 'UTILISATEUR';
+
+    final initials = (user != null && user.initials.isNotEmpty && user.initials != 'SD')
         ? user.initials
-        : 'AD';
+        : (user != null && user.firstName != null && user.firstName!.trim().isNotEmpty)
+            ? user.firstName!.trim().substring(0, user.firstName!.trim().length >= 2 ? 2 : 1).toUpperCase()
+            : 'SD';
+
     final displayPhone =
         (user != null && user.formattedNationalPhone.isNotEmpty)
             ? user.formattedNationalPhone
             : (user != null && user.formattedDisplayPhone.isNotEmpty)
                 ? user.formattedDisplayPhone
-                : '77 123 45 12';
+                : '';
+
     final displayRating = (user != null && user.rating != null)
         ? user.rating!.toStringAsFixed(1).replaceAll('.', ',')
-        : (user != null ? user.displayRating : '4,8');
+        : (user != null ? user.displayRating : '5,0');
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,

@@ -112,51 +112,57 @@ class _RouteTimelineContent extends StatelessWidget {
           return _NoTransitFound(message: state.errorMessage);
         }
 
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Onglets itinéraires (si plus d'un)
+            if (state.itineraires.length > 1) ...[
+              const SizedBox(height: 8),
+              _ItineraireTabBar(
+                itineraires: state.itineraires,
+                selectedIndex: state.itineraireIndex,
+                onTap: (i) => context.read<RouteTimelineBloc>().add(
+                      RouteTimelineTabChanged(i),
+                    ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Badge direct/correspondance
+            if (state.selectedItineraire != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _ItineraireBadge(
+                  itineraire: state.selectedItineraire!,
+                ),
+              ),
+
+            const SizedBox(height: 8),
+
+            // Timeline
+            if (state.selectedItineraire != null)
+              _ItineraireTimeline(
+                itineraire: state.selectedItineraire!,
+                fromLabel: fromPlaceDetails?.name ?? 'Départ',
+                toLabel: toPlaceDetails?.name ?? 'Arrivée',
+                fromLat: state.startLat,
+                fromLon: state.startLon,
+                toLat: state.endLat,
+                toLon: state.endLon,
+                currentPosition: state.currentPosition,
+              ),
+
+            const SizedBox(height: 100),
+          ],
+        );
+
+        if (physics is NeverScrollableScrollPhysics) {
+          return content;
+        }
+
         return SingleChildScrollView(
           physics: physics,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Onglets itinéraires (si plus d'un)
-              if (state.itineraires.length > 1) ...[
-                const SizedBox(height: 8),
-                _ItineraireTabBar(
-                  itineraires: state.itineraires,
-                  selectedIndex: state.itineraireIndex,
-                  onTap: (i) => context.read<RouteTimelineBloc>().add(
-                        RouteTimelineTabChanged(i),
-                      ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Badge direct/correspondance
-              if (state.selectedItineraire != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _ItineraireBadge(
-                    itineraire: state.selectedItineraire!,
-                  ),
-                ),
-
-              const SizedBox(height: 8),
-
-              // Timeline
-              if (state.selectedItineraire != null)
-                _ItineraireTimeline(
-                  itineraire: state.selectedItineraire!,
-                  fromLabel: fromPlaceDetails?.name ?? 'Départ',
-                  toLabel: toPlaceDetails?.name ?? 'Arrivée',
-                  fromLat: state.startLat,
-                  fromLon: state.startLon,
-                  toLat: state.endLat,
-                  toLon: state.endLon,
-                  currentPosition: state.currentPosition,
-                ),
-
-              const SizedBox(height: 100),
-            ],
-          ),
+          child: content,
         );
       },
     );

@@ -81,22 +81,49 @@ class AuthRepository {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_access_token', tokens.accessToken);
     await prefs.setString('auth_refresh_token', tokens.refreshToken);
+    await prefs.setString('auth_pending_phone', phone);
+    await prefs.setString('user_phone', phone);
 
-    if (tokens.user != null) {
-      _currentUser = tokens.user;
-      await _persistUser(tokens.user!);
+    UserModel? userToSave = tokens.user;
+    if (userToSave == null ||
+        ((userToSave.firstName == null || userToSave.firstName!.isEmpty) &&
+            (userToSave.lastName == null || userToSave.lastName!.isEmpty))) {
+      if (!_isTest && tokens.accessToken.isNotEmpty) {
+        try {
+          userToSave = await _apiService.getMe(accessToken: tokens.accessToken);
+        } catch (e) {
+          debugPrint('[AuthRepository] ⚠️ Fetch profile after OTP verify: $e');
+        }
+      }
+    }
+
+    if (userToSave != null) {
+      if (userToSave.phone.isEmpty) {
+        userToSave = userToSave.copyWith(phone: phone);
+      }
+      _currentUser = userToSave;
+      await _persistUser(userToSave);
 
       // If user does not need profile completion (existing user), complete onboarding
-      if (!tokens.user!.needsProfile) {
+      if (!userToSave.needsProfile) {
         await prefs.setBool('onboarding_completed', true);
         await registerCurrentDevicePushToken();
       } else {
         // Needs profile completion: do NOT mark onboarding as completed
         await prefs.setBool('onboarding_completed', false);
       }
+    } else {
+      // Create minimal cached user so currentUser is never null
+      final minimal = UserModel(
+        id: '',
+        phone: phone,
+        lang: prefs.getString('selected_language') ?? 'fr',
+      );
+      _currentUser = minimal;
+      await _persistUser(minimal);
     }
 
-    return tokens;
+    return tokens.copyWith(user: userToSave);
   }
 
   /// Complete profile registration (name, language, and consents)
@@ -213,14 +240,25 @@ class AuthRepository {
       // Fallback: build from individual keys if available
       final firstName = prefs.getString('user_first_name');
       final lastName = prefs.getString('user_last_name');
-      final phone = prefs.getString('user_phone');
+      final fullName = prefs.getString('user_full_name');
+      final phone = prefs.getString('user_phone') ?? prefs.getString('auth_pending_phone');
 
-      if (phone != null || firstName != null || lastName != null) {
+      if (phone != null || firstName != null || lastName != null || fullName != null) {
+        String? f = firstName;
+        String? l = lastName;
+        if ((f == null || f.trim().isEmpty) &&
+            fullName != null &&
+            fullName.trim().isNotEmpty &&
+            fullName.trim() != 'Utilisateur Seddo') {
+          final parts = fullName.trim().split(RegExp(r'\s+'));
+          f = parts.first;
+          if (parts.length > 1) l = parts.sublist(1).join(' ');
+        }
         _currentUser = UserModel(
           id: '',
           phone: phone ?? '',
-          firstName: firstName,
-          lastName: lastName,
+          firstName: f,
+          lastName: l,
           lang: prefs.getString('selected_language') ?? 'fr',
         );
         return _currentUser;

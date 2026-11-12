@@ -203,6 +203,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   }
 
   void _onSearchPressed() {
+    FocusScope.of(context).unfocus();
     if (destination == null || destination!.name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -239,12 +240,16 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Stack(
-          children: [
-            SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(
-                children: [
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                child: Column(
+                  children: [
             // 1. En-tête : Flèche retour + Titre (sans aucun menu en haut à droite)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -543,6 +548,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
           ),
         ),
           ],
+        ),
         ),
       ),
     );

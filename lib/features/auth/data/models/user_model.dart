@@ -105,28 +105,90 @@ class UserModel extends Equatable {
   }
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
-    final rawRating = json['rating'];
+    // Support nested responses (e.g. { "user": { ... } } or { "data": { ... } } or { "profile": { ... } })
+    final map = (json['user'] is Map<String, dynamic>)
+        ? json['user'] as Map<String, dynamic>
+        : (json['data'] is Map<String, dynamic>)
+            ? json['data'] as Map<String, dynamic>
+            : (json['profile'] is Map<String, dynamic>)
+                ? json['profile'] as Map<String, dynamic>
+                : json;
+
+    final rawRating = map['rating'] ??
+        map['averageRating'] ??
+        map['clientRating'] ??
+        map['driverRating'] ??
+        map['note'];
     final double? parsedRating = rawRating is num
         ? rawRating.toDouble()
         : (rawRating != null ? double.tryParse(rawRating.toString()) : null);
 
-    final rawRatingCount = json['ratingCount'];
+    final rawRatingCount = map['ratingCount'] ??
+        map['rating_count'] ??
+        map['ratingsCount'] ??
+        map['totalRatings'] ??
+        map['count'];
     final int? parsedRatingCount = rawRatingCount is num
         ? rawRatingCount.toInt()
         : (rawRatingCount != null ? int.tryParse(rawRatingCount.toString()) : null);
 
+    // Support firstName, first_name, prenom
+    String? first = (map['firstName'] ?? map['first_name'] ?? map['prenom']) as String?;
+    // Support lastName, last_name, nom
+    String? last = (map['lastName'] ?? map['last_name'] ?? map['nom']) as String?;
+
+    // If separate names are not provided, check combined name (e.g. "Fatou Fall" or "Fatou")
+    if ((first == null || first.trim().isEmpty) && (last == null || last.trim().isEmpty)) {
+      final combined = (map['name'] ??
+          map['fullName'] ??
+          map['full_name'] ??
+          map['displayName']) as String?;
+      if (combined != null && combined.trim().isNotEmpty) {
+        final parts = combined.trim().split(RegExp(r'\s+'));
+        first = parts.first;
+        if (parts.length > 1) {
+          last = parts.sublist(1).join(' ');
+        }
+      }
+    }
+
+    final phone = (map['phone'] ??
+        map['phone_number'] ??
+        map['phoneNumber'] ??
+        map['telephone'] ??
+        '') as String? ?? '';
+
+    final photoUrl = (map['photoUrl'] ??
+        map['photo_url'] ??
+        map['photo'] ??
+        map['avatar'] ??
+        map['avatarUrl']) as String?;
+
+    final lang = (map['lang'] ?? map['language'] ?? map['langue']) as String?;
+
+    final omEligible = (map['omEligible'] ??
+        map['om_eligible'] ??
+        map['isOmEligible'] ??
+        false) as bool? ?? false;
+
+    final isNew = (map['isNew'] ?? map['is_new'] ?? false) as bool? ?? false;
+
+    final needsProfile = (map['needsProfile'] ??
+        map['needs_profile'] ??
+        false) as bool? ?? false;
+
     return UserModel(
-      id: json['id'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
-      firstName: json['firstName'] as String?,
-      lastName: json['lastName'] as String?,
-      lang: json['lang'] as String?,
-      omEligible: json['omEligible'] as bool? ?? false,
-      isNew: json['isNew'] as bool? ?? false,
-      needsProfile: json['needsProfile'] as bool? ?? false,
+      id: (map['id'] ?? map['_id'] ?? '') as String? ?? '',
+      phone: phone,
+      firstName: first,
+      lastName: last,
+      lang: lang,
+      omEligible: omEligible,
+      isNew: isNew,
+      needsProfile: needsProfile,
       rating: parsedRating,
       ratingCount: parsedRatingCount,
-      photoUrl: json['photoUrl'] as String?,
+      photoUrl: photoUrl,
     );
   }
 
