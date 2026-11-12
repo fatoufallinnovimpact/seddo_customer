@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:seddo/core/network/api_client.dart';
 import 'package:seddo/core/utils/api_endpoints.dart';
@@ -113,6 +114,63 @@ class AuthApiService {
 
       final data = _parseResponseData(response.data);
       return AuthTokensModel.fromJson(data);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// GET /v1/users/me
+  /// Returns connected user identity, photoUrl, rating, ratingCount, etc.
+  Future<UserModel> getMe({String? accessToken}) async {
+    try {
+      final options = Options();
+      if (accessToken != null && accessToken.isNotEmpty) {
+        options.headers = {'Authorization': 'Bearer $accessToken'};
+      }
+
+      final response = await _dio.get(
+        ApiEndpoints.userMe,
+        options: options,
+      );
+
+      final data = _parseResponseData(response.data);
+      return UserModel.fromJson(data);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// PUT /v1/users/me/photo
+  /// Multipart upload with field `file`: JPEG or PNG. Returns the updated UserModel.
+  Future<UserModel> uploadPhoto({
+    required String filePath,
+    String? accessToken,
+  }) async {
+    try {
+      final options = Options(
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          if (accessToken != null && accessToken.isNotEmpty)
+            'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      final fileName = filePath.split(Platform.pathSeparator).last;
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          filePath,
+          filename: fileName,
+        ),
+      });
+
+      final response = await _dio.put(
+        ApiEndpoints.userPhoto,
+        data: formData,
+        options: options,
+      );
+
+      final data = _parseResponseData(response.data);
+      return UserModel.fromJson(data);
     } on DioException catch (e) {
       throw _handleDioError(e);
     }

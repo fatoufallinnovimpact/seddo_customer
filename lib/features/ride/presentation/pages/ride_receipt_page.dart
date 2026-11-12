@@ -927,7 +927,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.grayBgSubtle,
+        color: AppColors.white,
         borderRadius: BorderRadius.circular(AppConstants.radiusCard),
         border: Border.all(
           color: AppColors.grayBorderDivider,

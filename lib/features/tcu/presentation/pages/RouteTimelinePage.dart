@@ -26,6 +26,7 @@ class RouteTimelinePage extends StatelessWidget {
   final ScrollPhysics? physics;
   final void Function(List<TransitFullResponseModel>, Position?)?
       onDepartureTransitUpdated;
+  final VoidCallback? onRoutesLoaded;
 
   const RouteTimelinePage({
     super.key,
@@ -36,6 +37,7 @@ class RouteTimelinePage extends StatelessWidget {
     required this.time,
     this.physics,
     this.onDepartureTransitUpdated,
+    this.onRoutesLoaded,
   });
 
   @override
@@ -57,6 +59,7 @@ class RouteTimelinePage extends StatelessWidget {
         fromPlaceDetails: fromPlaceDetails,
         toPlaceDetails: toPlaceDetails,
         physics: physics,
+        onRoutesLoaded: onRoutesLoaded,
       ),
     );
   }
@@ -68,18 +71,35 @@ class _RouteTimelineContent extends StatelessWidget {
   final PlaceModel? toPlaceDetails;
   final PlaceModel? fromPlaceDetails;
   final ScrollPhysics? physics;
+  final VoidCallback? onRoutesLoaded;
 
   const _RouteTimelineContent({
     this.onDepartureTransitUpdated,
     this.toPlaceDetails,
     this.fromPlaceDetails,
     this.physics,
+    this.onRoutesLoaded,
   });
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<RouteTimelineBloc, RouteTimelineState>(
+    return BlocConsumer<RouteTimelineBloc, RouteTimelineState>(
+      listener: (context, state) {
+        if (!state.departureLoader &&
+            (state.status == RouteTimelineStatus.success ||
+                state.status == RouteTimelineStatus.failure)) {
+          onRoutesLoaded?.call();
+        }
+      },
       builder: (context, state) {
+        if (!state.departureLoader &&
+            (state.status == RouteTimelineStatus.success ||
+                state.status == RouteTimelineStatus.failure)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            onRoutesLoaded?.call();
+          });
+        }
+
         // Loading
         if (state.status == RouteTimelineStatus.loading ||
             state.departureLoader) {
@@ -168,20 +188,25 @@ class _TransitLoaderState extends State<_TransitLoader>
   @override
   void initState() {
     super.initState();
+    final isTest = Platform.environment.containsKey('FLUTTER_TEST');
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat();
-
-    // Changer le message toutes les 1.8s
-    Future.doWhile(() async {
-      await Future.delayed(const Duration(milliseconds: 1800));
-      if (!mounted) return false;
-      setState(() {
-        _messageIndex = (_messageIndex + 1) % _messages.length;
+    );
+    if (!isTest) {
+      _controller.repeat();
+      // Changer le message toutes les 1.8s
+      Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 1800));
+        if (!mounted) return false;
+        setState(() {
+          _messageIndex = (_messageIndex + 1) % _messages.length;
+        });
+        return true;
       });
-      return true;
-    });
+    } else {
+      _controller.value = 0.5;
+    }
   }
 
   @override
@@ -216,7 +241,9 @@ class _TransitLoaderState extends State<_TransitLoader>
               child: AnimatedBuilder(
                 animation: _controller,
                 builder: (_, child) => LinearProgressIndicator(
-                  value: null,
+                  value: Platform.environment.containsKey('FLUTTER_TEST')
+                      ? 0.5
+                      : null,
                   backgroundColor: Colors.grey.shade200,
                   valueColor: const AlwaysStoppedAnimation<Color>(
                     transitSecondaryColor,

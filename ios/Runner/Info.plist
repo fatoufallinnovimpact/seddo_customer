@@ -50,6 +50,10 @@
 		<string>Seddo a besoin de votre position pour vous localiser sur la carte et vous guider en temps réel.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>Seddo a besoin de votre position pour vous guider en temps réel jusqu'à l'arrêt de transport.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Seddo a besoin d'accéder à votre appareil photo pour vous permettre de prendre une photo de profil.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Seddo a besoin d'accéder à votre galerie photo pour vous permettre de choisir une photo de profil.</string>
 		<key>UIFileSharingEnabled</key>
 		<true/>
 		<key>LSSupportsOpeningDocumentsInPlace</key>

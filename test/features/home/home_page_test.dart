@@ -15,7 +15,7 @@ class MockHomeTestAssetLoader extends AssetLoader {
     return {
       'app_name': 'Seddo',
       'home': {
-        'where_to': 'Où allez-vous ?',
+        'where_to': 'Où allons-nous ?',
         'go': 'Aller',
         'where_to_sub': 'Entrez votre destination',
         'recent_places': 'Mes récentes courses',
@@ -54,7 +54,7 @@ class MockHomeTestAssetLoader extends AssetLoader {
         'privacy_sub': 'Données et mentions légales',
         'logout': 'Déconnexion',
         'tcu': 'TCU',
-        'tcu_sub': 'Bus, BRT et TER',
+        'tcu_sub': 'Bus AFTU, DDD, BRT',
       },
       'common': {
         'french': 'Français',
@@ -116,7 +116,7 @@ void main() {
     expect(find.byKey(const ValueKey('seddo_logo_and_location_header')), findsOneWidget);
 
     // 2. Search Bar
-    expect(find.text('Où allez-vous ?'), findsOneWidget);
+    expect(find.text('Où allons-nous ?'), findsOneWidget);
     expect(find.text('Aller'), findsNothing);
 
     // 3. GoogleMap is not rendered directly on HomePage
@@ -179,11 +179,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(seconds: 1));
 
-    // Service Cards (Course & Transpo)
+    // Service Cards (Course & Transport en commun)
     expect(find.byKey(const ValueKey('home_service_card_course')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_service_card_transpo')), findsOneWidget);
     expect(find.text('Course'), findsOneWidget);
-    expect(find.text('Transpo'), findsOneWidget);
+    expect(find.text('Transport en commun'), findsOneWidget);
 
     // TCU Banner is completely removed
     expect(find.byKey(const ValueKey('home_tcu_banner_card')), findsNothing);

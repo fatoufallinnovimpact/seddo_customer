@@ -36,7 +36,7 @@ class MockDrawerTestAssetLoader extends AssetLoader {
         'activity_sub':
             isWo ? 'Tukki yi ak feyukaay yi' : 'Courses et remboursements',
         'tcu': 'TCU',
-        'tcu_sub': isWo ? 'Bus, BRT ak TER' : 'Bus, BRT et TER',
+        'tcu_sub': 'Bus AFTU, DDD, BRT',
         'saved_places': isWo ? 'Béréb yi ma denc' : 'Lieux enregistrés',
         'saved_places_sub':
             isWo ? 'Kër, Liggeyukaay, Aéroport' : 'Maison, Travail, Aéroport',
@@ -140,7 +140,7 @@ void main() {
     expect(find.text('Courses et remboursements'), findsOneWidget);
 
     expect(find.text('TCU'), findsOneWidget);
-    expect(find.text('Bus, BRT et TER'), findsOneWidget);
+    expect(find.text('Bus AFTU, DDD, BRT'), findsOneWidget);
 
     expect(find.text('Lieux enregistrés'), findsOneWidget);
     expect(find.text('Maison, Travail, Aéroport'), findsOneWidget);
@@ -296,5 +296,76 @@ void main() {
     // 2. Payment card is removed
     expect(find.text('Paiement'), findsNothing);
     expect(find.textContaining('Orange Money'), findsNothing);
+  });
+
+  testWidgets('SeddoDrawerWidget displays real user rating from API or fallback',
+      (tester) async {
+    const testUserWithRating = UserModel(
+      id: 'usr_771004313',
+      phone: '77 100 43 13',
+      firstName: 'Fatou',
+      lastName: 'Fall',
+      lang: 'fr',
+      omEligible: true,
+      rating: 4.9,
+      ratingCount: 18,
+    );
+    AuthRepository().setCurrentUser(testUserWithRating);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      AuthRepository().setCurrentUser(null);
+    });
+
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const Key('drawer_user_rating')), findsOneWidget);
+    expect(find.text('4,9'), findsOneWidget);
+  });
+
+  testWidgets(
+      'Tapping avatar initials button opens photo upload source sheet with camera and gallery',
+      (tester) async {
+    const testUser = UserModel(
+      id: 'usr_771004313',
+      phone: '77 100 43 13',
+      firstName: 'Fatou',
+      lastName: 'Fall',
+      lang: 'fr',
+      omEligible: true,
+    );
+    AuthRepository().setCurrentUser(testUser);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      AuthRepository().setCurrentUser(null);
+    });
+
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Tap on avatar button
+    final avatarButton = find.byKey(const Key('drawer_avatar_button'));
+    expect(avatarButton, findsOneWidget);
+    await tester.tap(avatarButton);
+    await tester.pumpAndSettle();
+
+    // Verify modal bottom sheet is shown with both options
+    expect(find.text('Photo de profil'), findsOneWidget);
+    expect(find.text('Prendre une photo'), findsOneWidget);
+    expect(find.text('Choisir depuis la galerie'), findsOneWidget);
+    expect(find.byKey(const Key('photo_option_camera')), findsOneWidget);
+    expect(find.byKey(const Key('photo_option_gallery')), findsOneWidget);
   });
 }

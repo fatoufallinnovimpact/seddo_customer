@@ -206,7 +206,7 @@ void main() {
     });
 
     testWidgets(
-        'Floating Seddo VTC card is displayed, dismissible with cross, and navigates to PlaceSearchPage',
+        'Floating Seddo VTC card is displayed after bus load, dismissible with cross, and navigates to PlaceSearchPage',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -223,10 +223,9 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Seddo card elements
-      expect(find.text('En Seddo : 19 min, porte'), findsOneWidget);
-      expect(find.text('à porte'), findsWidgets);
-      expect(find.text('Prix fixe 3 200 F'), findsOneWidget);
+      // Seddo card elements (single line text, all white, no prix fixe)
+      expect(find.text('En Seddo : 19 min, porte à porte'), findsOneWidget);
+      expect(find.text('Prix fixe 3 200 F'), findsNothing);
       expect(find.byKey(const Key('tcu_seddo_commander_button')), findsOneWidget);
 
       // Dismiss card with cross
@@ -236,11 +235,11 @@ void main() {
       await tester.pumpAndSettle();
 
       // Card is now dismissed
-      expect(find.text('En Seddo : 19 min, porte'), findsNothing);
+      expect(find.text('En Seddo : 19 min, porte à porte'), findsNothing);
     });
 
     testWidgets(
-        'Floating Seddo card is visible on entrance and dismissed by horizontal swipe (left to right / right to left)',
+        'Floating Seddo card is hidden before search, visible after bus load and dismissed by horizontal swipe',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -248,16 +247,25 @@ void main() {
       await tester.pumpWidget(
         wrapWithTestLocalization(
           child: const PublicTransportPage(
-            autoSearch: false, // Right when entering TCU without search
+            autoSearch: false, // Entering TCU without search
+            initialOrigin: 'Fann Hock',
+            initialDestination: 'Liberté 6',
           ),
         ),
       );
 
       await tester.pumpAndSettle();
 
-      // Card is visible right when entering TCU
+      // Card is NOT visible before bus loading
+      expect(find.byKey(const Key('tcu_seddo_card_dismissible')), findsNothing);
+
+      // Tap search button to load buses
+      await tester.tap(find.byKey(const Key('tcu_search_button')));
+      await tester.pumpAndSettle();
+
+      // Card is now visible after bus load
       expect(find.byKey(const Key('tcu_seddo_card_dismissible')), findsOneWidget);
-      expect(find.text('En Seddo : 19 min, porte'), findsOneWidget);
+      expect(find.text('En Seddo : 19 min, porte à porte'), findsOneWidget);
 
       // Swipe card horizontally to dismiss (drag to left or right)
       await tester.drag(
@@ -268,7 +276,7 @@ void main() {
 
       // Card is dismissed and no longer visible
       expect(find.byKey(const Key('tcu_seddo_card_dismissible')), findsNothing);
-      expect(find.text('En Seddo : 19 min, porte'), findsNothing);
+      expect(find.text('En Seddo : 19 min, porte à porte'), findsNothing);
     });
 
     testWidgets(

@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
+import 'package:seddo/core/utils/api_endpoints.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/activity/presentation/pages/activity_page.dart';
@@ -30,14 +33,56 @@ import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart
 /// - Bottom section:
 ///   - Row with Aide (question-svgrepo-com.svg) & Confidentialité et données (lock icon)
 ///   - Red Se déconnecter button (logout-line-svgrepo-com.svg)
-class SeddoDrawerWidget extends StatelessWidget {
+class SeddoDrawerWidget extends StatefulWidget {
   const SeddoDrawerWidget({super.key});
+
+  @override
+  State<SeddoDrawerWidget> createState() => _SeddoDrawerWidgetState();
+}
+
+class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
+  final AuthRepository _authRepo = AuthRepository();
+  UserModel? _currentUser;
+  String? _accessToken;
+  bool _isUploadingPhoto = false;
+  File? _localPickedFile;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUser = _authRepo.currentUser;
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    final token = await _authRepo.getAccessToken();
+    if (mounted && token != null) {
+      setState(() {
+        _accessToken = token;
+      });
+    }
+
+    final cached = await _authRepo.getCachedUser();
+    if (mounted && cached != null) {
+      setState(() {
+        _currentUser = cached;
+      });
+    }
+
+    final remote = await _authRepo.fetchUserProfile();
+    if (mounted && remote != null) {
+      setState(() {
+        _currentUser = remote;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final _ = context.locale;
     final screenWidth = MediaQuery.of(context).size.width;
     final drawerWidth = (screenWidth * 0.84).clamp(300.0, 360.0);
+    final user = _currentUser ?? _authRepo.currentUser;
 
     return Drawer(
       width: drawerWidth,
@@ -50,12 +95,7 @@ class SeddoDrawerWidget extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-        child: FutureBuilder<UserModel?>(
-          future: AuthRepository().getCachedUser(),
-          initialData: AuthRepository().currentUser,
-          builder: (context, snapshot) {
-            final user = snapshot.data ?? AuthRepository().currentUser;
-            return LayoutBuilder(
+        child: LayoutBuilder(
               builder: (context, constraints) {
                 return SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -96,10 +136,16 @@ class SeddoDrawerWidget extends StatelessWidget {
                           title: 'drawer.tcu'.tr(),
                           subtitle: 'drawer.tcu_sub'.tr(),
                           onTap: () {
+                            LatLng? userLoc;
+                            try {
+                              userLoc = context.read<HomeBloc>().state.userLocation;
+                            } catch (_) {}
                             Navigator.of(context).pop();
                             Navigator.of(context).push(
                               SlideRightToLeftRoute(
-                                page: const PublicTransportPage(),
+                                page: PublicTransportPage(
+                                  initialOriginLocation: userLoc,
+                                ),
                               ),
                             );
                           },
@@ -208,14 +254,12 @@ class SeddoDrawerWidget extends StatelessWidget {
               ),
             );
           },
-        );
-      },
-    ),
-  ),
-);
+        ),
+      ),
+    );
   }
 
-  // Profile Header: Displays real user initials, name, and phone from authentication
+  // Profile Header: Displays real user initials/photo, name, rating from GET /v1/users/me, and phone
   Widget _buildProfileHeader(BuildContext context, UserModel? user) {
     final displayName = (user != null && user.fullName.isNotEmpty)
         ? user.fullName.toUpperCase()
@@ -229,90 +273,379 @@ class SeddoDrawerWidget extends StatelessWidget {
             : (user != null && user.formattedDisplayPhone.isNotEmpty)
                 ? user.formattedDisplayPhone
                 : '77 123 45 12';
+    final displayRating = (user != null && user.rating != null)
+        ? user.rating!.toStringAsFixed(1).replaceAll('.', ',')
+        : (user != null ? user.displayRating : '4,8');
 
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 58,
-              height: 58,
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        GestureDetector(
+          key: const Key('drawer_avatar_button'),
+          onTap: () => _showPhotoOptions(context),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                alignment: Alignment.center,
+                child: _isUploadingPhoto
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : _buildAvatarImage(user, initials),
               ),
-              alignment: Alignment.center,
-              child: Text(
-                initials,
+              Positioned(
+                bottom: -2,
+                right: -2,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(2),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      size: 11,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                displayName,
                 style: GoogleFonts.inter(
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
-                  color: AppColors.white,
-                  letterSpacing: 0.5,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.6,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 3),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.star_rounded,
+                      size: 18,
+                      color: AppColors.amberWarning,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      displayRating,
+                      key: const Key('drawer_user_rating'),
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      ' · ',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    Text(
+                      displayPhone,
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAvatarImage(UserModel? user, String initials) {
+    if (_localPickedFile != null) {
+      return Image.file(
+        _localPickedFile!,
+        fit: BoxFit.cover,
+        width: 58,
+        height: 58,
+      );
+    }
+
+    final photoUrl = user?.photoUrl;
+    if (photoUrl != null && photoUrl.isNotEmpty) {
+      final fullUrl = photoUrl.startsWith('http')
+          ? photoUrl
+          : '${ApiEndpoints.baseUrl}$photoUrl';
+      return Image.network(
+        fullUrl,
+        headers: _accessToken != null
+            ? {'Authorization': 'Bearer $_accessToken'}
+            : null,
+        fit: BoxFit.cover,
+        width: 58,
+        height: 58,
+        errorBuilder: (context, error, stackTrace) =>
+            _buildInitialsText(initials),
+      );
+    }
+
+    return _buildInitialsText(initials);
+  }
+
+  Widget _buildInitialsText(String initials) {
+    return Text(
+      initials,
+      style: GoogleFonts.inter(
+        fontSize: 22,
+        fontWeight: FontWeight.w900,
+        color: AppColors.white,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Future<void> _showPhotoOptions(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return Material(
+          color: Colors.white,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+            child: SafeArea(
+              top: false,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    displayName,
-                    style: GoogleFonts.inter(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.textPrimary,
-                      letterSpacing: -0.6,
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 18,
-                          color: AppColors.amberWarning,
+                  const SizedBox(height: 18),
+                  Text(
+                    'Photo de profil',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Prenez une photo ou choisissez une image depuis votre galerie.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Material(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    child: ListTile(
+                      key: const Key('photo_option_camera'),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      leading: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(width: 3),
-                        Text(
-                          '4,8',
-                          style: GoogleFonts.inter(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
+                        child: const Icon(
+                          Icons.camera_alt_rounded,
+                          color: AppColors.primary,
+                          size: 22,
                         ),
-                        Text(
-                          ' · ',
-                          style: GoogleFonts.inter(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
-                          ),
+                      ),
+                      title: Text(
+                        'Prendre une photo',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
                         ),
-                        Text(
-                          displayPhone,
-                          style: GoogleFonts.inter(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.textSecondary,
-                          ),
+                      ),
+                      subtitle: Text(
+                        'Utiliser l\'appareil photo',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
                         ),
-                      ],
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF94A3B8),
+                      ),
+                      onTap: () {
+                        Navigator.of(bottomSheetContext).pop();
+                        _pickAndUploadImage(ImageSource.camera);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Material(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    child: ListTile(
+                      key: const Key('photo_option_gallery'),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      leading: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE2E8F0),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.photo_library_rounded,
+                          color: Color(0xFF0F172A),
+                          size: 22,
+                        ),
+                      ),
+                      title: Text(
+                        'Choisir depuis la galerie',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Parcourir vos photos',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF94A3B8),
+                      ),
+                      onTap: () {
+                        Navigator.of(bottomSheetContext).pop();
+                        _pickAndUploadImage(ImageSource.gallery);
+                      },
                     ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
         );
+      },
+    );
+  }
+
+  Future<void> _pickAndUploadImage(ImageSource source) async {
+    try {
+      final picker = ImagePicker();
+      final XFile? picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (picked == null) return;
+
+      setState(() {
+        _isUploadingPhoto = true;
+        _localPickedFile = File(picked.path);
+      });
+
+      final updatedUser = await _authRepo.uploadProfilePhoto(picked.path);
+      if (mounted) {
+        setState(() {
+          _currentUser = updatedUser;
+          _isUploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo de profil mise à jour avec succès'),
+            backgroundColor: Color(0xFF16A34A),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isUploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Échec de la mise à jour de la photo: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
   }
 
 
@@ -428,110 +761,6 @@ class SeddoDrawerWidget extends StatelessWidget {
     );
   }
 
-  // Modals & Bottom Sheets
-
-  static void openNotificationsSheet(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'drawer.notifications_title'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildNotificationItem(
-              title: 'drawer.notif_rides'.tr(),
-              subtitle: 'drawer.notif_rides_desc'.tr(),
-              initialValue: true,
-            ),
-            const Divider(height: 24),
-            _buildNotificationItem(
-              title: 'drawer.notif_promo'.tr(),
-              subtitle: 'drawer.notif_promo_desc'.tr(),
-              initialValue: true,
-            ),
-            const Divider(height: 24),
-            _buildNotificationItem(
-              title: 'drawer.notif_safety'.tr(),
-              subtitle: 'drawer.notif_safety_desc'.tr(),
-              initialValue: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static Widget _buildNotificationItem({
-    required String title,
-    required String subtitle,
-    required bool initialValue,
-  }) {
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.inter(
-                      fontSize: 12.5,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Switch.adaptive(
-              value: initialValue,
-              activeTrackColor: AppColors.primary,
-              onChanged: (val) {
-                setState(() => initialValue = val);
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
 
 
 

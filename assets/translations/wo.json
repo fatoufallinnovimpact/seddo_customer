@@ -57,7 +57,7 @@
     "accept_and_continue": "Nangu te wéy"
   },
   "home": {
-    "where_to": "Fan ngay dem ?",
+    "where_to": "Fan lañuy dem ?",
     "go": "Dem",
     "search_subtitle": "Bindal fa ngay dem...",
     "search_hint": "Seet ci Ndakaaru (ci misaal: Ouakam)...",
@@ -88,7 +88,7 @@
     "activity": "Yëngu-yëngu",
     "activity_sub": "Tukki yi ak feyukaay yi",
     "tcu": "TCU",
-    "tcu_sub": "Bus, BRT ak TER",
+    "tcu_sub": "Bus AFTU, DDD, BRT",
     "saved_places": "Béréb yi ma denc",
     "saved_places_sub": "Kër, Liggeyukaay, Aéroport",
     "safety": "Kaaraange",

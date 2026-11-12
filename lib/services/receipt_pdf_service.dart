@@ -35,11 +35,9 @@ class ReceiptPdfService {
   static const PdfColor _pdfPrimary = PdfColor.fromInt(0xFFFB5B00);
   static const PdfColor _pdfSlateDark = PdfColor.fromInt(0xFF0F172A);
   static const PdfColor _pdfTextSecondary = PdfColor.fromInt(0xFF6B7280);
-  static const PdfColor _pdfCardBg = PdfColor.fromInt(0xFFF9FAFB);
+  static const PdfColor _pdfCardBg = PdfColor.fromInt(0xFFFFFFFF);
   static const PdfColor _pdfBorder = PdfColor.fromInt(0xFFE5E7EB);
   static const PdfColor _pdfBorderMedium = PdfColor.fromInt(0xFFD1D5DB);
-  static const PdfColor _pdfPaidBg = PdfColor.fromInt(0xFFD1FAE5);
-  static const PdfColor _pdfPaidText = PdfColor.fromInt(0xFF059669);
   static const PdfColor _pdfDeparturePin = PdfColor.fromInt(0xFF1E293B);
   static const PdfColor _pdfArrivalPin = PdfColor.fromInt(0xFFFB5B00);
   static const PdfColor _pdfPlateBg = PdfColor.fromInt(0xFF1E293B);
@@ -132,36 +130,13 @@ class ReceiptPdfService {
                       ),
                     ],
                   ),
-                  pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: pw.BoxDecoration(
-                      color: _pdfPaidBg,
-                      borderRadius: pw.BorderRadius.circular(999),
-                    ),
-                    child: pw.Row(
-                      mainAxisSize: pw.MainAxisSize.min,
-                      children: [
-                        pw.Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const pw.BoxDecoration(
-                            color: _pdfPaidText,
-                            shape: pw.BoxShape.circle,
-                          ),
-                        ),
-                        pw.SizedBox(width: 6),
-                        pw.Text(
-                          'Paye',
-                          style: pw.TextStyle(
-                            color: _pdfPaidText,
-                            fontSize: 11,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                      ],
+                  pw.Text(
+                    'REÇU',
+                    style: pw.TextStyle(
+                      color: _pdfSlateDark,
+                      fontSize: 14,
+                      fontWeight: pw.FontWeight.bold,
+                      letterSpacing: 1.5,
                     ),
                   ),
                 ],
@@ -464,54 +439,28 @@ class ReceiptPdfService {
 
               pw.Spacer(),
 
-              // 5. Verification QR Code & Footer
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: pw.BoxDecoration(
-                  color: _pdfCardBg,
-                  borderRadius: pw.BorderRadius.circular(10),
-                  border: pw.Border.all(color: _pdfBorder, width: 1),
-                ),
-                child: pw.Row(
-                  children: [
-                    pw.BarcodeWidget(
-                      barcode: pw.Barcode.qrCode(),
-                      data: 'https://seddo.sn/verify/$cleanRef',
-                      width: 48,
-                      height: 48,
-                    ),
-                    pw.SizedBox(width: 14),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text(
-                            'Ce recu est une preuve officielle de transport delivree par Seddo.',
-                            style: pw.TextStyle(
-                              fontSize: 9,
-                              fontWeight: pw.FontWeight.bold,
-                              color: _pdfSlateDark,
-                            ),
-                          ),
-                          pw.SizedBox(height: 2),
-                          pw.Text(
-                            'Support : support@seddo.sn - Dakar, Senegal - Ref : $cleanRef',
-                            style: const pw.TextStyle(
-                              fontSize: 8,
-                              color: _pdfTextSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              // 5. Clean Footer (sans scan/code-barres)
+              pw.Center(
+                child: pw.Text(
+                  'Ce recu est une preuve officielle de transport delivree par Seddo.',
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _pdfSlateDark,
+                  ),
                 ),
               ),
-
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 4),
+              pw.Center(
+                child: pw.Text(
+                  'Support : support@seddo.sn - Dakar, Senegal - Ref : $cleanRef',
+                  style: const pw.TextStyle(
+                    fontSize: 8,
+                    color: _pdfTextSecondary,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 8),
               pw.Center(
                 child: pw.Text(
                   'Merci pour votre confiance ! A tres bientot sur Seddo.',

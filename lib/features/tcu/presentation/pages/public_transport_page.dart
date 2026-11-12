@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/core/navigation/slide_page_route.dart';
+import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/home/domain/models/place_search_result.dart';
+import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 
 import '../../data/models/transit/PlaceModel.dart';
 import '../widgets/PlaceSearchWidget.dart';
@@ -10,12 +17,14 @@ import 'RouteTimelinePage.dart';
 class PublicTransportPage extends StatefulWidget {
   final String initialOrigin;
   final String initialDestination;
+  final LatLng? initialOriginLocation;
   final bool autoSearch;
 
   const PublicTransportPage({
     super.key,
     this.initialOrigin = '',
     this.initialDestination = '',
+    this.initialOriginLocation,
     this.autoSearch = false,
   });
 
@@ -32,6 +41,8 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
   bool _hasSearched = false;
+  bool _busesLoaded = false;
+  bool _showSeddoCard = true;
   Key _searchKey = UniqueKey();
 
   @override
@@ -39,7 +50,17 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     super.initState();
 
     // Initial GPS resolution for origin
-    if (widget.initialOrigin.isNotEmpty &&
+    if (widget.initialOriginLocation != null) {
+      final name = widget.initialOrigin.isNotEmpty
+          ? widget.initialOrigin
+          : 'Ma position actuelle';
+      origine = PlaceModel(
+        latitude: widget.initialOriginLocation!.latitude,
+        longitude: widget.initialOriginLocation!.longitude,
+        name: name,
+        address: name,
+      );
+    } else if (widget.initialOrigin.isNotEmpty &&
         widget.initialOrigin != 'Ma position actuelle') {
       origine = PlaceModel(
         latitude: 14.6937949,
@@ -47,8 +68,9 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
         name: widget.initialOrigin,
         address: widget.initialOrigin,
       );
+      _initCurrentLocation(fallbackName: widget.initialOrigin);
     } else {
-      _initCurrentLocation();
+      _initCurrentLocation(fallbackName: widget.initialOrigin);
     }
 
     if (widget.initialDestination.isNotEmpty) {
@@ -64,7 +86,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     }
   }
 
-  Future<void> _initCurrentLocation() async {
+  Future<void> _initCurrentLocation({String? fallbackName}) async {
     try {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings:
@@ -72,22 +94,30 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
       );
       if (mounted) {
         setState(() {
-          origine ??= PlaceModel(
+          final name = (fallbackName != null && fallbackName.isNotEmpty)
+              ? fallbackName
+              : (origine?.name.isNotEmpty == true
+                  ? origine!.name
+                  : 'Ma position actuelle');
+          origine = PlaceModel(
             latitude: pos.latitude,
             longitude: pos.longitude,
-            name: 'Ma position actuelle',
-            address: 'Ma position actuelle',
+            name: name,
+            address: name,
           );
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && origine == null) {
+        final name = (fallbackName != null && fallbackName.isNotEmpty)
+            ? fallbackName
+            : 'Ma position actuelle';
         setState(() {
-          origine ??= PlaceModel(
+          origine = PlaceModel(
             latitude: 14.6937949,
             longitude: -17.4914255,
-            name: 'Ma position actuelle',
-            address: 'Dakar',
+            name: name,
+            address: name,
           );
         });
       }
@@ -185,6 +215,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     }
     setState(() {
       _hasSearched = true;
+      _busesLoaded = false;
       _searchKey = UniqueKey();
     });
   }
@@ -196,6 +227,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
         origine = destination;
         destination = backup;
         if (_hasSearched) {
+          _busesLoaded = false;
           _searchKey = UniqueKey();
         }
       });
@@ -207,10 +239,12 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
+        child: Stack(
           children: [
+            SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                children: [
             // 1. En-tête : Flèche retour + Titre (sans aucun menu en haut à droite)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -393,6 +427,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                             Expanded(
                               flex: 4,
                               child: InkWell(
+                                key: const Key('tcu_search_button'),
                                 onTap: _onSearchPressed,
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
@@ -471,12 +506,220 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                   date: _apiFormattedDate,
                   time: _apiFormattedTime,
                   physics: const NeverScrollableScrollPhysics(),
+                  onRoutesLoaded: () {
+                    if (mounted && !_busesLoaded) {
+                      setState(() {
+                        _busesLoaded = true;
+                      });
+                    }
+                  },
                 ),
               ),
+
+            // Espace en bas pour ne pas que le contenu soit masqué par la carte flottante
+            SizedBox(
+              height: (_showSeddoCard && _hasSearched && _busesLoaded) ? 90 : 24,
+            ),
           ],
         ),
       ),
-    ),
-  );
-}
+
+      // Floating Seddo VTC card at bottom (visible uniquement après chargement des bus)
+      // Dismissible horizontally (glisser de gauche à droite ou droite à gauche pour faire disparaître)
+      if (_showSeddoCard && _hasSearched && _busesLoaded)
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 16,
+          child: Dismissible(
+            key: const Key('tcu_seddo_card_dismissible'),
+            direction: DismissDirection.horizontal,
+            onDismissed: (_) {
+              setState(() {
+                _showSeddoCard = false;
+              });
+            },
+            child: _buildFloatingSeddoCard(),
+          ),
+        ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSeddoRideSearch() {
+    final pickupName = (origine?.name.isNotEmpty == true)
+        ? origine!.name
+        : 'Ma position actuelle';
+    final pickupAddress = (origine?.address.isNotEmpty == true)
+        ? origine!.address
+        : pickupName;
+    final pickupLat = (origine != null && origine!.latitude != 0)
+        ? origine!.latitude
+        : 14.6937949;
+    final pickupLng = (origine != null && origine!.longitude != 0)
+        ? origine!.longitude
+        : -17.4914255;
+
+    final depResult = PlaceSearchResult(
+      id: 'tcu_pickup',
+      mainText: pickupName,
+      secondaryText: pickupAddress,
+      fullAddress: pickupAddress,
+      latitude: pickupLat,
+      longitude: pickupLng,
+      category: 'pickup',
+    );
+
+    PlaceSearchResult? destResult;
+    if (destination != null && destination!.name.isNotEmpty) {
+      final destName = destination!.name;
+      final destAddress = destination!.address.isNotEmpty
+          ? destination!.address
+          : destName;
+      final destLat = destination!.latitude;
+      final destLng = destination!.longitude;
+
+      destResult = PlaceSearchResult(
+        id: 'tcu_destination',
+        mainText: destName,
+        secondaryText: destAddress,
+        fullAddress: destAddress,
+        latitude: destLat,
+        longitude: destLng,
+      );
+    }
+
+    Navigator.of(context).push(
+      SlideRightToLeftRoute(
+        page: PlaceSearchPage(
+          initialPickup: pickupName,
+          initialDestination: destResult?.mainText ?? destination?.name ?? '',
+          initialDepartureResult: depResult,
+          initialDestinationResult: destResult,
+          currentUserLocation: LatLng(pickupLat, pickupLng),
+        ),
+      ),
+    );
+  }
+
+  /// Floating dark Seddo VTC card inciting the user to order a Seddo car.
+  /// Stays visible floating over the page after bus routes have loaded, dismissible with ✕ button or horizontal swipe.
+  Widget _buildFloatingSeddoCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF141414),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 14,
+        vertical: 12,
+      ),
+      child: Stack(
+        children: [
+          // Main interactive card row
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _openSeddoRideSearch,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Car icon
+                const Icon(
+                  Icons.directions_car_outlined,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+
+                // Text: "En Seddo : 19 min, porte à porte" on a single line, fully white
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'En Seddo : 19 min, porte à porte',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: -0.2,
+                      ),
+                      maxLines: 1,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Orange "Commander" button
+                ElevatedButton(
+                  key: const Key('tcu_seddo_commander_button'),
+                  onPressed: _openSeddoRideSearch,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: AppConstants.elevationNone,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: Text(
+                    'Commander',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20), // Space for close button
+              ],
+            ),
+          ),
+
+          // Close button (✕) to dismiss if user wants to hide it
+          Positioned(
+            top: 0,
+            right: 0,
+            child: GestureDetector(
+              key: const Key('tcu_seddo_card_close'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                setState(() {
+                  _showSeddoCard = false;
+                });
+              },
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2A2A),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF444444), width: 1),
+                ),
+                child: const Icon(
+                  Icons.close,
+                  size: 11,
+                  color: Color(0xFFCCCCCC),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

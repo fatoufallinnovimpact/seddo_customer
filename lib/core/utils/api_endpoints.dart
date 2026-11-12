@@ -13,6 +13,10 @@ abstract class ApiEndpoints {
   static String get refresh => '$baseUrl/v1/auth/refresh';
   static String get logout => '$baseUrl/v1/auth/logout';
 
+  // User profile & photo endpoints (GET /v1/users/me, PUT /v1/users/me/photo, GET /v1/users/me/photo)
+  static String get userMe => '$baseUrl/v1/users/me';
+  static String get userPhoto => '$baseUrl/v1/users/me/photo';
+
   // Device push tokens endpoints
   static String get devices => '$baseUrl/v1/users/me/devices';
   static String deviceToken(String token) => '$baseUrl/v1/users/me/devices/$token';

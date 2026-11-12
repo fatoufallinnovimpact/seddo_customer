@@ -11,6 +11,9 @@ class UserModel extends Equatable {
   final bool omEligible;
   final bool isNew;
   final bool needsProfile;
+  final double? rating;
+  final int? ratingCount;
+  final String? photoUrl;
 
   const UserModel({
     required this.id,
@@ -21,7 +24,18 @@ class UserModel extends Equatable {
     this.omEligible = false,
     this.isNew = false,
     this.needsProfile = false,
+    this.rating,
+    this.ratingCount,
+    this.photoUrl,
   });
+
+  /// Formatted rating string from GET /v1/users/me (e.g. "4,8" or "5,0" default)
+  String get displayRating {
+    if (rating != null) {
+      return rating!.toStringAsFixed(1).replaceAll('.', ',');
+    }
+    return '5,0';
+  }
 
   /// Full display name
   String get fullName {
@@ -91,6 +105,16 @@ class UserModel extends Equatable {
   }
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    final rawRating = json['rating'];
+    final double? parsedRating = rawRating is num
+        ? rawRating.toDouble()
+        : (rawRating != null ? double.tryParse(rawRating.toString()) : null);
+
+    final rawRatingCount = json['ratingCount'];
+    final int? parsedRatingCount = rawRatingCount is num
+        ? rawRatingCount.toInt()
+        : (rawRatingCount != null ? int.tryParse(rawRatingCount.toString()) : null);
+
     return UserModel(
       id: json['id'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
@@ -100,6 +124,9 @@ class UserModel extends Equatable {
       omEligible: json['omEligible'] as bool? ?? false,
       isNew: json['isNew'] as bool? ?? false,
       needsProfile: json['needsProfile'] as bool? ?? false,
+      rating: parsedRating,
+      ratingCount: parsedRatingCount,
+      photoUrl: json['photoUrl'] as String?,
     );
   }
 
@@ -113,6 +140,9 @@ class UserModel extends Equatable {
       'omEligible': omEligible,
       'isNew': isNew,
       'needsProfile': needsProfile,
+      'rating': rating,
+      'ratingCount': ratingCount,
+      'photoUrl': photoUrl,
     };
   }
 
@@ -125,6 +155,9 @@ class UserModel extends Equatable {
     bool? omEligible,
     bool? isNew,
     bool? needsProfile,
+    double? rating,
+    int? ratingCount,
+    String? photoUrl,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -135,6 +168,9 @@ class UserModel extends Equatable {
       omEligible: omEligible ?? this.omEligible,
       isNew: isNew ?? this.isNew,
       needsProfile: needsProfile ?? this.needsProfile,
+      rating: rating ?? this.rating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      photoUrl: photoUrl ?? this.photoUrl,
     );
   }
 
@@ -148,5 +184,8 @@ class UserModel extends Equatable {
         omEligible,
         isNew,
         needsProfile,
+        rating,
+        ratingCount,
+        photoUrl,
       ];
 }

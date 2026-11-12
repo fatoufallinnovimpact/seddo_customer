@@ -105,10 +105,47 @@ class RecentSuggestionModel extends Equatable {
   List<Object?> get props => [id, label, address, lat, lng];
 }
 
+/// Local persistent storage and in-memory cache for home suggestions
+class HomeSuggestionsStorage {
+  static const String _suggestionsKey = 'seddo_cached_home_suggestions';
+  static HomeSuggestionsModel? _memorySuggestions;
+
+  /// Synchronous memory cache available immediately on frame 0
+  static HomeSuggestionsModel? get cachedSuggestions => _memorySuggestions;
+
+  static Future<void> saveSuggestions(HomeSuggestionsModel model) async {
+    _memorySuggestions = model;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_suggestionsKey, jsonEncode(model.toJson()));
+    } catch (_) {}
+  }
+
+  static Future<HomeSuggestionsModel?> loadSuggestions() async {
+    if (_memorySuggestions != null) return _memorySuggestions;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_suggestionsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        final model = HomeSuggestionsModel.fromJson(decoded);
+        _memorySuggestions = model;
+        return model;
+      }
+    } catch (_) {}
+    return null;
+  }
+}
+
 /// Local storage for the user's recent trips history
 class RecentTripStorage {
   static const String _key = 'seddo_last_recent_trip';
   static const String _historyKey = 'seddo_recent_trips_history';
+  static List<RecentSuggestionModel>? _memoryRecentTrips;
+
+  /// Synchronous memory cache for zero-latency retrieval
+  static List<RecentSuggestionModel> get cachedRecentTrips =>
+      _memoryRecentTrips ?? const [];
 
   static Future<void> saveLastRecentTrip(PlaceSearchResult place) async {
     try {
@@ -140,6 +177,7 @@ class RecentTripStorage {
         }
       }
       final toSave = updated.take(10).map((e) => e.toJson()).toList();
+      _memoryRecentTrips = updated.take(10).toList();
       await prefs.setString(_historyKey, jsonEncode(toSave));
     } catch (_) {}
   }
@@ -176,9 +214,10 @@ class RecentTripStorage {
         }
       }
 
+      _memoryRecentTrips = result;
       return result;
     } catch (_) {
-      return [];
+      return _memoryRecentTrips ?? [];
     }
   }
 
@@ -203,6 +242,7 @@ class RecentTripStorage {
   }
 
   static Future<void> clearLastRecentTrip() async {
+    _memoryRecentTrips = [];
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_key);

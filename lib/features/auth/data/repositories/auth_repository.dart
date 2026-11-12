@@ -237,6 +237,48 @@ class AuthRepository {
     return prefs.getString('auth_access_token');
   }
 
+  /// Fetches profile from GET /v1/users/me (identity, rating, ratingCount, photoUrl)
+  Future<UserModel?> fetchUserProfile() async {
+    final cached = await getCachedUser();
+    if (_isTest) {
+      return cached;
+    }
+
+    try {
+      final token = await getAccessToken();
+      if (token == null || token.isEmpty) return cached;
+
+      final remoteUser = await _apiService.getMe(accessToken: token);
+      _currentUser = remoteUser;
+      await _persistUser(remoteUser);
+      return remoteUser;
+    } catch (e) {
+      debugPrint('[AuthRepository] ⚠️ Erreur GET /v1/users/me: $e');
+      return cached;
+    }
+  }
+
+  /// Uploads user profile photo via PUT /v1/users/me/photo
+  Future<UserModel> uploadProfilePhoto(String filePath) async {
+    if (_isTest) {
+      final updated = (_currentUser ??
+              const UserModel(id: 'test', phone: '771234512'))
+          .copyWith(photoUrl: filePath);
+      _currentUser = updated;
+      await _persistUser(updated);
+      return updated;
+    }
+
+    final token = await getAccessToken();
+    final updated = await _apiService.uploadPhoto(
+      filePath: filePath,
+      accessToken: token,
+    );
+    _currentUser = updated;
+    await _persistUser(updated);
+    return updated;
+  }
+
   /// Checks if user has an active access token and has completed profile setup
   Future<bool> isAuthenticated() async {
     final prefs = await SharedPreferences.getInstance();

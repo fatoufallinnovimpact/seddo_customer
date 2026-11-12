@@ -80,6 +80,25 @@ class _HomePageContentState extends State<_HomePageContent>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // Initialisation instantanée depuis le cache mémoire et local pour un affichage 100% fluide sans délai
+    _suggestions = HomeSuggestionsStorage.cachedSuggestions;
+    _localRecentTrips = RecentTripStorage.cachedRecentTrips;
+
+    HomeSuggestionsStorage.loadSuggestions().then((cached) {
+      if (cached != null && mounted && _suggestions == null) {
+        setState(() {
+          _suggestions = cached;
+        });
+      }
+    });
+    RecentTripStorage.getRecentTrips().then((localRecents) {
+      if (localRecents.isNotEmpty && mounted && _localRecentTrips.isEmpty) {
+        setState(() {
+          _localRecentTrips = localRecents;
+        });
+      }
+    });
+
     // Connexion WebSocket sur l'accueil pour recevoir les chauffeurs proches (PDF Seddo page 7)
     RealtimeService().connect();
 
@@ -343,16 +362,27 @@ class _HomePageContentState extends State<_HomePageContent>
   }
 
   Future<void> _fetchSuggestions() async {
+    // 1. Charger immédiatement les données locales sans attendre le réseau
+    RecentTripStorage.getRecentTrips().then((localRecents) {
+      if (localRecents.isNotEmpty && mounted) {
+        if (_localRecentTrips.length != localRecents.length) {
+          setState(() {
+            _localRecentTrips = localRecents;
+          });
+        }
+      }
+    });
+
+    // 2. Mettre à jour en arrière-plan via l'API et rafraîchir le cache
     try {
       final res = await _rideService.getSuggestions();
-      final localRecents = await RecentTripStorage.getRecentTrips();
-      if (mounted) {
-        setState(() {
-          if (res != null) {
+      if (res != null && mounted) {
+        await HomeSuggestionsStorage.saveSuggestions(res);
+        if (_suggestions != res) {
+          setState(() {
             _suggestions = res;
-          }
-          _localRecentTrips = localRecents;
-        });
+          });
+        }
       }
     } catch (_) {}
   }
@@ -1255,14 +1285,16 @@ class _HomePageContentState extends State<_HomePageContent>
             child: _buildServiceItem(
               context: context,
               key: const ValueKey('home_service_card_transpo'),
-              title: 'Transpo',
+              title: 'Transport en commun',
               imagePath: 'assets/transit/aftu.png',
               imageHeight: 66,
               onTap: () {
+                final homeBloc = context.read<HomeBloc>();
                 Navigator.of(context).push(
                   SlideRightToLeftRoute(
                     page: PublicTransportPage(
                       initialOrigin: _currentAddressShort,
+                      initialOriginLocation: _currentUserLocation ?? homeBloc.state.userLocation,
                     ),
                   ),
                 );
@@ -1326,13 +1358,21 @@ class _HomePageContentState extends State<_HomePageContent>
               ),
             ),
             const SizedBox(height: 10),
-            Text(
-              title,
-              style: GoogleFonts.inter(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-                letterSpacing: -0.2,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  style: GoogleFonts.inter(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF0F172A),
+                    letterSpacing: -0.2,
+                  ),
+                ),
               ),
             ),
           ],

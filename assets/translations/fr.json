@@ -57,7 +57,7 @@
     "accept_and_continue": "Accepter et continuer"
   },
   "home": {
-    "where_to": "Où allez-vous ?",
+    "where_to": "Où allons-nous ?",
     "go": "Aller",
     "search_subtitle": "Saisissez une destination, une adresse...",
     "search_hint": "Rechercher à Dakar (ex: Ouakam)...",
@@ -88,7 +88,7 @@
     "activity": "Activité",
     "activity_sub": "Courses et remboursements",
     "tcu": "TCU",
-    "tcu_sub": "Bus, BRT et TER",
+    "tcu_sub": "Bus AFTU, DDD, BRT",
     "saved_places": "Lieux enregistrés",
     "saved_places_sub": "Maison, Travail, Aéroport",
     "safety": "Sécurité",

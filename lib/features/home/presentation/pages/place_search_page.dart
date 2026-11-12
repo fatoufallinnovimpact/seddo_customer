@@ -16,6 +16,7 @@ import 'package:seddo/services/places_service.dart';
 import 'package:seddo/core/utils/service_area_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
 
 /// Écran de recherche et sélection d'adresses (départ et arrivée) :
@@ -401,6 +402,51 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           latitude: widget.currentUserLocation?.latitude ?? 14.7167,
           longitude: widget.currentUserLocation?.longitude ?? -17.4677,
         );
+
+    // If departure was typed manually or prefilled without coordinates, attempt geocoding
+    if (_selectedDepartureResult == null &&
+        _departureController.text.isNotEmpty &&
+        _departureController.text != currentPositionText) {
+      try {
+        final suggestions =
+            await _placesService.autocomplete(_departureController.text);
+        if (suggestions.isNotEmpty) {
+          final first = suggestions.first;
+          final details = await _placesService.details(first.placeId);
+          departure = PlaceSearchResult(
+            id: first.placeId,
+            mainText: first.mainText ?? _departureController.text,
+            secondaryText: first.secondaryText ?? 'Dakar, Sénégal',
+            fullAddress: details.address,
+            latitude: details.lat,
+            longitude: details.lng,
+            category: 'pickup',
+          );
+        }
+      } catch (_) {}
+    } else if (_selectedDepartureResult == null &&
+        widget.currentUserLocation == null) {
+      try {
+        final pos = await Geolocator.getLastKnownPosition() ??
+            await Geolocator.getCurrentPosition(
+              locationSettings:
+                  const LocationSettings(accuracy: LocationAccuracy.medium),
+            );
+        departure = PlaceSearchResult(
+          id: 'departure_current',
+          mainText: _departureController.text.isNotEmpty
+              ? _departureController.text
+              : currentPositionText,
+          secondaryText: 'Dakar, Sénégal',
+          fullAddress: _departureController.text.isNotEmpty
+              ? _departureController.text
+              : currentPositionText,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          category: 'pickup',
+        );
+      } catch (_) {}
+    }
 
     // 2. Prepare arrival
     PlaceSearchResult arrival = _selectedArrivalResult ??
