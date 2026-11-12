@@ -70,6 +70,56 @@ void main() {
     });
   });
 
+  group('RealtimeRideRouteEvent Parsing & Recalculation Tests', () {
+    test('parses route from plannedPolyline and durationSeconds', () {
+      final json = {
+        'rideId': 'ride_route_123',
+        'plannedPolyline': '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+        'durationSeconds': 420,
+        'distanceMeters': 3500,
+      };
+
+      final event = RealtimeRideRouteEvent.fromJson(json);
+      expect(event.rideId, equals('ride_route_123'));
+      expect(event.points, isNotEmpty);
+      expect(event.durationSeconds, equals(420));
+      expect(event.distanceMeters, equals(3500));
+    });
+
+    test('parses route from nested route.polyline format', () {
+      final json = {
+        'route': {
+          'rideId': 'ride_nested_456',
+          'polyline': '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+          'durationS': 300,
+          'distanceM': 2800,
+        },
+      };
+
+      final event = RealtimeRideRouteEvent.fromJson(json);
+      expect(event.rideId, equals('ride_nested_456'));
+      expect(event.points, isNotEmpty);
+      expect(event.durationSeconds, equals(300));
+      expect(event.distanceMeters, equals(2800));
+    });
+
+    test('parses route from raw GeoJSON coordinates array', () {
+      final json = {
+        'rideId': 'ride_coords_789',
+        'coordinates': [
+          [-17.4440, 14.6937],
+          [-17.4500, 14.7000],
+        ],
+      };
+
+      final event = RealtimeRideRouteEvent.fromJson(json);
+      expect(event.rideId, equals('ride_coords_789'));
+      expect(event.points.length, equals(2));
+      expect(event.points[0].latitude, closeTo(14.6937, 0.0001));
+      expect(event.points[0].longitude, closeTo(-17.4440, 0.0001));
+    });
+  });
+
   group('ActiveRideNavigation & Road Movement Tests', () {
     final departure = PlaceSearchResult(
       id: 'dep',

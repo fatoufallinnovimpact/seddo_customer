@@ -104,8 +104,8 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
 
     if (_effectiveToken != null && _effectiveToken!.isNotEmpty) {
       _fetchSharedDetails();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-        if (mounted) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (mounted && !RealtimeService().isConnected) {
           _fetchSharedDetails();
         }
       });
@@ -139,8 +139,8 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
       });
       _fetchSharedDetails();
       _refreshTimer?.cancel();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-        if (mounted) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (mounted && !RealtimeService().isConnected) {
           _fetchSharedDetails();
         }
       });

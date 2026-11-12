@@ -75,7 +75,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   GoogleMapController? _mapController;
   Timer? _autoMatchTimer;
   Timer? _nearbyPollTimer;
-  Timer? _rideStatusPollTimer;
   late AnimationController _radarController;
   late AnimationController _sheetAnimationController;
   late CameraPosition _currentCameraPosition;
@@ -323,8 +322,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     _nearbyPollTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) {
-        _loadNearbyDrivers();
-        if (RealtimeService().isConnected) {
+        if (!RealtimeService().isConnected) {
+          _loadNearbyDrivers();
+        } else {
           RealtimeService().requestNearbyDrivers(
             lat: widget.departure.latitude,
             lng: widget.departure.longitude,
@@ -352,7 +352,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
               event.status == 'IN_PROGRESS' ||
               event.driver != null) {
             _onPaymentConfirmed();
-            _rideStatusPollTimer?.cancel();
             final driver = event.driver ??
                 DriverModel.fromRideJson(
                   event.raw,
@@ -363,7 +362,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             onDriverFound(driver, code, effectiveRideId);
           } else if (event.status.startsWith('CANCELLED') ||
               event.status == 'NO_DRIVER') {
-            _rideStatusPollTimer?.cancel();
             onNoDriverAvailable();
           }
         }
@@ -383,18 +381,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           }
         }
       });
-
-      // Polling actif continu : interroger toutes les 3s tant qu'on recherche un chauffeur.
-      // Cela garantit une transition immédiate dès qu'un chauffeur accepte sur le backend,
-      // en parallèle du WebSocket temps réel.
-      if (!isTest) {
-        _rideStatusPollTimer = Timer.periodic(
-          const Duration(seconds: 3),
-          (_) {
-            _checkRideStatus(effectiveRideId);
-          },
-        );
-      }
     }
 
     // Resynchronisation REST et WebSocket dès la reconnexion
@@ -473,7 +459,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     }
     _autoMatchTimer?.cancel();
     _nearbyPollTimer?.cancel();
-    _rideStatusPollTimer?.cancel();
     _departureScreenOffsetNotifier.dispose();
     _sheetAnimationController.dispose();
     _radarController.dispose();
@@ -559,7 +544,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             updatedTripPolyline,
           );
         } else if (status.startsWith('CANCELLED') || status == 'NO_DRIVER') {
-          _rideStatusPollTimer?.cancel();
           onNoDriverAvailable();
         }
 
@@ -671,7 +655,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     List<LatLng>? tripPolyline,
   ]) {
     _autoMatchTimer?.cancel();
-    _rideStatusPollTimer?.cancel();
     final driver = matchedDriver ??
         DriverModel.mockDakarDriver(
           rideType: widget.rideOption.type,
@@ -712,7 +695,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     if (selectedReason == null || !mounted) return;
 
     _autoMatchTimer?.cancel();
-    _rideStatusPollTimer?.cancel();
 
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId;
@@ -758,7 +740,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   @visibleForTesting
   Future<void> onNoDriverAvailable() async {
     _autoMatchTimer?.cancel();
-    _rideStatusPollTimer?.cancel();
     final action = await NoDriverFoundSheet.show(
       context,
       departure: widget.departure,

@@ -16,6 +16,8 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.os.Build
 import android.view.View
@@ -36,8 +38,7 @@ object LiveUpdateNotificationManager {
     private const val CHANNEL_NAME = "Courses Seddo en direct"
     const val NOTIFICATION_ID = 2026
 
-    private var cachedEcoCarBitmap: Bitmap? = null
-    private var cachedCarThumbOriginal: Bitmap? = null
+    private var cachedCarIconTemplate: Bitmap? = null
 
     private var channelsCleaned = false
 
@@ -326,45 +327,30 @@ object LiveUpdateNotificationManager {
     }
 
     /**
-     * Tints the vehicle thumbnail bitmap to match the driver's actual car color
-     * using the exact luminance color matrix as VehicleColorHelper in Flutter.
+     * Tints the vehicle thumbnail icon to match the driver's actual car color,
+     * mirroring the exact iOS Live Activity implementation (SF Symbol "car.side.fill" tinted with carTint).
+     * Uses a pure white side-view car vector template tinted cleanly via PorterDuff.Mode.SRC_IN.
      */
     private fun getTintedCarBitmap(context: Context, carColorStr: String?): Bitmap {
-        var original = cachedCarThumbOriginal
-        if (original == null) {
-            original = BitmapFactory.decodeResource(context.resources, R.drawable.ic_seddo_car_thumb)
-            cachedCarThumbOriginal = original
+        var template = cachedCarIconTemplate
+        if (template == null) {
+            template = BitmapFactory.decodeResource(context.resources, R.drawable.ic_seddo_car_side_icon)
+            if (template == null) {
+                template = BitmapFactory.decodeResource(context.resources, R.drawable.ic_seddo_car_thumb)
+            }
+            cachedCarIconTemplate = template
         }
-        if (original == null) {
+        if (template == null) {
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         }
 
         val targetColor = parseCarColor(carColorStr)
-        val clean = (carColorStr ?: "").trim().lowercase()
-
-        // If yellow (base eco car asset), return original
-        if (clean.contains("jaune") || clean.contains("yellow")) {
-            return original
-        }
-
-        val r = Color.red(targetColor) / 255f
-        val g = Color.green(targetColor) / 255f
-        val b = Color.blue(targetColor) / 255f
-
-        // Rec. 601 Luminance grayscale matrix modulated by target color:
-        val colorMatrix = ColorMatrix(floatArrayOf(
-            0.299f * r, 0.587f * r, 0.114f * r, 0f, 0f,
-            0.299f * g, 0.587f * g, 0.114f * g, 0f, 0f,
-            0.299f * b, 0.587f * b, 0.114f * b, 0f, 0f,
-            0f,         0f,         0f,         1f, 0f
-        ))
-
-        val tinted = Bitmap.createBitmap(original.width, original.height, Bitmap.Config.ARGB_8888)
+        val tinted = Bitmap.createBitmap(template.width, template.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(tinted)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            colorFilter = ColorMatrixColorFilter(colorMatrix)
+            colorFilter = PorterDuffColorFilter(targetColor, PorterDuff.Mode.SRC_IN)
         }
-        canvas.drawBitmap(original, 0f, 0f, paint)
+        canvas.drawBitmap(template, 0f, 0f, paint)
         return tinted
     }
 
@@ -444,9 +430,8 @@ object LiveUpdateNotificationManager {
         // 3. Arrival Point Icon: White destination flag sitting directly at the end of the horizontal line
         drawDestinationFlag(context, canvas, endX, centerY)
 
-        // 4. Draw the realistic moving car sitting on the track colored with REAL vehicle color (matching iOS car.side.fill badge)
-        val parsedColor = parseCarColor(carColorStr)
-        drawTrackCar(canvas, carX, centerY, parsedColor)
+        // 4. Draw the moving car sitting on the track using the Apple car icon (matching iOS car.side.fill)
+        drawTrackCarIcon(context, canvas, carX, centerY, carColorStr)
 
         return bitmap
     }
@@ -497,93 +482,30 @@ object LiveUpdateNotificationManager {
     }
 
     /**
-     * Draws a realistic side-profile vehicle moving along the route track (matching iOS car.side.fill badge):
-     * - White rounded badge with drop shadow so the route line stays clean
-     * - Aerodynamic chassis & cabin tinted in the driver's REAL carColor from API
-     * - Dark automotive tinted windows (#1E293B) with center pillar
-     * - Two wheels with dark rubber tires (#18181B) and silver rims (#D4D4D8)
-     * - Warm LED headlight at front right (#FEF08A) and red taillight at rear left (#EF4444)
+     * Draws the side-view vehicle icon moving along the route track,
+     * using the exact same Apple vector car icon (SF Symbol "car.side.fill" tinted with real vehicle color)
+     * as used on iOS SeddoRouteTrackView.
      */
-    private fun drawTrackCar(canvas: Canvas, x: Float, y: Float, carColor: Int) {
-        // Car body stroke for clean crisp silhouette directly on the route line
-        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = carColor
-            style = Paint.Style.FILL
-        }
-        val bodyStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(90, 0, 0, 0)
-            strokeWidth = 1.2f
-            style = Paint.Style.STROKE
-        }
+    private fun drawTrackCarIcon(context: Context, canvas: Canvas, x: Float, y: Float, carColorStr: String) {
+        val carBmp = getTintedCarBitmap(context, carColorStr)
+        if (carBmp.width <= 1) return
 
-        // Lower body rectangle (chassis)
-        val chassisRect = RectF(x - 24f, y - 2f, x + 24f, y + 8f)
-        canvas.drawRoundRect(chassisRect, 3.5f, 3.5f, bodyPaint)
-        canvas.drawRoundRect(chassisRect, 3.5f, 3.5f, bodyStroke)
+        val carWidth = 66f
+        val carHeight = carWidth * (carBmp.height.toFloat() / carBmp.width.toFloat()) // ~30.2f
+        val carLeft = x - (carWidth / 2f)
+        val carTop = y - (carHeight / 2f)
 
-        // Cabin / Roof / Windshield (trapezoid driving right)
-        val cabinPath = Path().apply {
-            moveTo(x - 14f, y - 2f)
-            lineTo(x - 8f, y - 11f)
-            lineTo(x + 7f, y - 11f)
-            lineTo(x + 16f, y - 2f)
-            close()
+        // Drop shadow matching iOS .shadow(color: Color.black.opacity(0.45), radius: 2, x: 0, y: 1)
+        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            colorFilter = PorterDuffColorFilter(Color.argb(100, 0, 0, 0), PorterDuff.Mode.SRC_IN)
         }
-        canvas.drawPath(cabinPath, bodyPaint)
-        canvas.drawPath(cabinPath, bodyStroke)
+        val shadowRect = RectF(carLeft, carTop + 2f, carLeft + carWidth, carTop + carHeight + 2f)
+        canvas.drawBitmap(carBmp, null, shadowRect, shadowPaint)
 
-        // 4. Windows (dark tinted glass #1E293B)
-        val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1E293B")
-            style = Paint.Style.FILL
-        }
-        val winPath = Path().apply {
-            moveTo(x - 12f, y - 3f)
-            lineTo(x - 7f, y - 10f)
-            lineTo(x + 5f, y - 10f)
-            lineTo(x + 13f, y - 3f)
-            close()
-        }
-        canvas.drawPath(winPath, glassPaint)
-
-        // Center window pillar in car color
-        val pillarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = carColor
-            strokeWidth = 2.2f
-            style = Paint.Style.STROKE
-        }
-        canvas.drawLine(x - 1f, y - 10f, x - 1f, y - 3f, pillarPaint)
-
-        // 5. Two Wheels at bottom sitting on the track
-        val tirePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#18181B")
-            style = Paint.Style.FILL
-        }
-        val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#D4D4D8")
-            style = Paint.Style.FILL
-        }
-        val wheelRadius = 6f
-        val rimRadius = 2.8f
-        // Rear wheel (left) & Front wheel (right)
-        for (wheelX in floatArrayOf(x - 13f, x + 14f)) {
-            canvas.drawCircle(wheelX, y + 8f, wheelRadius, tirePaint)
-            canvas.drawCircle(wheelX, y + 8f, rimRadius, rimPaint)
-        }
-
-        // 6. Front Headlight (warm bright LED on front right)
-        val headlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#FEF08A")
-            style = Paint.Style.FILL
-        }
-        canvas.drawCircle(x + 23.5f, y + 2f, 2.5f, headlightPaint)
-
-        // 7. Rear Taillight (red LED on rear left)
-        val taillightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#EF4444")
-            style = Paint.Style.FILL
-        }
-        canvas.drawRoundRect(RectF(x - 24.5f, y + 1.5f, x - 22f, y + 5f), 1f, 1f, taillightPaint)
+        // Tinted car icon on the track
+        val carPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val destRect = RectF(carLeft, carTop, carLeft + carWidth, carTop + carHeight)
+        canvas.drawBitmap(carBmp, null, destRect, carPaint)
     }
 
     fun cancelNotification(context: Context) {

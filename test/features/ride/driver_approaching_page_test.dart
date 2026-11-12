@@ -103,22 +103,27 @@ void main() {
       expect(find.text('Moussa'), findsOneWidget);
       expect(find.text('MD'), findsOneWidget);
 
-      // Card 2: Code de départ verification
+      // Action buttons horizontal row
+      expect(find.text('Appeler'), findsOneWidget);
+      expect(find.text('Discussion'), findsOneWidget);
+      expect(find.text('Détails'), findsOneWidget);
+      expect(find.text('Partager'), findsOneWidget);
+      expect(find.text('Sécurité'), findsOneWidget);
+
+      // Tapping Détails opens the details modal
+      await tester.ensureVisible(find.text('Détails'));
+      await tester.tap(find.text('Détails'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Détails de la course'), findsOneWidget);
       expect(find.text('Code de départ'), findsOneWidget);
-      expect(find.text('À donner au chauffeur'), findsOneWidget);
       expect(find.text('4'), findsOneWidget);
       expect(find.text('8'), findsOneWidget);
       expect(find.text('2'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
-
-      // Card 3: Quick message & call bar
-      expect(find.text('Envoyer un message...'), findsOneWidget);
-      expect(find.byTooltip('Appeler le chauffeur'), findsOneWidget);
-
-      // Card 4: Action buttons
-      expect(find.text('Partager'), findsOneWidget);
-      expect(find.text('Sécurité'), findsOneWidget);
-      expect(find.text('Annuler'), findsOneWidget);
+      expect(find.textContaining('Prise en charge'), findsOneWidget);
+      expect(find.text('Destination'), findsOneWidget);
+      expect(find.text('Annuler la commande'), findsOneWidget);
     });
 
     testWidgets('dragging sheet down collapses it and displays Arrive dans X min',
@@ -168,7 +173,7 @@ void main() {
       );
 
       await tester.pump();
-      await tester.tap(find.text('Envoyer un message...'));
+      await tester.tap(find.text('Discussion'));
       await tester.pumpAndSettle();
 
       expect(find.byType(DriverChatPage), findsOneWidget);
@@ -191,6 +196,7 @@ void main() {
       );
 
       await tester.pump();
+      await tester.ensureVisible(find.text('Partager'));
       await tester.tap(find.text('Partager'));
       await tester.pumpAndSettle();
 
@@ -214,7 +220,12 @@ void main() {
       );
 
       await tester.pump();
-      await tester.tap(find.text('Annuler'));
+      await tester.ensureVisible(find.text('Détails'));
+      await tester.tap(find.text('Détails'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Annuler la commande'));
+      await tester.tap(find.text('Annuler la commande'));
       await tester.pumpAndSettle();
 
       // Confirmer l'annulation dans la feuille de sélection de motif
@@ -272,19 +283,24 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Vérification du nouveau code de départ retourné par l'API: 7 2 5 9
-      expect(find.text('7'), findsOneWidget);
-      expect(find.text('2'), findsWidgets); // '2' appears in digit boxes and '2 min'
-      expect(find.text('5'), findsOneWidget);
-      expect(find.text('9'), findsOneWidget);
-
       // Vérification des infos réelles du chauffeur retourné par l'API
       expect(find.text('Ibrahima'), findsOneWidget);
       expect(find.text('IN'), findsOneWidget);
       expect(find.text('DK 9876 ZZ'), findsOneWidget);
       expect(find.text('Hyundai Elantra Noir'), findsOneWidget);
-      expect(find.text('4.8'), findsOneWidget);
+      expect(find.textContaining('4.8'), findsOneWidget);
       expect(find.text('2 min'), findsWidgets);
+
+      // Ouvrir le modal Détails pour vérifier le code de départ
+      await tester.ensureVisible(find.text('Détails'));
+      await tester.tap(find.text('Détails'));
+      await tester.pumpAndSettle();
+
+      // Vérification du nouveau code de départ retourné par l'API: 7 2 5 9
+      expect(find.text('7'), findsOneWidget);
+      expect(find.text('2'), findsWidgets); // '2' appears in digit boxes and '2 min'
+      expect(find.text('5'), findsOneWidget);
+      expect(find.text('9'), findsOneWidget);
     });
 
     testWidgets(
@@ -368,6 +384,12 @@ void main() {
 
       expect(find.byType(DriverApproachingPage), findsOneWidget);
       expect(find.text('Modou'), findsOneWidget);
+      expect(find.text('DK 1122 CC'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Détails'));
+      await tester.tap(find.text('Détails'));
+      await tester.pumpAndSettle();
+
       expect(find.text('6'), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
       expect(find.text('8'), findsOneWidget);

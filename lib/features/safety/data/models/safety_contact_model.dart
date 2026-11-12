@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// Model representing an emergency contact.
-/// Follows Innov & Impact Africa guidelines (data/models/).
+
 class SafetyContactModel extends Equatable {
   final String id;
   final String name;

@@ -13,6 +13,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
@@ -111,6 +112,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   double _currentCarHeading = 0.0;
   List<LatLng> _traveledPoints = [];
   List<LatLng> _remainingPoints = [];
+  List<TrafficSegmentModel> _traffic = [];
   late double _initialDistanceKm;
   late double _remainingDistanceKm;
   late int _initialEtaMinutes;
@@ -154,8 +156,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   Timer? _stalePositionCheckTimer;
   Timer? _pollTimer;
   bool _isPositionUpdating = false;
-  bool _isRerouting = false;
-  DateTime _lastRerouteTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// Whether to display the simulation toggle button in the bottom sheet.
   /// Kept in code for later use as requested by the user.
@@ -170,6 +170,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _isOffline = widget.isOffline;
     _paymentMethod = widget.paymentMethod;
     _paymentPhone = widget.paymentPhone;
+    _traffic = List<TrafficSegmentModel>.from(widget.rideOption.traffic);
     _currentSheetExtent = _isOffline ? 0.25 : 0.38;
     _initRoute();
     _persistLocalState();
@@ -319,10 +320,25 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
       _realtimeRouteSub = RealtimeService().rideRouteStream.listen((event) {
         if (!mounted) return;
-        if (event.points.length >= 2) {
-          setState(() {
-            _effectiveRoute = List.from(event.points);
-          });
+        if (event.rideId == null || event.rideId == effectiveRideId) {
+          if (event.points.length >= 2) {
+            _setNewRoute(event.points);
+            if (event.traffic.isNotEmpty) {
+              setState(() {
+                _traffic = event.traffic;
+              });
+            }
+            if (event.distanceMeters != null && event.distanceMeters! > 0) {
+              setState(() {
+                _remainingDistanceKm = event.distanceMeters! / 1000.0;
+              });
+            }
+            if (event.durationSeconds != null && event.durationSeconds! > 0) {
+              setState(() {
+                _remainingEtaMinutes = (event.durationSeconds! / 60.0).ceil();
+              });
+            }
+          }
         }
       });
 
@@ -353,11 +369,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         }
       });
 
-      // Filet de sécurité: synchronisation continue toutes les 4s pour garantir
-      // la détection en direct de la fin de course ou annulation sans quitter l'application
+      // Filet de sécurité passif: uniquement en cas de déconnexion du WebSocket
       if (!isTest) {
-        _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-          if (mounted) {
+        _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+          if (mounted && !RealtimeService().isConnected) {
             _fetchRideDetails(effectiveRideId);
           }
         });
@@ -779,25 +794,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     }
   }
 
-  Future<void> _checkRerouting(LatLng driverPos) async {
-    final now = DateTime.now();
-    if (_isRerouting || now.difference(_lastRerouteTime).inSeconds < 10) return;
-    _isRerouting = true;
-    _lastRerouteTime = now;
-    try {
-      final dest =
-          LatLng(widget.destination.latitude, widget.destination.longitude);
-      final details =
-          await RouteService().getRoute(origin: driverPos, destination: dest);
-      if (details.polylinePoints.length >= 2 && mounted) {
-        _setNewRoute(details.polylinePoints);
-      }
-    } catch (_) {
-    } finally {
-      _isRerouting = false;
-    }
-  }
-
   ({
     LatLng projectedPoint,
     int segmentIndex,
@@ -1126,11 +1122,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             ? proj.heading
             : _calculateBearing(_currentCarPosition, newPosition));
 
-    // Si déviation nette du tracé (> 100m), lancer un recalcul d'itinéraire en arrière-plan
-    if (!isSnapped) {
-      _checkRerouting(newPosition);
-    }
-
     if (isTest) {
       if (isSnapped) {
         _setProgressOnRoute(proj.progressRatio);
@@ -1210,11 +1201,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     }
 
     final ratio = proj.progressRatio;
-
-    // Si déviation de plus de 100m de la route, recalculer l'itinéraire vers la destination
-    if (!isSnapped) {
-      _checkRerouting(newPosition);
-    }
 
     // Recentrage automatique fluide si le mode suivi est activé
     if (_followCar && _mapController != null) {
@@ -1678,7 +1664,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final activePolylines = RideEtaCalculator.buildTrafficPolylines(
       baseId: 'active_route',
       points: activePts,
-      traffic: widget.rideOption.traffic,
+      traffic: _traffic.isNotEmpty ? _traffic : widget.rideOption.traffic,
       width: 4,
     );
     polylines.addAll(activePolylines);

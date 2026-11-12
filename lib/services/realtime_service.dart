@@ -310,12 +310,41 @@ class RealtimeRideRouteEvent {
         ? json['route'] as Map<String, dynamic>
         : json;
 
-    final poly = (routeObj['polyline'] ?? json['polyline'] ?? '').toString();
+    final poly = (routeObj['polyline'] ??
+            routeObj['plannedPolyline'] ??
+            routeObj['encodedPolyline'] ??
+            json['polyline'] ??
+            json['plannedPolyline'] ??
+            json['encodedPolyline'] ??
+            '')
+        .toString();
     List<LatLng> pts = [];
     if (poly.isNotEmpty) {
       try {
         pts = RouteService.decodePolyline(poly);
       } catch (_) {}
+    }
+
+    // Si les points sont passés directement sous forme de liste de coordonnées
+    if (pts.isEmpty) {
+      final rawPoints = routeObj['points'] ??
+          json['points'] ??
+          routeObj['coordinates'] ??
+          json['coordinates'];
+      if (rawPoints is List) {
+        for (final p in rawPoints) {
+          if (p is Map) {
+            final lat = (p['lat'] ?? p['latitude'] as num?)?.toDouble();
+            final lng = (p['lng'] ?? p['longitude'] ?? p['lon'] as num?)?.toDouble();
+            if (lat != null && lng != null) pts.add(LatLng(lat, lng));
+          } else if (p is List && p.length >= 2) {
+            // GeoJSON [longitude, latitude]
+            final lng = (p[0] as num?)?.toDouble();
+            final lat = (p[1] as num?)?.toDouble();
+            if (lat != null && lng != null) pts.add(LatLng(lat, lng));
+          }
+        }
+      }
     }
 
     List<TrafficSegmentModel> traffic = [];
@@ -327,8 +356,20 @@ class RealtimeRideRouteEvent {
           .toList();
     }
 
-    final durS = (routeObj['durationS'] ?? json['durationS'] as num?)?.toInt();
-    final distM = (routeObj['distanceM'] ?? json['distanceM'] as num?)?.toInt();
+    final durS = (routeObj['durationS'] ??
+            routeObj['durationSeconds'] ??
+            routeObj['duration'] ??
+            json['durationS'] ??
+            json['durationSeconds'] ??
+            json['duration'] as num?)
+        ?.toInt();
+    final distM = (routeObj['distanceM'] ??
+            routeObj['distanceMeters'] ??
+            routeObj['distance'] ??
+            json['distanceM'] ??
+            json['distanceMeters'] ??
+            json['distance'] as num?)
+        ?.toInt();
     final rideId = (json['rideId'] ?? routeObj['rideId'])?.toString();
     final version = (json['version'] ?? routeObj['version'] as num?)?.toInt() ?? 0;
 
@@ -747,11 +788,19 @@ class RealtimeService {
       return;
     }
 
-    // Route
+    // Route / Rerouting
     if (lower == 'ride.route.updated' ||
         lower == 'ride:route:updated' ||
+        lower == 'ride.route_updated' ||
         lower == 'ride.route' ||
-        lower == 'route.updated') {
+        lower == 'ride:route' ||
+        lower == 'ride.reroute' ||
+        lower == 'ride:reroute' ||
+        lower == 'route.reroute' ||
+        lower == 'route.updated' ||
+        lower == 'route:updated' ||
+        lower == 'route:update' ||
+        lower == 'route.update') {
       _handleRideRoute(data);
       return;
     }
@@ -848,9 +897,9 @@ class RealtimeService {
     try {
       final event = RealtimeDriverLocationEvent.fromJson(data);
 
-      // Filtre 1 : Précision GPS minimale (150m pour tolérer les zones urbaines denses)
-      if (event.accuracy != null && event.accuracy! > 150.0) {
-        debugPrint('[RealtimeService] Ignoré driver.location imprécis (${event.accuracy}m > 150m)');
+      // Filtre 1 : Précision GPS minimale 50m (PDF page 3 & 5)
+      if (event.accuracy != null && event.accuracy! > 50.0) {
+        debugPrint('[RealtimeService] Ignoré driver.location imprécis (${event.accuracy}m > 50m)');
         return;
       }
 

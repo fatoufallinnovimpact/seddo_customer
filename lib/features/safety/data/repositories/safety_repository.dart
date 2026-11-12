@@ -1,9 +1,7 @@
 import 'package:seddo/features/safety/data/models/safety_contact_model.dart';
 import 'package:seddo/features/safety/data/services/safety_service.dart';
 
-/// Repository for the Safety feature.
-/// Handles business logic and data access between BLoC and remote/local services.
-/// Follows Innov & Impact Africa guidelines (data/repositories/).
+
 class SafetyRepository {
   final SafetyService _safetyService;
 

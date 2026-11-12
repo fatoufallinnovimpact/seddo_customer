@@ -5,7 +5,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/core/localization/wolof_localizations_delegate.dart';
 import 'package:seddo/features/home/presentation/pages/home_page.dart';
-import 'package:seddo/features/home/presentation/widgets/seddo_share_position_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
 
 class MockHomeTestAssetLoader extends AssetLoader {
@@ -101,7 +100,7 @@ void main() {
   });
 
   testWidgets(
-      'HomePage renders top bar with SEDDO logo & address, and bottom current location card with mini GoogleMap, Modifier button and Partager button',
+      'HomePage renders top bar with SEDDO logo & address, no bottom GoogleMap on home screen, and search bar',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -113,31 +112,21 @@ void main() {
     // 1. Top bar elements
     expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
     expect(find.text('SEDDO'), findsOneWidget);
-    expect(find.text('Rue YF-557, 20'), findsAtLeastNWidgets(1));
+    expect(find.text('Rue YF-557, 20'), findsOneWidget);
+    expect(find.byKey(const ValueKey('seddo_logo_and_location_header')), findsOneWidget);
 
     // 2. Search Bar
     expect(find.text('Où allez-vous ?'), findsOneWidget);
     expect(find.text('Aller'), findsNothing);
 
-    // 3. Mini GoogleMap preview in current location card
-    expect(find.byType(GoogleMap), findsOneWidget);
+    // 3. GoogleMap is not rendered directly on HomePage
+    expect(find.byType(GoogleMap), findsNothing);
 
-    // 4. Modifier button on mini map
-    expect(find.byKey(const ValueKey('home_edit_position_button')), findsOneWidget);
-    expect(find.text('Modifier'), findsOneWidget);
-
-    // 5. White strip: current address and Partager button
-    expect(find.byKey(const ValueKey('home_share_position_button')), findsOneWidget);
-    expect(find.text('Partager'), findsOneWidget);
-
-    // 6. Tapping Partager button opens SeddoSharePositionSheet
-    await tester.tap(find.byKey(const ValueKey('home_share_position_button')));
     await tester.pumpAndSettle();
-
-    expect(find.byType(SeddoSharePositionSheet), findsOneWidget);
   });
 
-  testWidgets('Tapping SEDDO logo does not open any modal',
+  testWidgets(
+      'Tapping SEDDO logo or address opens UserPositionBottomSheet modal with preview map, Modifier and Partager',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -146,12 +135,19 @@ void main() {
     await tester.pumpWidget(createHomeScreen());
     await tester.pump(const Duration(milliseconds: 600));
 
-    // Tap header (SEDDO logo)
+    // Tap header (SEDDO logo + street address)
     await tester.tap(find.byKey(const ValueKey('seddo_logo_and_location_header')));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
-    // Verify user position modal does NOT appear
-    expect(find.byType(UserPositionBottomSheet), findsNothing);
+    // Verify user position modal appears
+    expect(find.byType(UserPositionBottomSheet), findsOneWidget);
+    expect(find.text('Rue YF-557, 20'), findsAtLeastNWidgets(1));
+
+    // Modal contains map preview, Modifier, Partager, Enregistrer
+    expect(find.byType(GoogleMap), findsOneWidget);
+    expect(find.text('Modifier'), findsOneWidget);
+    expect(find.text('Partager'), findsOneWidget);
+    expect(find.text('Enregistrer'), findsOneWidget);
   });
 
   testWidgets('HomePage displays 2 recent trip cards from base / defaults',
@@ -173,7 +169,7 @@ void main() {
     expect(find.byIcon(Icons.history_rounded), findsNWidgets(2));
   });
 
-  testWidgets('HomePage renders TCU banner with TER Dakar and Itinéraires button',
+  testWidgets('HomePage renders Course and Transpo service cards at top and removed TCU banner',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -183,12 +179,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(seconds: 1));
 
-    // TCU Banner elements
-    expect(find.byKey(const ValueKey('home_tcu_banner_card')), findsOneWidget);
-    expect(find.text('TRANSPORTS URBAINS'), findsNothing);
-    expect(find.text('Voyagez en toute simplicité'), findsOneWidget);
-    expect(find.text('Itinéraires'), findsOneWidget);
-    expect(find.byIcon(Icons.explore_outlined), findsOneWidget);
+    // Service Cards (Course & Transpo)
+    expect(find.byKey(const ValueKey('home_service_card_course')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home_service_card_transpo')), findsOneWidget);
+    expect(find.text('Course'), findsOneWidget);
+    expect(find.text('Transpo'), findsOneWidget);
+
+    // TCU Banner is completely removed
+    expect(find.byKey(const ValueKey('home_tcu_banner_card')), findsNothing);
   });
 
   testWidgets('Tapping menu icon opens endDrawer from right to left',

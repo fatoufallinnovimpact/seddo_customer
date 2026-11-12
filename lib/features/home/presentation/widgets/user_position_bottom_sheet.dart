@@ -426,7 +426,6 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                     child: _buildActionButton(
                       title: 'common.save'.tr(),
                       svgAsset: 'assets/icons/save-2-svgrepo-com.svg',
-                      badgeBgColor: AppColors.alert,
                       onTap: _saveLocation,
                     ),
                   ),
@@ -435,7 +434,6 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                     child: _buildActionButton(
                       title: 'common.share'.tr(),
                       svgAsset: 'assets/icons/share-svgrepo-com.svg',
-                      badgeBgColor: AppColors.greenSuccess,
                       onTap: _shareLocation,
                     ),
                   ),
@@ -451,7 +449,6 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
   Widget _buildActionButton({
     required String title,
     required String svgAsset,
-    required Color badgeBgColor,
     required VoidCallback onTap,
   }) {
     return Material(
@@ -463,7 +460,7 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
         child: Container(
           height: AppConstants.userPositionButtonHeight,
           padding: const EdgeInsets.symmetric(
-            horizontal: AppConstants.spacingSm,
+            horizontal: AppConstants.spacingMd,
             vertical: AppConstants.spacingSm,
           ),
           decoration: BoxDecoration(
@@ -474,29 +471,19 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
             ),
           ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: AppConstants.userPositionBadgeSize,
-                height: AppConstants.userPositionBadgeSize,
-                decoration: BoxDecoration(
-                  color: badgeBgColor,
-                  borderRadius: BorderRadius.circular(
-                    AppConstants.radiusItem,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: SvgPicture.asset(
-                  svgAsset,
-                  width: AppConstants.iconSizeMd,
-                  height: AppConstants.iconSizeMd,
-                  colorFilter: const ColorFilter.mode(
-                    AppColors.white,
-                    BlendMode.srcIn,
-                  ),
+              SvgPicture.asset(
+                svgAsset,
+                width: AppConstants.iconSizeMd,
+                height: AppConstants.iconSizeMd,
+                colorFilter: const ColorFilter.mode(
+                  AppColors.textPrimary,
+                  BlendMode.srcIn,
                 ),
               ),
               const SizedBox(width: AppConstants.spacingUnit),
-              Expanded(
+              Flexible(
                 child: Text(
                   title,
                   style: GoogleFonts.inter(

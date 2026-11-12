@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Service managing high-priority local and background push notifications.
-/// Matches behavior of ride apps like Yango and Uber:
 /// - Appears in status bar (heads-up banner).
 /// - Displays on lockscreen when phone is locked (`NotificationVisibility.public`).
 /// - Alerts the user in background when driver accepts, approaches, arrives, or finishes ride.

@@ -12,11 +12,7 @@ import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
 import 'package:seddo/services/realtime_service.dart';
 
-/// Screen allowing the customer to chat with the assigned driver.
-/// Connected to backend API endpoints:
-/// - GET /v1/rides/{id}/messages
-/// - POST /v1/rides/{id}/messages with { "body": "..." }
-/// Supports quick preset replies and masked phone numbers security notice.
+
 class DriverChatPage extends StatefulWidget {
   final DriverModel driver;
   final String? rideId;

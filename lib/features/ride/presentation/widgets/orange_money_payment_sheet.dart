@@ -261,9 +261,9 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
       });
     } catch (_) {}
 
-    // 2. Polling régulier de secours sur l'endpoint GET /v1/rides/{id} toutes les 2s
-    _statusPollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (!mounted) return;
+    // 2. Polling régulier de secours sur l'endpoint GET /v1/rides/{id} (uniquement si WebSocket déconnecté)
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      if (!mounted || RealtimeService().isConnected) return;
       final details = await _rideService.getRideDetails(rideId);
       if (details != null && mounted) {
         final currentStatus =

@@ -329,11 +329,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
 
-      // Synchronisation continue toutes les 4s pour garantir la mise à jour temps réel
-      // (ex: arrivée du chauffeur, code validé, démarrage ou annulation)
+      // Filet de sécurité passif : uniquement en cas de déconnexion du WebSocket
       if (!isTest) {
-        _ridePollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-          _fetchRideDetails(effectiveRideId);
+        _ridePollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+          if (mounted && !RealtimeService().isConnected) {
+            _fetchRideDetails(effectiveRideId);
+          }
         });
       }
     }
@@ -1614,10 +1615,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         ? 'ride.arrived'.tr()
         : _currentEtaLabel;
 
-    final digits = _departureCode.padRight(4, '0').split('');
-
-    final collapsedHeightPx = 180.0 + (systemBottom > 0 ? systemBottom : 12.0);
-    final expandedHeightPx = 430.0 + (systemBottom > 0 ? systemBottom : 16.0);
+    final collapsedHeightPx = 100.0 + (systemBottom > 0 ? systemBottom : 12.0);
+    final expandedHeightPx = 255.0 + (systemBottom > 0 ? systemBottom : 16.0);
 
     return PopScope(
       canPop: false,
@@ -1857,35 +1856,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                   letterSpacing: -0.2,
                                                 ),
                                               ),
-                                              if (_isPositionUpdating && !_driverArrived) ...[
-                                                const SizedBox(height: 3),
-                                                Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    const SizedBox(
-                                                      width: 11,
-                                                      height: 11,
-                                                      child: CircularProgressIndicator(
-                                                        strokeWidth: 1.8,
-                                                        color: AppColors.primary,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Flexible(
-                                                      child: Text(
-                                                        'ride.position_updating'.tr(),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
-                                                        style: GoogleFonts.inter(
-                                                          fontSize: 12.0,
-                                                          fontWeight: FontWeight.w600,
-                                                          color: AppColors.primary,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ] else if (_remainingDistanceM > 0 &&
+                                              if (_remainingDistanceM > 0 &&
                                                   !_driverArrived) ...[
                                                 const SizedBox(height: 2),
                                                 Text(
@@ -1952,112 +1923,33 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                               ),
                               const SizedBox(height: 10),
 
-                              // 2. Card 1: Véhicule & Chauffeur (Toujours visible en position descendue et montée)
+                              // 2. Card 1: Véhicule & Chauffeur (Design exact capture utilisateur)
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
+                                  horizontal: 14,
+                                  vertical: 11,
                                 ),
                                 decoration: BoxDecoration(
                                   color: AppColors.grayBgSubtle,
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(18),
                                   border: Border.all(
                                     color: AppColors.grayBorderLight,
                                     width: 1.0,
                                   ),
                                 ),
                                 child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    // 3D Car Image avec teinte dynamique selon l'API
-                                    Builder(
-                                      builder: (context) {
-                                        final colorFilter = VehicleColorHelper.getColorFilter(_currentDriver.carColor);
-                                        final carImg = Image.asset(
-                                          widget.rideOption.type == RideType.confort
-                                              ? 'assets/images/seddo_confort_3d.png'
-                                              : 'assets/images/seddo_eco_3d.png',
-                                          width: 74,
-                                          height: 46,
-                                          fit: BoxFit.contain,
-                                        );
-                                        if (colorFilter != null) {
-                                          return ColorFiltered(
-                                            colorFilter: colorFilter,
-                                            child: carImg,
-                                          );
-                                        }
-                                        return carImg;
-                                      },
-                                    ),
-                                    const SizedBox(width: 10),
-
-                                    // Initials Avatar Circle (MS)
-                                    Container(
-                                      width: 38,
-                                      height: 38,
-                                      decoration: const BoxDecoration(
-                                        color: AppColors.peachMedium,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        initials,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w900,
-                                          color: AppColors.orangeDarkAccent,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-
-                                    // Vehicle & Driver Details
+                                    // Colonne gauche : Nom ★Note, Modèle/Couleur, Plaque d'immatriculation
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          // License Plate Badge [ DK 4521 AB ]
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 7,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(5),
-                                              border: Border.all(
-                                                color: AppColors.pureBlack,
-                                                width: 1.4,
-                                              ),
-                                            ),
-                                            child: Text(
-                                              licensePlateText,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w900,
-                                                color: AppColors.pureBlack,
-                                                letterSpacing: 0.8,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-
-                                          // Car model & color
-                                          Text(
-                                            carDescription,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 12.5,
-                                              color: AppColors.textSecondary,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 2),
-
-                                          // Driver Name & Rating
+                                          // Nom ★Note (ex: Mor ★4.53)
                                           Row(
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Flexible(
                                                 child: Text(
@@ -2065,7 +1957,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                       .split(' ')
                                                       .first,
                                                   style: GoogleFonts.inter(
-                                                    fontSize: 13,
+                                                    fontSize: 16,
                                                     fontWeight: FontWeight.w800,
                                                     color: AppColors.textPrimary,
                                                   ),
@@ -2073,282 +1965,130 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                 ),
                                               ),
                                               const SizedBox(width: 4),
-                                              const Text(
-                                                '•',
-                                                style: TextStyle(
-                                                  color: AppColors.textSecondary,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
                                               const Icon(
                                                 Icons.star_rounded,
                                                 color: AppColors.amberRating,
-                                                size: 14,
+                                                size: 16,
                                               ),
                                               const SizedBox(width: 2),
                                               Text(
-                                                _currentDriver.rating
-                                                    .toStringAsFixed(1),
+                                                _currentDriver.rating > 0
+                                                    ? _currentDriver.rating
+                                                        .toStringAsFixed(2)
+                                                    : '4.53',
                                                 style: GoogleFonts.inter(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14.5,
+                                                  fontWeight: FontWeight.w700,
                                                   color: AppColors.textPrimary,
                                                 ),
                                               ),
-                                              if (_isOffline) ...[
-                                                const SizedBox(width: 4),
-                                                Flexible(
-                                                  child: Container(
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 4,
-                                                      vertical: 1.5,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: AppColors.grayLight,
-                                                      borderRadius:
-                                                          BorderRadius.circular(4),
-                                                    ),
-                                                    child: Text(
-                                                      'Position non à jour',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 9.5,
-                                                        fontWeight: FontWeight.w600,
-                                                        color: AppColors.grayText,
-                                                      ),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
                                             ],
+                                          ),
+                                          const SizedBox(height: 3),
+
+                                          // Modèle & couleur (ex: Citroen C4 Picasso Gris)
+                                          Text(
+                                            carDescription,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12.5,
+                                              color: AppColors.textSecondary,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 6),
+
+                                          // Plaque encadrée rectangle [ AA034RB ]
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2.5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: const Color(0xFF0F172A),
+                                                width: 1.4,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              licensePlateText,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 16.5,
+                                                fontWeight: FontWeight.w900,
+                                                color: const Color(0xFF0F172A),
+                                                letterSpacing: 0.6,
+                                              ),
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(width: 8),
 
-                                    // Right Chevron
-                                    const Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: AppColors.textSecondary,
-                                      size: 22,
+                                    // Côté droit : Voiture 3D + Avatar collés côte à côte (sans flèche)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        // Image voiture 3D
+                                        Builder(
+                                          builder: (context) {
+                                            final colorFilter =
+                                                VehicleColorHelper.getColorFilter(
+                                                    _currentDriver.carColor);
+                                            final carImg = Image.asset(
+                                              widget.rideOption.type ==
+                                                      RideType.confort
+                                                  ? 'assets/images/seddo_confort_3d.png'
+                                                  : 'assets/images/seddo_eco_3d.png',
+                                              width: 74,
+                                              height: 48,
+                                              fit: BoxFit.contain,
+                                            );
+                                            if (colorFilter != null) {
+                                              return ColorFiltered(
+                                                colorFilter: colorFilter,
+                                                child: carImg,
+                                              );
+                                            }
+                                            return carImg;
+                                          },
+                                        ),
+                                        const SizedBox(width: 4),
+
+                                        // Avatar / Initiales du chauffeur
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.peachMedium,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            initials,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w900,
+                                              color: AppColors.orangeDarkAccent,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
                               ),
+                              const SizedBox(height: 12),
 
-                              // 3. Cards 2, 3, 4 : affichées et animées en opacité
-                              if (t > 0.05) ...[
-                                Opacity(
-                                  opacity: t,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const SizedBox(height: 10),
-
-                                      // Card 2: Code de départ (PIN Code)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                          vertical: 10,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.orangeLightBg,
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          border: Border.all(
-                                            color: AppColors.peachMedium,
-                                            width: 1.0,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 40,
-                                              height: 40,
-                                              decoration: const BoxDecoration(
-                                                color: AppColors.peachMedium,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              alignment: Alignment.center,
-                                              child: const Icon(
-                                                Icons.location_on_rounded,
-                                                color: AppColors.primary,
-                                                size: 22,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    'ride.departure_code'.tr(),
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 14.5,
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                      color:
-                                                          AppColors.textPrimary,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    'ride.give_to_driver'.tr(),
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 12,
-                                                      color:
-                                                          AppColors.textSecondary,
-                                                      fontWeight:
-                                                          FontWeight.w500,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: digits.map((digit) {
-                                                return Container(
-                                                  width: 32,
-                                                  height: 38,
-                                                  margin: const EdgeInsets.only(
-                                                      left: 5),
-                                                  decoration: BoxDecoration(
-                                                    color:
-                                                        AppColors.licensePlateBg,
-                                                    borderRadius:
-                                                        BorderRadius.circular(8),
-                                                  ),
-                                                  alignment: Alignment.center,
-                                                  child: Text(
-                                                    digit,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: 16.5,
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      color: AppColors.white,
-                                                    ),
-                                                  ),
-                                                );
-                                              }).toList(),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-
-                                      // Card 3: Quick message + Circular call button
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: GestureDetector(
-                                              onTap: _openChat,
-                                              child: Container(
-                                                height: 46,
-                                                padding: const EdgeInsets
-                                                    .symmetric(horizontal: 14),
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.grayBgLight,
-                                                  borderRadius:
-                                                      BorderRadius.circular(23),
-                                                ),
-                                                child: Row(
-                                                  children: [
-                                                    SvgPicture.asset(
-                                                      'assets/icons/message-square-lines-svgrepo-com.svg',
-                                                      width: 20,
-                                                      height: 20,
-                                                      colorFilter:
-                                                          const ColorFilter.mode(
-                                                        AppColors.primary,
-                                                        BlendMode.srcIn,
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 10),
-                                                    Expanded(
-                                                      child: Text(
-                                                        'ride.send_message_hint'
-                                                            .tr(),
-                                                        style:
-                                                            GoogleFonts.inter(
-                                                          fontSize: 13.5,
-                                                          color: AppColors
-                                                              .textSecondary,
-                                                          fontWeight:
-                                                              FontWeight.w500,
-                                                        ),
-                                                        overflow:
-                                                            TextOverflow.ellipsis,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Container(
-                                            width: 46,
-                                            height: 46,
-                                            decoration: const BoxDecoration(
-                                              color: AppColors.peachLight,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: IconButton(
-                                              icon: SvgPicture.asset(
-                                                'assets/icons/call-svgrepo-com.svg',
-                                                width: 20,
-                                                height: 20,
-                                                colorFilter:
-                                                    const ColorFilter.mode(
-                                                  AppColors.primary,
-                                                  BlendMode.srcIn,
-                                                ),
-                                              ),
-                                              tooltip: 'ride.call_driver'.tr(),
-                                              onPressed: _callDriver,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 10),
-
-                                      // Card 4: Action buttons row [ Partager ] [ Sécurité ] [ Annuler ]
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: _buildActionButton(
-                                              icon: Icons.share_outlined,
-                                              label: 'common.share'.tr(),
-                                              onTap: _openShare,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: _buildActionButton(
-                                              svgPath:
-                                                  'assets/icons/security-svgrepo-com.svg',
-                                              label: 'drawer.safety'.tr(),
-                                              onTap: _openSafety,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: _buildActionButton(
-                                              icon: Icons.close_rounded,
-                                              label: 'common.cancel'.tr(),
-                                              onTap: _onCancelRide,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                              // 3. Rangée horizontale des boutons d'action (Appeler, Discussion, Détails, Partager, Sécurité)
+                              _buildActionButtonsRow(),
                             ],
                           ),
                         ),
@@ -2365,64 +2105,545 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   );
   }
 
-  Widget _buildActionButton({
-    IconData? icon,
-    String? svgPath,
+  /// Rangée horizontale des boutons d'action (Appeler, Discussion, Détails, Partager, Sécurité)
+  Widget _buildActionButtonsRow() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          // 1. Bouton Appeler (Vert comme sur la capture)
+          Material(
+            color: const Color(0xFF22C55E),
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              key: const ValueKey('approaching_btn_call'),
+              onTap: _callDriver,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.phone_rounded,
+                      color: AppColors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Appeler',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // 2. Bouton Discussion (Gris clair)
+          _buildPillButton(
+            key: const ValueKey('approaching_btn_discussion'),
+            icon: Icons.chat_bubble_rounded,
+            label: 'Discussion',
+            onTap: _openChat,
+          ),
+          const SizedBox(width: 8),
+
+          // 3. Bouton Détails (Gris clair avec icône 4 carrés)
+          _buildPillButton(
+            key: const ValueKey('approaching_btn_details'),
+            icon: Icons.grid_view_rounded,
+            label: 'Détails',
+            onTap: _openRideDetailsModal,
+          ),
+          const SizedBox(width: 8),
+
+          // 4. Bouton Partager (Gris clair)
+          _buildPillButton(
+            key: const ValueKey('approaching_btn_share'),
+            icon: Icons.share_rounded,
+            label: 'Partager',
+            onTap: _openShare,
+          ),
+          const SizedBox(width: 8),
+
+          // 5. Bouton Sécurité (Gris clair)
+          _buildPillButton(
+            key: const ValueKey('approaching_btn_safety'),
+            icon: Icons.shield_outlined,
+            label: 'Sécurité',
+            onTap: _openSafety,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPillButton({
+    Key? key,
+    required IconData icon,
     required String label,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
+    return Material(
+      key: key,
+      color: const Color(0xFFF1F5F9),
       borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.grayBorderLight,
-            width: 1.0,
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: AppColors.shadowSubtleBlack,
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (svgPath != null)
-              SvgPicture.asset(
-                svgPath,
-                width: 22,
-                height: 22,
-                colorFilter: const ColorFilter.mode(
-                  AppColors.primary,
-                  BlendMode.srcIn,
-                ),
-              )
-            else if (icon != null)
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Icon(
                 icon,
-                color: AppColors.primary,
-                size: 22,
+                color: const Color(0xFF0F172A),
+                size: 18,
               ),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF0F172A),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
+  String _formatEstimatedPickupTime() {
+    final mins = _remainingEtaMinutes > 0 ? _remainingEtaMinutes : 4;
+    final now = DateTime.now().add(Duration(minutes: mins));
+    final hh = now.hour.toString().padLeft(2, '0');
+    final mm = now.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  String _getPaymentMethodDisplay() {
+    final m = (widget.paymentMethod ?? 'ESPECES').toUpperCase();
+    if (m.contains('ORANGE')) return 'Orange Money';
+    if (m.contains('WAVE')) return 'Wave';
+    return 'Espèces';
+  }
+
+  /// Modal complet des détails de la course (Prise en charge avec heure, Destination, Code de départ, Montant, Switch position, Annuler)
+  void _openRideDetailsModal() {
+    final digits = _departureCode.padRight(4, '0').split('');
+    final estTime = _formatEstimatedPickupTime();
+    final paymentLabel = _getPaymentMethodDisplay();
+    final priceText = '${widget.rideOption.price} F CFA';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      enableDrag: true,
+      isDismissible: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppColors.pureBlack.withValues(alpha: 0.5),
+      builder: (modalCtx) {
+        final systemBottom = MediaQuery.of(modalCtx).padding.bottom;
+        return DraggableScrollableSheet(
+          initialChildSize: 0.72,
+          minChildSize: 0.35,
+          maxChildSize: 0.90,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 24,
+                    offset: Offset(0, -6),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4.5,
+                      decoration: BoxDecoration(
+                        color: AppColors.dragHandle,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 16, 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Détails de la course',
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 22),
+                          onPressed: () => Navigator.pop(modalCtx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        0,
+                        20,
+                        systemBottom > 0 ? systemBottom + 24 : 32,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 1. Code de départ PIN Card
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.orangeLightBg,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: AppColors.peachMedium,
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.peachMedium,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.key_rounded,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Code de départ',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Donnez ce code au chauffeur à la montée',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11.5,
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: digits.map((digit) {
+                                    return Container(
+                                      width: 28,
+                                      height: 34,
+                                      margin: const EdgeInsets.only(left: 4),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.licensePlateBg,
+                                        borderRadius:
+                                            BorderRadius.circular(6),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        digit,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w900,
+                                          color: AppColors.white,
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // 2. Trajet Card (Prise en charge + Destination sans carrés de fond)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(18),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Prise en charge avec icône Icons.hail_rounded (silhouette passager comme dans l'aperçu de ma position)
+                                Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(
+                                      width: 26,
+                                      height: 26,
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.hail_rounded,
+                                          color: AppColors.primary,
+                                          size: 24,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Prise en charge à ≈$estTime',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            widget.departure.mainText.isNotEmpty
+                                                ? widget.departure.mainText
+                                                : widget
+                                                    .departure.fullAddress,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Trait de liaison
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                      left: 12, top: 4, bottom: 4),
+                                  child: Container(
+                                    width: 2,
+                                    height: 22,
+                                    color: const Color(0xFFCBD5E1),
+                                  ),
+                                ),
+                                // Destination avec icône flag de assets/icons
+                                Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(
+                                      width: 26,
+                                      height: 26,
+                                      child: Center(
+                                        child: SvgPicture.asset(
+                                          'assets/icons/flag-svgrepo-com.svg',
+                                          width: 22,
+                                          height: 22,
+                                          colorFilter: const ColorFilter.mode(
+                                            Color(0xFF0F172A),
+                                            BlendMode.srcIn,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Destination',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            widget
+                                                    .destination
+                                                    .mainText
+                                                    .isNotEmpty
+                                                ? widget.destination.mainText
+                                                : widget
+                                                    .destination.fullAddress,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // 3. Montant & Moyen de paiement Card
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(18),
+                              border:
+                                  Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981)
+                                        .withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: const Icon(
+                                    Icons.payments_rounded,
+                                    color: Color(0xFF059669),
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        paymentLabel,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      Text(
+                                        priceText,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE2E8F0),
+                                    borderRadius: BorderRadius.circular(100),
+                                  ),
+                                  child: Text(
+                                    'Fixe',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF334155),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // 4. Bouton Annuler la commande (protégé par padding pour la barre Android)
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFDC2626),
+                                side: const BorderSide(
+                                    color: Color(0xFFFCA5A5), width: 1.2),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                backgroundColor: const Color(0xFFFEF2F2),
+                              ),
+                              icon: const Icon(Icons.close_rounded, size: 20),
+                              label: Text(
+                                'Annuler la commande',
+                                style: GoogleFonts.inter(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.pop(modalCtx);
+                                _onCancelRide();
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 }

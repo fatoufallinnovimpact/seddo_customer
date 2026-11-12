@@ -45,11 +45,11 @@
                 android:ellipsize="end" />
         </LinearLayout>
 
-        <!-- Vehicle thumbnail dynamically tinted to actual vehicle color -->
+        <!-- Vehicle icon dynamically tinted to actual vehicle color (matching iOS car.side.fill) -->
         <ImageView
             android:id="@+id/notification_car_thumb"
-            android:layout_width="54dp"
-            android:layout_height="30dp"
+            android:layout_width="44dp"
+            android:layout_height="24dp"
             android:layout_marginStart="8dp"
             android:scaleType="fitCenter"
             android:contentDescription="Véhicule" />
