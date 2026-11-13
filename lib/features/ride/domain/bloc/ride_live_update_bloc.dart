@@ -115,15 +115,18 @@ class RideLiveUpdateBloc
     if (state is! RideLiveUpdateActiveState) return;
     final current = (state as RideLiveUpdateActiveState).data;
 
-    // Progression continue de gauche (0.05) vers la droite (0.98) selon l'ETA restante
+    // Progression continue de gauche (0.05) vers la droite (0.98) selon le tracé réel
     final updatedEta = event.etaMinutes ?? current.etaMinutes;
-    double progress = current.progress;
-    if (current.phase == RideLiveUpdatePhase.driverApproaching) {
-      final remaining = (updatedEta / 15.0).clamp(0.0, 1.0);
-      progress = (1.0 - remaining).clamp(0.05, 0.98);
-    } else if (current.phase == RideLiveUpdatePhase.inProgress) {
-      final remaining = (updatedEta / 30.0).clamp(0.0, 1.0);
-      progress = (1.0 - remaining).clamp(0.05, 0.98);
+    double progress = event.progress ?? current.progress;
+    if (event.progress == null) {
+      if (current.phase == RideLiveUpdatePhase.driverApproaching) {
+        final remaining = (updatedEta / 15.0).clamp(0.0, 1.0);
+        progress = (1.0 - remaining).clamp(0.05, 0.98);
+      } else if (current.phase == RideLiveUpdatePhase.inProgress) {
+        // En cours de course, préserver strictement la progression métrique réelle
+        // calculée le long du polyline restant sans appliquer de ratio arbitraire
+        progress = current.progress;
+      }
     }
 
     final updatedData = current.copyWith(
@@ -144,6 +147,7 @@ class RideLiveUpdateBloc
 
     final updatedData = current.copyWith(
       etaMinutes: event.etaMinutes,
+      progress: event.progress ?? current.progress,
     );
 
     await service.updateLiveUpdate(updatedData);

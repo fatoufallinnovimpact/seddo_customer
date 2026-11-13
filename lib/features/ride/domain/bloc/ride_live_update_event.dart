@@ -36,29 +36,33 @@ class UpdateLiveUpdateLocationEvent extends RideLiveUpdateEvent {
   final LatLng location;
   final int? etaMinutes;
   final double? distanceKm;
+  final double? progress;
 
   const UpdateLiveUpdateLocationEvent({
     required this.location,
     this.etaMinutes,
     this.distanceKm,
+    this.progress,
   });
 
   @override
-  List<Object?> get props => [location, etaMinutes, distanceKm];
+  List<Object?> get props => [location, etaMinutes, distanceKm, progress];
 }
 
 /// Dispatched when ETA calculation changes
 class UpdateLiveUpdateEtaEvent extends RideLiveUpdateEvent {
   final int etaMinutes;
   final double? distanceKm;
+  final double? progress;
 
   const UpdateLiveUpdateEtaEvent({
     required this.etaMinutes,
     this.distanceKm,
+    this.progress,
   });
 
   @override
-  List<Object?> get props => [etaMinutes, distanceKm];
+  List<Object?> get props => [etaMinutes, distanceKm, progress];
 }
 
 /// Dispatched when backend emits a ride status change (e.g. driver arrived, in progress, completed, cancelled)

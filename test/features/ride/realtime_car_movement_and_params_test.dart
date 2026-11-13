@@ -398,5 +398,66 @@ void main() {
       expect(state.remainingEtaMinutes, equals(15));
       expect(state.remainingDistanceKm, equals(8.5));
     });
+
+    testWidgets('ActiveRidePage progressRatio listens to remaining polyline and distance matching chauffeur app',
+        (tester) async {
+      final polylinePoints = [
+        const LatLng(14.6698, -17.4326),
+        const LatLng(14.6750, -17.4400),
+        const LatLng(14.6850, -17.4500),
+        const LatLng(14.7431, -17.5195),
+      ];
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            rideId: 'ride_poly_sync_1',
+            departure: departure,
+            destination: destination,
+            driver: driver.copyWith(etaMinutes: 40, distanceKm: 12.0),
+            rideOption: rideOption.copyWith(distanceM: 16000), // 16 km total
+            polylinePoints: polylinePoints,
+            isOffline: false,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(ActiveRidePage));
+      // At beginning: progress is at start (clamped to 0.05-0.25, NOT 0.60)
+      expect(state.progressRatio, lessThan(0.30));
+
+      final totalM = state.totalTripDistanceMeters as double;
+      expect(totalM, greaterThan(1000.0));
+
+      // Chauffeur telemetry broadcast: 25% completed => remaining is 75% of total
+      RealtimeService().emitMockEvent('driver.location', {
+        'rideId': 'ride_poly_sync_1',
+        'lat': 14.6750,
+        'lng': -17.4400,
+        'remainingM': totalM * 0.75,
+        'etaMinutes': 30,
+        'accuracy': 10.0,
+      });
+      await tester.pump();
+
+      // Progress must be 1.0 - (0.75 * totalM / totalM) = 0.25 (25%)
+      expect(state.progressRatio, closeTo(0.25, 0.02));
+
+      // Chauffeur telemetry broadcast: 75% completed => remaining is 25% of total
+      RealtimeService().emitMockEvent('driver.location', {
+        'rideId': 'ride_poly_sync_1',
+        'lat': 14.6850,
+        'lng': -17.4500,
+        'remainingM': totalM * 0.25,
+        'etaMinutes': 10,
+        'accuracy': 10.0,
+      });
+      await tester.pump();
+
+      // Progress must be 1.0 - (0.25 * totalM / totalM) = 0.75 (75%)
+      expect(state.progressRatio, closeTo(0.75, 0.02));
+    });
   });
 }
