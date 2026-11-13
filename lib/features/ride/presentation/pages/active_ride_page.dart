@@ -237,6 +237,24 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           RealtimeService().rideStatusStream.listen((event) {
         if (!mounted) return;
         if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+          // Si l'événement statut ou mise à jour de course inclut un nouvel itinéraire
+          final raw = event.raw;
+          final rideObj = raw['ride'] is Map<String, dynamic>
+              ? raw['ride'] as Map<String, dynamic>
+              : (raw['data'] is Map<String, dynamic>
+                  ? raw['data'] as Map<String, dynamic>
+                  : raw);
+          final rawPoly = rideObj['plannedPolyline'] ??
+              rideObj['polyline'] ??
+              (rideObj['route'] is Map ? rideObj['route']['polyline'] : null);
+          if (rawPoly is String && rawPoly.isNotEmpty) {
+            final pts = RouteService.decodePolyline(rawPoly);
+            if (pts.length >= 2 && pts != _effectiveRoute) {
+              debugPrint('[ActiveRide] 🔄 Nouvel itinéraire reçu dans le statut/raw: ${pts.length} pts');
+              _setNewRoute(pts);
+            }
+          }
+
           if (event.status == 'ARRIVED' || event.status == 'DRIVER_ARRIVED') {
             setState(() {
               _driverArrivedAtDestination = true;
@@ -305,8 +323,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
       _realtimeRouteSub = RealtimeService().rideRouteStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null || event.rideId == effectiveRideId) {
+        if (event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId) {
           if (event.points.length >= 2) {
+            debugPrint(
+                '[ActiveRide] 🗺️ Nouvel itinéraire reçu via rideRouteStream (${event.points.length} points)');
             _setNewRoute(event.points);
             if (event.traffic.isNotEmpty) {
               setState(() {

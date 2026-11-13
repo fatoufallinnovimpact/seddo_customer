@@ -191,5 +191,73 @@ void main() {
 
       await sub.cancel();
     });
+
+    test('ride.update extracts and propagates itinerary to rideRouteStream', () async {
+      RealtimeRideRouteEvent? routeEvent;
+      final sub = realtimeService.rideRouteStream.listen((event) {
+        routeEvent = event;
+      });
+
+      realtimeService.emitMockEvent('ride.update', {
+        'rideId': 'ride_reroute_1',
+        'status': 'IN_PROGRESS',
+        'points': [
+          {'lat': 14.6937, 'lng': -17.4647},
+          {'lat': 14.7012, 'lng': -17.4589},
+          {'lat': 14.7150, 'lng': -17.4520},
+        ],
+        'durationSeconds': 420,
+        'distanceMeters': 3200,
+        'version': 3,
+      });
+
+      await pumpEventQueue();
+
+      expect(routeEvent, isNotNull);
+      expect(routeEvent!.rideId, 'ride_reroute_1');
+      expect(routeEvent!.points.length, 3);
+      expect(routeEvent!.points.first.latitude, 14.6937);
+      expect(routeEvent!.distanceMeters, 3200);
+      expect(routeEvent!.durationSeconds, 420);
+
+      await sub.cancel();
+    });
+
+    test('ride:updated with nested ride map propagates both route and status', () async {
+      RealtimeRideRouteEvent? routeEvent;
+      RealtimeRideStatusEvent? statusEvent;
+
+      final routeSub = realtimeService.rideRouteStream.listen((event) {
+        routeEvent = event;
+      });
+      final statusSub = realtimeService.rideStatusStream.listen((event) {
+        statusEvent = event;
+      });
+
+      realtimeService.emitMockEvent('ride:updated', {
+        'ride': {
+          'id': 'ride_nested_42',
+          'status': 'IN_PROGRESS',
+          'points': [
+            {'lat': 14.6800, 'lng': -17.4700},
+            {'lat': 14.6850, 'lng': -17.4650},
+          ],
+          'etaMinutes': 7,
+          'durationSeconds': 420,
+          'version': 5,
+        },
+      });
+
+      await pumpEventQueue();
+
+      expect(routeEvent, isNotNull);
+      expect(routeEvent!.rideId, 'ride_nested_42');
+      expect(routeEvent!.points.length, 2);
+      expect(statusEvent, isNotNull);
+      expect(statusEvent!.status, 'IN_PROGRESS');
+
+      await routeSub.cancel();
+      await statusSub.cancel();
+    });
   });
 }

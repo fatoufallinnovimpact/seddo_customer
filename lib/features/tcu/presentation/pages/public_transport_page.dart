@@ -246,7 +246,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
           child: Stack(
             children: [
               SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
+                physics: const ClampingScrollPhysics(),
                 keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 child: Column(
                   children: [

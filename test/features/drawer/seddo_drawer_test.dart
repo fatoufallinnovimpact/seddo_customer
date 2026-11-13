@@ -136,7 +136,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     // 1. Profile with real user
-    expect(find.text('FATOU FALL'), findsOneWidget);
+    expect(find.text('Fatou Fall'), findsOneWidget);
     expect(find.text('FF'), findsOneWidget);
     expect(find.text('4,8'), findsOneWidget);
     expect(find.text('77 123 45 12'), findsOneWidget);
@@ -299,7 +299,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     // 1. Profile with real user name and phone
-    expect(find.text('FATOU FALL'), findsOneWidget);
+    expect(find.text('Fatou Fall'), findsOneWidget);
     expect(find.text('FF'), findsOneWidget);
     expect(find.text('77 100 43 13'), findsOneWidget);
 
@@ -340,7 +340,7 @@ void main() {
   });
 
   testWidgets(
-      'Tapping avatar initials button opens photo upload source sheet with camera and gallery',
+      'Tapping avatar initials button or name navigates directly to EditProfilePage',
       (tester) async {
     const testUser = UserModel(
       id: 'usr_771004313',
@@ -371,16 +371,12 @@ void main() {
     await tester.tap(avatarButton);
     await tester.pumpAndSettle();
 
-    // Verify modal bottom sheet is shown with options
-    expect(find.text('Photo de profil'), findsOneWidget);
-    expect(find.byKey(const Key('photo_option_edit_profile')), findsOneWidget);
-    expect(find.text('Prendre une photo'), findsOneWidget);
-    expect(find.text('Choisir depuis la galerie'), findsOneWidget);
-    expect(find.byKey(const Key('photo_option_camera')), findsOneWidget);
-    expect(find.byKey(const Key('photo_option_gallery')), findsOneWidget);
+    // Verify EditProfilePage is opened directly
+    expect(find.text('Modifier mon profil'), findsOneWidget);
+    expect(find.byKey(const Key('edit_profile_firstname_field')), findsOneWidget);
   });
 
-  testWidgets('SeddoDrawerWidget displays Nouveau when user rating is null from API',
+  testWidgets('SeddoDrawerWidget displays only phone number when user rating is null',
       (tester) async {
     const testUserNoRating = UserModel(
       id: 'usr_no_rating',
@@ -405,9 +401,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.byKey(const Key('drawer_user_rating')), findsOneWidget);
-    expect(find.text('Nouveau'), findsOneWidget);
-    expect(find.byKey(const Key('drawer_edit_profile_button')), findsOneWidget);
-    expect(find.text('Modifier'), findsOneWidget);
+    expect(find.byKey(const Key('drawer_user_rating')), findsNothing);
+    expect(find.text('Nouveau'), findsNothing);
+    expect(find.byKey(const Key('drawer_user_name_button')), findsOneWidget);
+    expect(find.text('Fatou Fall'), findsOneWidget);
+    expect(find.text('77 100 43 13'), findsOneWidget);
   });
 }

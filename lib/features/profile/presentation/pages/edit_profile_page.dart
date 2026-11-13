@@ -490,20 +490,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          TextButton.icon(
-            key: const Key('edit_profile_change_photo_text_button'),
-            onPressed: _showPhotoOptions,
-            icon: const Icon(Icons.edit_outlined, size: 16, color: AppColors.primary),
-            label: Text(
-              'Changer la photo de profil',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -521,11 +507,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     final explicitUrl = _user.photoUrl;
     if (explicitUrl != null && explicitUrl.isNotEmpty) {
-      final photoUrlToLoad = explicitUrl.startsWith('http')
+      final basePhotoUrl = explicitUrl.startsWith('http')
           ? explicitUrl
           : (explicitUrl.startsWith('/')
               ? '${ApiEndpoints.baseUrl}$explicitUrl'
               : '${ApiEndpoints.baseUrl}/$explicitUrl');
+      final photoUrlToLoad = '$basePhotoUrl?t=$_photoVersion';
 
       return Image.network(
         photoUrlToLoad,

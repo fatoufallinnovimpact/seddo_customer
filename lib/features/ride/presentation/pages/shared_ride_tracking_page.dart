@@ -64,9 +64,11 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
   Timer? _refreshTimer;
   StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocSub;
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
+  StreamSubscription<RealtimeRideRouteEvent>? _realtimeRouteSub;
   LatLng? _liveDriverPos;
   String? _effectiveToken;
   late String _displayShareUrl;
+  late List<LatLng> _liveRoutePoints;
 
   @override
   void initState() {
@@ -76,6 +78,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
     _liveDriverPos = widget.driver.location;
     _displayShareUrl = widget.shareUrl;
     _effectiveToken = widget.token;
+    _liveRoutePoints = List<LatLng>.from(widget.polylinePoints);
     _loadMarkers();
 
     final effectiveRideId = widget.rideId ?? '';
@@ -98,6 +101,20 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
         if (!mounted) return;
         if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
           _fetchSharedDetails();
+        }
+      });
+
+      _realtimeRouteSub =
+          RealtimeService().rideRouteStream.listen((event) {
+        if (!mounted) return;
+        if (event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId) {
+          if (event.points.length >= 2) {
+            setState(() {
+              _liveRoutePoints = List<LatLng>.from(event.points);
+            });
+          }
         }
       });
     }
@@ -152,6 +169,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
     WidgetsBinding.instance.removeObserver(this);
     _realtimeLocSub?.cancel();
     _realtimeStatusSub?.cancel();
+    _realtimeRouteSub?.cancel();
     final effectiveRideId = widget.rideId ?? '';
     if (effectiveRideId.isNotEmpty) {
       RealtimeService().leaveRide(effectiveRideId);
@@ -249,11 +267,12 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
   }
 
   Set<Polyline> _buildPolylines() {
-    if (widget.polylinePoints.isEmpty) return {};
+    final pts = _liveRoutePoints.isNotEmpty ? _liveRoutePoints : widget.polylinePoints;
+    if (pts.isEmpty) return {};
     return {
       Polyline(
         polylineId: const PolylineId('shared_route'),
-        points: widget.polylinePoints,
+        points: pts,
         color: AppColors.yangoRouteGreen,
         width: 4,
         jointType: JointType.round,

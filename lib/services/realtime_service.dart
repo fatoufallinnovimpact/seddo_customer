@@ -281,18 +281,47 @@ class RealtimeRideEtaEvent {
       );
     }
 
-    final durS = (json['durationS'] ??
+    final rideObj = json['ride'] is Map<String, dynamic>
+        ? json['ride'] as Map<String, dynamic>
+        : (json['data'] is Map<String, dynamic>
+            ? json['data'] as Map<String, dynamic>
+            : json);
+
+    final durS = (rideObj['durationS'] ??
+            rideObj['duration'] ??
+            rideObj['durationSeconds'] ??
+            json['durationS'] ??
             json['duration'] ??
             json['durationSeconds'] ??
-            (json['etaMinutes'] != null ? (json['etaMinutes'] as num).toInt() * 60 : 0)
-                as num?)
+            (rideObj['etaMinutes'] != null
+                ? (rideObj['etaMinutes'] as num).toInt() * 60
+                : (json['etaMinutes'] != null
+                    ? (json['etaMinutes'] as num).toInt() * 60
+                    : 0)) as num?)
         ?.toInt() ??
         0;
 
-    final distM = (json['distanceM'] ?? json['distanceMeters'] as num?)?.toInt();
-    final etaM = durS > 0 ? (durS / 60.0).ceil() : ((json['etaMinutes'] as num?)?.toInt() ?? 0);
-    final rideId = json['rideId']?.toString();
-    final version = (json['version'] as num?)?.toInt() ?? 0;
+    final distM = (rideObj['distanceM'] ??
+            rideObj['distanceMeters'] ??
+            rideObj['distance'] ??
+            json['distanceM'] ??
+            json['distanceMeters'] as num?)
+        ?.toInt();
+    final etaM = durS > 0
+        ? (durS / 60.0).ceil()
+        : ((rideObj['etaMinutes'] ??
+                json['etaMinutes'] ??
+                rideObj['eta'] ??
+                json['eta'] as num?)
+            ?.toInt() ??
+            0);
+    final rideId = (json['rideId'] ??
+            json['id'] ??
+            rideObj['rideId'] ??
+            rideObj['id'])
+        ?.toString();
+    final version =
+        (json['version'] ?? rideObj['version'] as num?)?.toInt() ?? 0;
 
     return RealtimeRideEtaEvent(
       rideId: rideId,
@@ -305,7 +334,7 @@ class RealtimeRideEtaEvent {
   }
 }
 
-/// Événement temps réel d'itinéraire mis à jour (ride.route.updated)
+/// Événement temps réel d'itinéraire mis à jour (ride.route.updated, ride.update)
 class RealtimeRideRouteEvent {
   final String? rideId;
   final String polyline;
@@ -335,13 +364,24 @@ class RealtimeRideRouteEvent {
       );
     }
 
-    final routeObj = json['route'] is Map<String, dynamic>
-        ? json['route'] as Map<String, dynamic>
-        : json;
+    final rideObj = json['ride'] is Map<String, dynamic>
+        ? json['ride'] as Map<String, dynamic>
+        : (json['data'] is Map<String, dynamic>
+            ? json['data'] as Map<String, dynamic>
+            : json);
+
+    final routeObj = rideObj['route'] is Map<String, dynamic>
+        ? rideObj['route'] as Map<String, dynamic>
+        : (json['route'] is Map<String, dynamic>
+            ? json['route'] as Map<String, dynamic>
+            : rideObj);
 
     final poly = (routeObj['polyline'] ??
             routeObj['plannedPolyline'] ??
             routeObj['encodedPolyline'] ??
+            rideObj['polyline'] ??
+            rideObj['plannedPolyline'] ??
+            rideObj['encodedPolyline'] ??
             json['polyline'] ??
             json['plannedPolyline'] ??
             json['encodedPolyline'] ??
@@ -357,8 +397,10 @@ class RealtimeRideRouteEvent {
     // Si les points sont passés directement sous forme de liste de coordonnées
     if (pts.isEmpty) {
       final rawPoints = routeObj['points'] ??
+          rideObj['points'] ??
           json['points'] ??
           routeObj['coordinates'] ??
+          rideObj['coordinates'] ??
           json['coordinates'];
       if (rawPoints is List) {
         for (final p in rawPoints) {
@@ -377,7 +419,9 @@ class RealtimeRideRouteEvent {
     }
 
     List<TrafficSegmentModel> traffic = [];
-    final rawTraffic = (routeObj['traffic'] ?? json['traffic']) as List<dynamic>?;
+    final rawTraffic = (routeObj['traffic'] ??
+            rideObj['traffic'] ??
+            json['traffic']) as List<dynamic>?;
     if (rawTraffic != null) {
       traffic = rawTraffic
           .whereType<Map<String, dynamic>>()
@@ -388,6 +432,9 @@ class RealtimeRideRouteEvent {
     final durS = (routeObj['durationS'] ??
             routeObj['durationSeconds'] ??
             routeObj['duration'] ??
+            rideObj['durationS'] ??
+            rideObj['durationSeconds'] ??
+            rideObj['duration'] ??
             json['durationS'] ??
             json['durationSeconds'] ??
             json['duration'] as num?)
@@ -395,12 +442,24 @@ class RealtimeRideRouteEvent {
     final distM = (routeObj['distanceM'] ??
             routeObj['distanceMeters'] ??
             routeObj['distance'] ??
+            rideObj['distanceM'] ??
+            rideObj['distanceMeters'] ??
+            rideObj['distance'] ??
             json['distanceM'] ??
             json['distanceMeters'] ??
             json['distance'] as num?)
         ?.toInt();
-    final rideId = (json['rideId'] ?? routeObj['rideId'])?.toString();
-    final version = (json['version'] ?? routeObj['version'] as num?)?.toInt() ?? 0;
+    final rideId = (json['rideId'] ??
+            json['id'] ??
+            rideObj['rideId'] ??
+            rideObj['id'] ??
+            routeObj['rideId'])
+        ?.toString();
+    final version = (json['version'] ??
+            rideObj['version'] ??
+            routeObj['version'] as num?)
+        ?.toInt() ??
+        0;
 
     return RealtimeRideRouteEvent(
       rideId: rideId,
@@ -730,11 +789,32 @@ class RealtimeService {
     s.on('ride.eta', (data) => _handleRideEta(data));
     s.on('ride:eta', (data) => _handleRideEta(data));
 
-    // 4. Nouvel itinéraire avec le trafic (ride.route.updated / ride:route:updated)
+    // 4. Mise à jour de course globale (ride.update, ride:update, ride_update, ride.updated, ride:updated, ride_updated, ride)
+    s.on('ride.update', (data) => _handleRideUpdate(data));
+    s.on('ride:update', (data) => _handleRideUpdate(data));
+    s.on('ride_update', (data) => _handleRideUpdate(data));
+    s.on('ride.updated', (data) => _handleRideUpdate(data));
+    s.on('ride:updated', (data) => _handleRideUpdate(data));
+    s.on('ride_updated', (data) => _handleRideUpdate(data));
+    s.on('ride', (data) => _handleRideUpdate(data));
+
+    // 5. Nouvel itinéraire / Rerouting direct (ride.route.updated, ride:route:updated, etc.)
     s.on('ride.route.updated', (data) => _handleRideRoute(data));
     s.on('ride:route:updated', (data) => _handleRideRoute(data));
+    s.on('ride.route_updated', (data) => _handleRideRoute(data));
+    s.on('ride.route', (data) => _handleRideRoute(data));
+    s.on('ride:route', (data) => _handleRideRoute(data));
+    s.on('ride.reroute', (data) => _handleRideRoute(data));
+    s.on('ride:reroute', (data) => _handleRideRoute(data));
+    s.on('route.updated', (data) => _handleRideRoute(data));
+    s.on('route:updated', (data) => _handleRideRoute(data));
+    s.on('route_updated', (data) => _handleRideRoute(data));
+    s.on('route.update', (data) => _handleRideRoute(data));
+    s.on('route:update', (data) => _handleRideRoute(data));
+    s.on('route_update', (data) => _handleRideRoute(data));
+    s.on('route.reroute', (data) => _handleRideRoute(data));
 
-    // 5. Paiement (payment.status, payment.success, payment.confirmed, etc.)
+    // 6. Paiement (payment.status, payment.success, payment.confirmed, etc.)
     s.on('payment.status', (data) => _handlePaymentStatus(data));
     s.on('payment:status', (data) => _handlePaymentStatus(data));
     s.on('payment.success', (data) => _handlePaymentStatus(data, defaultStatus: 'SUCCESS'));
@@ -744,7 +824,7 @@ class RealtimeService {
     s.on('payment.paid', (data) => _handlePaymentStatus(data, defaultStatus: 'PAID'));
     s.on('payment:paid', (data) => _handlePaymentStatus(data, defaultStatus: 'PAID'));
 
-    // 6. Chauffeurs proches sur l'accueil et recherche (nearby.drivers / drivers:nearby)
+    // 7. Chauffeurs proches sur l'accueil et recherche (nearby.drivers / drivers:nearby)
     s.on('nearby.drivers', (data) => _handleNearbyDrivers(data));
     s.on('nearby:drivers', (data) => _handleNearbyDrivers(data));
     s.on('drivers:nearby', (data) => _handleNearbyDrivers(data));
@@ -755,7 +835,7 @@ class RealtimeService {
     s.on('drivers:locations', (data) => _handleNearbyDrivers(data));
     s.on('driver:locations', (data) => _handleNearbyDrivers(data));
 
-    // 7. Messages de chat (ride.message / chat.message / chat:message)
+    // 8. Messages de chat (ride.message / chat.message / chat:message)
     s.on('ride.message', (data) => _handleChatMessage(data));
     s.on('chat.message', (data) => _handleChatMessage(data));
     s.on('chat:message', (data) => _handleChatMessage(data));
@@ -764,7 +844,19 @@ class RealtimeService {
   void _handleAnyEvent(String event, dynamic data) {
     final lower = event.toLowerCase();
 
-    // Statut de course
+    // 1. Mise à jour de course globale (ride.update, ride:update, ride_update, ride.updated, ride:updated, ride_updated, ride)
+    if (lower == 'ride.update' ||
+        lower == 'ride:update' ||
+        lower == 'ride_update' ||
+        lower == 'ride.updated' ||
+        lower == 'ride:updated' ||
+        lower == 'ride_updated' ||
+        lower == 'ride') {
+      _handleRideUpdate(data);
+      return;
+    }
+
+    // 2. Statut de course spécifique
     if (lower == 'ride.status' ||
         lower == 'ride:status' ||
         lower == 'ride_status' ||
@@ -789,15 +881,12 @@ class RealtimeService {
         lower == 'ride:cancelled' ||
         lower == 'ride.cancel' ||
         lower == 'ride.no_driver' ||
-        lower == 'ride:no_driver' ||
-        lower == 'ride.update' ||
-        lower == 'ride:update' ||
-        lower == 'ride') {
+        lower == 'ride:no_driver') {
       _dispatchRideStatusFromEvent(event, data);
       return;
     }
 
-    // Position du chauffeur
+    // 3. Position du chauffeur
     if (lower == 'driver.location' ||
         lower == 'driver:location' ||
         lower == 'driver_location' ||
@@ -808,7 +897,7 @@ class RealtimeService {
       return;
     }
 
-    // ETA
+    // 4. ETA
     if (lower == 'ride.eta' ||
         lower == 'ride:eta' ||
         lower == 'ride_eta' ||
@@ -817,7 +906,7 @@ class RealtimeService {
       return;
     }
 
-    // Route / Rerouting
+    // 5. Route / Rerouting direct
     if (lower == 'ride.route.updated' ||
         lower == 'ride:route:updated' ||
         lower == 'ride.route_updated' ||
@@ -828,8 +917,10 @@ class RealtimeService {
         lower == 'route.reroute' ||
         lower == 'route.updated' ||
         lower == 'route:updated' ||
+        lower == 'route_updated' ||
         lower == 'route:update' ||
-        lower == 'route.update') {
+        lower == 'route.update' ||
+        lower == 'route_update') {
       _handleRideRoute(data);
       return;
     }
@@ -972,6 +1063,79 @@ class RealtimeService {
     }
   }
 
+  /// Traite une mise à jour globale de la course (ride.update, ride:update, ride:updated, ride_update, etc.)
+  /// Extrait et propage en priorité l'itinéraire/rerouting, l'ETA, la position chauffeur et le statut.
+  void _handleRideUpdate(dynamic data) {
+    if (data is! Map) return;
+    try {
+      final map = Map<String, dynamic>.from(data);
+      final rideObj = map['ride'] is Map<String, dynamic>
+          ? map['ride'] as Map<String, dynamic>
+          : (map['data'] is Map<String, dynamic>
+              ? map['data'] as Map<String, dynamic>
+              : map);
+
+      // 1. Changement d'itinéraire / Rerouting / Nouvelle polyline
+      final hasRoute = rideObj['plannedPolyline'] != null ||
+          rideObj['polyline'] != null ||
+          rideObj['encodedPolyline'] != null ||
+          rideObj['route'] != null ||
+          rideObj['points'] != null ||
+          map['plannedPolyline'] != null ||
+          map['polyline'] != null ||
+          map['encodedPolyline'] != null ||
+          map['route'] != null ||
+          map['points'] != null;
+
+      if (hasRoute) {
+        debugPrint('[RealtimeService] 🗺️ Itinéraire / Rerouting détecté dans ride.update');
+        _handleRideRoute(data);
+      }
+
+      // 2. ETA / Temps restant / Distance restante
+      final hasEta = rideObj['etaMinutes'] != null ||
+          rideObj['eta'] != null ||
+          rideObj['durationSeconds'] != null ||
+          rideObj['duration'] != null ||
+          rideObj['durationS'] != null ||
+          rideObj['distanceMeters'] != null ||
+          rideObj['distance'] != null ||
+          map['etaMinutes'] != null ||
+          map['eta'] != null ||
+          map['durationSeconds'] != null ||
+          map['duration'] != null;
+
+      if (hasEta) {
+        _handleRideEta(data);
+      }
+
+      // 3. Position GPS du chauffeur
+      final hasLocation = rideObj['position'] != null ||
+          rideObj['location'] != null ||
+          rideObj['driverPosition'] != null ||
+          rideObj['coords'] != null ||
+          map['position'] != null ||
+          map['location'] != null ||
+          map['driverPosition'] != null;
+
+      if (hasLocation) {
+        _handleDriverLocation(data);
+      }
+
+      // 4. Statut de course
+      final hasStatus = rideObj['status'] != null ||
+          rideObj['rideStatus'] != null ||
+          map['status'] != null ||
+          map['rideStatus'] != null;
+
+      if (hasStatus) {
+        _handleRideStatus(data);
+      }
+    } catch (e) {
+      debugPrint('[RealtimeService] ⚠️ Erreur lors du traitement de ride.update: $e');
+    }
+  }
+
   void _handleRideRoute(dynamic data) {
     try {
       final event = RealtimeRideRouteEvent.fromJson(data);
@@ -1073,8 +1237,24 @@ class RealtimeService {
       case 'ride:eta':
         _handleRideEta(data);
         break;
+      case 'ride.update':
+      case 'ride:update':
+      case 'ride_update':
+      case 'ride.updated':
+      case 'ride:updated':
+      case 'ride_updated':
+      case 'ride':
+        _handleRideUpdate(data);
+        break;
       case 'ride.route.updated':
       case 'ride:route:updated':
+      case 'ride.route':
+      case 'ride:route':
+      case 'ride.reroute':
+      case 'ride:reroute':
+      case 'route.updated':
+      case 'route:updated':
+      case 'route_updated':
         _handleRideRoute(data);
         break;
       case 'payment.status':

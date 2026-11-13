@@ -92,14 +92,6 @@ class _RouteTimelineContent extends StatelessWidget {
         }
       },
       builder: (context, state) {
-        if (!state.departureLoader &&
-            (state.status == RouteTimelineStatus.success ||
-                state.status == RouteTimelineStatus.failure)) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            onRoutesLoaded?.call();
-          });
-        }
-
         // Loading
         if (state.status == RouteTimelineStatus.loading ||
             state.departureLoader) {
@@ -152,7 +144,9 @@ class _RouteTimelineContent extends StatelessWidget {
                 currentPosition: state.currentPosition,
               ),
 
-            const SizedBox(height: 100),
+            SizedBox(
+              height: physics is NeverScrollableScrollPhysics ? 16 : 100,
+            ),
           ],
         );
 
@@ -943,34 +937,37 @@ class _BusCardState extends State<_BusCard> {
 
     return Padding(
       padding: const EdgeInsets.only(left: 10),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Ligne verticale bleue continue jusqu'en bas (au prochain arrêt)
-            Container(
+      child: Stack(
+        children: [
+          // Ligne verticale bleue continue jusqu'en bas (au prochain arrêt)
+          Positioned(
+            top: 0,
+            bottom: 0,
+            left: 0,
+            child: Container(
               width: 2,
               color: transitSecondaryColor,
             ),
-            const SizedBox(width: 12),
+          ),
 
-            // Carte
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
+          // Carte
+          Padding(
+            padding: const EdgeInsets.only(left: 14),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1121,8 +1118,7 @@ class _BusCardState extends State<_BusCard> {
           ),
         ],
       ),
-    ),
-  );
+    );
   }
 }
 

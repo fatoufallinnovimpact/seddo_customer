@@ -191,6 +191,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    expect(find.text('Changer la photo de profil'), findsNothing);
+
     final photoButton = find.byKey(const Key('edit_profile_avatar_button'));
     expect(photoButton, findsOneWidget);
     await tester.tap(photoButton);
