@@ -75,6 +75,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   GoogleMapController? _mapController;
   Timer? _autoMatchTimer;
   Timer? _nearbyPollTimer;
+  Timer? _rideStatusPollTimer;
   late AnimationController _radarController;
   late AnimationController _sheetAnimationController;
   late CameraPosition _currentCameraPosition;
@@ -104,13 +105,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   bool get _isPaymentConfirmed {
     if (widget.paymentMethod == PaymentMethodType.cash) return true;
-    return _paymentStatus == 'SUCCESS' ||
-        _paymentStatus == 'PAID' ||
-        _paymentStatus == 'COMPLETED' ||
-        _currentRideStatus == 'SEARCHING' ||
-        _currentRideStatus == 'ACCEPTED' ||
-        _currentRideStatus == 'DRIVER_ARRIVED' ||
-        _currentRideStatus == 'IN_PROGRESS';
+    final p = _paymentStatus.toUpperCase();
+    final r = _currentRideStatus.toUpperCase();
+    return p == 'SUCCESS' ||
+        p == 'PAID' ||
+        p == 'COMPLETED' ||
+        r == 'SEARCHING' ||
+        r == 'ACCEPTED' ||
+        r == 'DRIVER_ACCEPTED' ||
+        r == 'DRIVER_ASSIGNED' ||
+        r == 'ASSIGNED' ||
+        r == 'CONFIRMED' ||
+        r == 'APPROACHING' ||
+        r == 'EN_ROUTE' ||
+        r == 'DRIVER_ARRIVED' ||
+        r == 'IN_PROGRESS';
   }
 
   final GlobalKey _bottomSheetKey = GlobalKey();
@@ -142,18 +151,44 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         RideService.lastCreatedRideData?['payment'] as Map<String, dynamic>?;
     _paymentMessage = initialPayment?['message'] as String?;
     final initialPStatus = initialPayment?['status'] as String?;
+    final initialRideData = RideService.lastCreatedRideData;
     final initialRideStatus =
-        (RideService.lastCreatedRideData?['status'] as String? ?? '').toUpperCase();
+        (initialRideData?['status'] as String? ?? '').toUpperCase();
     if (initialRideStatus.isNotEmpty) {
       _currentRideStatus = initialRideStatus;
     }
+
+    final hasDriver = initialRideData?['driver'] != null;
+    final isAccepted = initialRideStatus == 'ACCEPTED' ||
+        initialRideStatus == 'DRIVER_ACCEPTED' ||
+        initialRideStatus == 'DRIVER_ASSIGNED' ||
+        initialRideStatus == 'ASSIGNED' ||
+        initialRideStatus == 'CONFIRMED' ||
+        initialRideStatus == 'APPROACHING' ||
+        initialRideStatus == 'EN_ROUTE' ||
+        initialRideStatus == 'DRIVER_ARRIVED' ||
+        initialRideStatus == 'IN_PROGRESS';
 
     if (initialPStatus != null && initialPStatus.isNotEmpty) {
       _paymentStatus = initialPStatus.toUpperCase();
     } else if (widget.paymentMethod == PaymentMethodType.cash ||
         initialRideStatus == 'SEARCHING' ||
-        initialRideStatus == 'ACCEPTED') {
+        isAccepted) {
       _paymentStatus = 'SUCCESS';
+    }
+
+    if ((hasDriver || isAccepted) && initialRideData != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isTransitioningToApproaching) {
+          final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+          final driver = DriverModel.fromRideJson(
+            initialRideData,
+            defaultRideType: widget.rideOption.type,
+          );
+          final code = DriverModel.extractDepartureCode(initialRideData);
+          onDriverFound(driver, code, effectiveRideId);
+        }
+      });
     }
 
     _currentCameraPosition = CameraPosition(
@@ -336,20 +371,73 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     // Initialisation et écoute temps réel de l'acceptation de la course par WebSocket
     final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
     if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
-      _checkRideStatus(effectiveRideId);
-
-      // Adhésion au canal de la course
+      if (!RealtimeService().isConnected) {
+        RealtimeService().connect();
+      }
       RealtimeService().joinRide(effectiveRideId);
+      // Vérifier et appliquer immédiatement le dernier statut en mémoire WebSocket sans attendre
+      final cachedEvent = RealtimeService().lastRideStatusEvent;
+      if (cachedEvent != null) {
+        final matchesRide = cachedEvent.rideId.isEmpty ||
+            cachedEvent.rideId == effectiveRideId ||
+            cachedEvent.rideId.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(cachedEvent.rideId);
+        if (matchesRide) {
+          final s = cachedEvent.status.toUpperCase();
+          if (s == 'ACCEPTED' ||
+              s == 'DRIVER_ACCEPTED' ||
+              s == 'DRIVER_ASSIGNED' ||
+              s == 'ASSIGNED' ||
+              s == 'CONFIRMED' ||
+              s == 'APPROACHING' ||
+              s == 'EN_ROUTE' ||
+              s == 'DRIVER_ARRIVED' ||
+              s == 'IN_PROGRESS' ||
+              cachedEvent.driver != null) {
+            _onPaymentConfirmed();
+            final driver = cachedEvent.driver ??
+                DriverModel.fromRideJson(
+                  cachedEvent.raw,
+                  defaultRideType: widget.rideOption.type,
+                );
+            final code = cachedEvent.departureCode ??
+                DriverModel.extractDepartureCode(cachedEvent.raw);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && !_isTransitioningToApproaching) {
+                onDriverFound(driver, code, effectiveRideId);
+              }
+            });
+          }
+        }
+      }
+
+      // Filet de sécurité actif : polling toutes les 3s pour ne jamais rater l'acceptation du chauffeur
+      _rideStatusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (mounted && !_isTransitioningToApproaching) {
+          _checkRideStatus(effectiveRideId);
+        }
+      });
 
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
-        if (!mounted) return;
-        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
-          if (event.status == 'SEARCHING') {
+        if (!mounted || _isTransitioningToApproaching) return;
+        final matchesRide = event.rideId.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId);
+        if (matchesRide) {
+          final s = event.status.toUpperCase();
+          if (s == 'SEARCHING') {
             // Confirmation du paiement reçue du backend : début de la recherche
             _onPaymentConfirmed();
-          } else if (event.status == 'ACCEPTED' ||
-              event.status == 'DRIVER_ARRIVED' ||
-              event.status == 'IN_PROGRESS' ||
+          } else if (s == 'ACCEPTED' ||
+              s == 'DRIVER_ACCEPTED' ||
+              s == 'DRIVER_ASSIGNED' ||
+              s == 'ASSIGNED' ||
+              s == 'CONFIRMED' ||
+              s == 'APPROACHING' ||
+              s == 'EN_ROUTE' ||
+              s == 'DRIVER_ARRIVED' ||
+              s == 'IN_PROGRESS' ||
               event.driver != null) {
             _onPaymentConfirmed();
             final driver = event.driver ??
@@ -360,8 +448,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             final code = event.departureCode ??
                 DriverModel.extractDepartureCode(event.raw);
             onDriverFound(driver, code, effectiveRideId);
-          } else if (event.status.startsWith('CANCELLED') ||
-              event.status == 'NO_DRIVER') {
+          } else if (s.startsWith('CANCEL') ||
+              s == 'NO_DRIVER') {
             onNoDriverAvailable();
           }
         }
@@ -459,6 +547,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     }
     _autoMatchTimer?.cancel();
     _nearbyPollTimer?.cancel();
+    _rideStatusPollTimer?.cancel();
     _departureScreenOffsetNotifier.dispose();
     _sheetAnimationController.dispose();
     _radarController.dispose();
@@ -499,6 +588,12 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             });
           }
         } else if (status == 'ACCEPTED' ||
+            status == 'DRIVER_ACCEPTED' ||
+            status == 'DRIVER_ASSIGNED' ||
+            status == 'ASSIGNED' ||
+            status == 'CONFIRMED' ||
+            status == 'APPROACHING' ||
+            status == 'EN_ROUTE' ||
             status == 'DRIVER_ARRIVED' ||
             status == 'IN_PROGRESS' ||
             data['driver'] != null ||

@@ -105,6 +105,12 @@ class UserModel extends Equatable {
       return '+221 ${nat.substring(0, 2)} ${nat.substring(2, 5)} ${nat.substring(5, 7)} ${nat.substring(7)}';
     }
     String clean = phone.replaceAll(RegExp(r'\s+'), '');
+    if (clean.isNotEmpty) {
+      if (clean.startsWith('+221')) return clean;
+      if (clean.startsWith('221')) return '+$clean';
+      if (!clean.startsWith('+')) return '+221 $clean';
+      return clean;
+    }
     return clean.isNotEmpty ? clean : phone;
   }
 

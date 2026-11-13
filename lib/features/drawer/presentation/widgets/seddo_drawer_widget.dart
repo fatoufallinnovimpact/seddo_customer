@@ -1,11 +1,9 @@
-import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/api_endpoints.dart';
 import 'package:seddo/core/utils/app_colors.dart';
@@ -311,10 +309,12 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
             : 'SD';
 
     final displayPhone =
-        (user != null && user.formattedNationalPhone.isNotEmpty)
-            ? user.formattedNationalPhone
-            : (user != null && user.formattedDisplayPhone.isNotEmpty)
-                ? user.formattedDisplayPhone
+        (user != null && user.formattedDisplayPhone.isNotEmpty)
+            ? user.formattedDisplayPhone
+            : (user != null && user.formattedNationalPhone.isNotEmpty)
+                ? (user.formattedNationalPhone.startsWith('+221')
+                    ? user.formattedNationalPhone
+                    : '+221 ${user.formattedNationalPhone}')
                 : '';
 
     final bool hasRating =

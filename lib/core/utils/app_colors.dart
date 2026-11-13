@@ -199,6 +199,7 @@ abstract class AppColors {
   static const Color liveStatusText = Color(0xFF00C853);
 
   // Shadows
+  static const Color shadowFaintBlack = Color(0x06000000);
   static const Color shadowSubtleBlack = Color(0x0C000000);
   static const Color shadowSoftBlack = Color(0x0F000000);
   static const Color shadowCardBlack = Color(0x14000000);
@@ -222,6 +223,19 @@ abstract class AppColors {
   static const Color peachMedium = Color(0xFFFFEDD5);
   static const Color peachDeep = Color(0xFFFFDFC8);
   static const Color peachBorder = Color(0xFFFFD9C2);
+  // Home Promotional Banners tokens (Peach/Orange pastel gradient matching mockup)
+  static const Color promoBannerGradientStart = Color(0xFFFFEEDB);
+  static const Color promoBannerGradientEnd = Color(0xFFFFDFC8);
+  static const Color promoBannerBorder = Color(0xFFFFD4B8);
+  static const Color promoBannerIconBadgeBg = Color(0xFFFFFFFF);
+  static const Color promoBannerIconShadow = Color(0x14000000);
+  static const Color promoBannerIndicatorActive = Color(0xFFFB5B00);
+  static const Color promoBannerIndicatorInactive = Color(0xFFD6D3D1);
+  static const Color promoBannerAirportDisc = Color(0xFF262626);
+  static const Color promoBannerAirportPlane = Color(0xFFFBBF24);
+  static const Color promoBannerAirportGridGreen = Color(0xFF34D399);
+  static const Color promoBannerAirportGridYellow = Color(0xFFFCD34D);
+  static const Color promoBannerChevronBg = Color(0xFFFFFFFF);
   static const Color orangeLightBg = Color(0xFFFFF7ED);
   static const Color orangeSubtleBg = Color(0xFFFFF4EC);
   static const Color orangeAccent = Color(0xFFFF7A00);

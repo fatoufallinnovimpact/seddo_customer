@@ -15,8 +15,11 @@ import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.da
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
+import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
+import 'package:seddo/features/ride/presentation/pages/driver_approaching_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
+import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.dart';
@@ -574,20 +577,60 @@ class _RideBookingPageState extends State<RideBookingPage> {
           }
         }
 
-        Navigator.of(context).push(
-          SlideRightToLeftRoute(
-            page: DriverSearchPage(
-              departure: widget.departure,
-              destination: widget.destination,
-              rideOption: selectedOption,
-              polylinePoints: effectivePoints,
-              traffic: effectiveTraffic,
-              pickupLandmark: _pickupLandmark,
-              rideId: RideService.lastCreatedRideId,
-              paymentMethod: chosenMethod,
+        final cachedEvent = RealtimeService().lastRideStatusEvent;
+        final status = (lastData?['status'] as String? ?? cachedEvent?.status ?? '').toUpperCase();
+        final hasDriver = lastData?['driver'] != null || cachedEvent?.driver != null;
+        final isAccepted = status == 'ACCEPTED' ||
+            status == 'DRIVER_ACCEPTED' ||
+            status == 'DRIVER_ASSIGNED' ||
+            status == 'ASSIGNED' ||
+            status == 'CONFIRMED' ||
+            status == 'APPROACHING' ||
+            status == 'EN_ROUTE' ||
+            status == 'DRIVER_ARRIVED' ||
+            status == 'IN_PROGRESS' ||
+            hasDriver;
+
+        if (isAccepted && lastData != null) {
+          final driver = cachedEvent?.driver ??
+              DriverModel.fromRideJson(
+                lastData,
+                defaultRideType: selectedOption.type,
+              );
+          final code = cachedEvent?.departureCode ??
+              DriverModel.extractDepartureCode(lastData);
+
+          Navigator.of(context).push(
+            SlideRightToLeftRoute(
+              page: DriverApproachingPage(
+                departure: widget.departure,
+                destination: widget.destination,
+                rideOption: selectedOption,
+                driver: driver,
+                polylinePoints: effectivePoints,
+                departureCode: code,
+                rideId: RideService.lastCreatedRideId,
+                rideService: widget.rideService,
+                autoStartSimulation: false,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          Navigator.of(context).push(
+            SlideRightToLeftRoute(
+              page: DriverSearchPage(
+                departure: widget.departure,
+                destination: widget.destination,
+                rideOption: selectedOption,
+                polylinePoints: effectivePoints,
+                traffic: effectiveTraffic,
+                pickupLandmark: _pickupLandmark,
+                rideId: RideService.lastCreatedRideId,
+                paymentMethod: chosenMethod,
+              ),
+            ),
+          );
+        }
       }
     } else {
       // Si la commande n'a pas abouti ou a été fermée/annulée (ex: devis déjà commandé),

@@ -17,6 +17,7 @@ import 'package:seddo/core/utils/service_area_helper.dart';
 import 'package:seddo/features/ride/presentation/widgets/service_unavailable_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
 
 /// Écran de recherche et sélection d'adresses (départ et arrivée) :
@@ -122,7 +123,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
   Future<void> _resolveInitialCurrentPosition() async {
     if (widget.initialPickup != null &&
-        widget.initialPickup != currentPositionText) {
+        widget.initialPickup != currentPositionText &&
+        UserLocationStorage.isStreetLevelAddress(widget.initialPickup!)) {
       return;
     }
 
@@ -133,7 +135,8 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
       if (currentPlace != null && mounted) {
         if (_departureController.text.isEmpty ||
-            _departureController.text == currentPositionText) {
+            _departureController.text == currentPositionText ||
+            !UserLocationStorage.isStreetLevelAddress(_departureController.text)) {
           setState(() {
             _departureController.text = currentPlace.mainText;
             _selectedDepartureResult = currentPlace;
@@ -429,8 +432,10 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       try {
         final pos = await Geolocator.getLastKnownPosition() ??
             await Geolocator.getCurrentPosition(
-              locationSettings:
-                  const LocationSettings(accuracy: LocationAccuracy.medium),
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.medium,
+                timeLimit: Duration(seconds: 3),
+              ),
             );
         departure = PlaceSearchResult(
           id: 'departure_current',

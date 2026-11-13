@@ -19,7 +19,8 @@ abstract class ApiEndpoints {
 
   // Device push tokens endpoints
   static String get devices => '$baseUrl/v1/users/me/devices';
-  static String deviceToken(String token) => '$baseUrl/v1/users/me/devices/$token';
+  static String deviceToken(String token) =>
+      '$baseUrl/v1/users/me/devices/${Uri.encodeComponent(token)}';
 
   // Transit v2 endpoints (bus itineraries)
   static String get transitBaseUrl => BaseUrl.transitApi;

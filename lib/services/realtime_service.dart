@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/base_url.dart';
@@ -7,6 +8,7 @@ import 'package:seddo/features/ride/data/models/chat_message_model.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/services/route_service.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
@@ -40,7 +42,16 @@ class RealtimeRideStatusEvent {
   });
 
   factory RealtimeRideStatusEvent.fromJson(dynamic json) {
-    if (json is! Map<String, dynamic>) {
+    dynamic effective = json;
+    if (effective is String) {
+      try {
+        effective = jsonDecode(effective);
+      } catch (_) {}
+    }
+    if (effective is List && effective.isNotEmpty) {
+      effective = effective.first;
+    }
+    if (effective is! Map) {
       return RealtimeRideStatusEvent(
         rideId: '',
         status: '',
@@ -48,40 +59,67 @@ class RealtimeRideStatusEvent {
       );
     }
 
-    final rideObj = json['ride'] is Map<String, dynamic>
-        ? json['ride'] as Map<String, dynamic>
-        : json;
+    final map = Map<String, dynamic>.from(effective);
+    final dataMap = map['data'] is Map ? map['data'] as Map<String, dynamic> : null;
+    final rideObj = map['ride'] is Map<String, dynamic>
+        ? map['ride'] as Map<String, dynamic>
+        : (dataMap ?? map);
 
     final rideId = (rideObj['rideId'] ??
             rideObj['id'] ??
-            json['rideId'] ??
-            json['id'] ??
+            map['rideId'] ??
+            map['id'] ??
+            dataMap?['rideId'] ??
+            dataMap?['id'] ??
             '')
         .toString();
 
-    final status = (rideObj['status'] ??
-            json['status'] ??
+    var status = (rideObj['status'] ??
+            map['status'] ??
+            dataMap?['status'] ??
             rideObj['rideStatus'] ??
+            map['rideStatus'] ??
             '')
         .toString()
-        .toUpperCase();
+        .toUpperCase()
+        .trim();
 
-    final version = (json['version'] ?? rideObj['version'] as num?)?.toInt() ?? 0;
+    if (status.isEmpty) {
+      final evStr = (map['event'] ?? map['type'] ?? '').toString().toLowerCase();
+      if (evStr.contains('accept')) {
+        status = 'ACCEPTED';
+      } else if (evStr.contains('arrive')) {
+        status = 'DRIVER_ARRIVED';
+      } else if (evStr.contains('start') || evStr.contains('progress')) {
+        status = 'IN_PROGRESS';
+      }
+    }
 
-    final departureCode = DriverModel.extractDepartureCode(json);
+    final version = (map['version'] ?? rideObj['version'] as num?)?.toInt() ?? 0;
+    final departureCode = DriverModel.extractDepartureCode(rideObj.isNotEmpty ? rideObj : map);
 
     DriverModel? driver;
-    if (json['driver'] != null || rideObj['driver'] != null || json['carModel'] != null) {
+    if (map['driver'] != null ||
+        rideObj['driver'] != null ||
+        dataMap?['driver'] != null ||
+        map['carModel'] != null ||
+        rideObj['carModel'] != null) {
       try {
-        driver = DriverModel.fromRideJson(json);
+        driver = DriverModel.fromRideJson(rideObj);
       } catch (e) {
-        debugPrint('[RealtimeService] Note parsing driver: $e');
+        try {
+          driver = DriverModel.fromRideJson(map);
+        } catch (_) {}
       }
     }
 
     DateTime time;
     try {
-      final rawTime = json['timestamp'] ?? json['updatedAt'] ?? json['time'];
+      final rawTime = map['timestamp'] ??
+          rideObj['timestamp'] ??
+          map['updatedAt'] ??
+          rideObj['updatedAt'] ??
+          map['time'];
       if (rawTime is String) {
         time = DateTime.tryParse(rawTime) ?? DateTime.now();
       } else if (rawTime is int) {
@@ -100,12 +138,12 @@ class RealtimeRideStatusEvent {
       driver: driver,
       version: version,
       timestamp: time,
-      raw: json,
+      raw: map,
     );
   }
 }
 
-/// Événement temps réel de position GPS du chauffeur (driver.location)
+/// Événement temps réel de position GPS du chauffeur (driver.location / telemetry)
 class RealtimeDriverLocationEvent {
   final String? rideId;
   final String? driverId;
@@ -115,6 +153,15 @@ class RealtimeDriverLocationEvent {
   final double? accuracy;
   final int? etaMinutes;
   final double? distanceMeters;
+  final String? polyline;
+  final List<LatLng> remainingPoints;
+  final List<TrafficSegmentModel> traffic;
+  final String? phase; // APPROACH (vers le client) ou TRIP (vers la destination)
+  final double? remainingM; // distance restante en mètres
+  final int? etaS; // temps restant en secondes
+  final int? animateMs; // durée de l'animation en ms
+  final bool? snapped;
+  final bool? simulated;
   final DateTime? timestamp;
   final int version;
   final Map<String, dynamic> raw;
@@ -128,33 +175,52 @@ class RealtimeDriverLocationEvent {
     this.accuracy,
     this.etaMinutes,
     this.distanceMeters,
+    this.remainingM,
+    this.etaS,
+    this.animateMs,
+    this.polyline,
+    this.remainingPoints = const [],
+    this.traffic = const [],
+    this.phase,
+    this.snapped,
+    this.simulated,
     this.timestamp,
     this.version = 0,
     this.raw = const {},
   });
 
   factory RealtimeDriverLocationEvent.fromJson(dynamic json) {
-    if (json is! Map<String, dynamic>) {
+    dynamic effective = json;
+    if (effective is String) {
+      try {
+        effective = jsonDecode(effective);
+      } catch (_) {}
+    }
+    if (effective is List && effective.isNotEmpty) {
+      effective = effective.first;
+    }
+    if (effective is! Map) {
       return const RealtimeDriverLocationEvent(
         location: LatLng(0, 0),
       );
     }
 
-    final driverMap = json['driver'] is Map<String, dynamic>
-        ? json['driver'] as Map<String, dynamic>
+    final jsonMap = Map<String, dynamic>.from(effective);
+    final driverMap = jsonMap['driver'] is Map<String, dynamic>
+        ? jsonMap['driver'] as Map<String, dynamic>
         : null;
-    final dataMap = json['data'] is Map<String, dynamic>
-        ? json['data'] as Map<String, dynamic>
+    final dataMap = jsonMap['data'] is Map<String, dynamic>
+        ? jsonMap['data'] as Map<String, dynamic>
         : null;
 
-    final posObj = json['position'] is Map<String, dynamic>
-        ? json['position'] as Map<String, dynamic>
-        : (json['location'] is Map<String, dynamic>
-            ? json['location'] as Map<String, dynamic>
-            : (json['coords'] is Map<String, dynamic>
-                ? json['coords'] as Map<String, dynamic>
-                : (json['driverPosition'] is Map<String, dynamic>
-                    ? json['driverPosition'] as Map<String, dynamic>
+    final posObj = jsonMap['position'] is Map<String, dynamic>
+        ? jsonMap['position'] as Map<String, dynamic>
+        : (jsonMap['location'] is Map<String, dynamic>
+            ? jsonMap['location'] as Map<String, dynamic>
+            : (jsonMap['coords'] is Map<String, dynamic>
+                ? jsonMap['coords'] as Map<String, dynamic>
+                : (jsonMap['driverPosition'] is Map<String, dynamic>
+                    ? jsonMap['driverPosition'] as Map<String, dynamic>
                     : (driverMap?['position'] is Map<String, dynamic>
                         ? driverMap!['position'] as Map<String, dynamic>
                         : (driverMap?['location'] is Map<String, dynamic>
@@ -163,14 +229,14 @@ class RealtimeDriverLocationEvent {
                                 ? dataMap!['position'] as Map<String, dynamic>
                                 : (dataMap?['location'] is Map<String, dynamic>
                                     ? dataMap!['location'] as Map<String, dynamic>
-                                    : json)))))));
+                                    : jsonMap)))))));
 
     final lat = (posObj['lat'] ??
             posObj['latitude'] ??
             driverMap?['lat'] ??
             driverMap?['latitude'] ??
-            json['lat'] ??
-            json['latitude'] as num?)
+            jsonMap['lat'] ??
+            jsonMap['latitude'] as num?)
         ?.toDouble() ??
         0.0;
     final lng = (posObj['lng'] ??
@@ -178,8 +244,8 @@ class RealtimeDriverLocationEvent {
             posObj['lon'] ??
             driverMap?['lng'] ??
             driverMap?['longitude'] ??
-            json['lng'] ??
-            json['longitude'] as num?)
+            jsonMap['lng'] ??
+            jsonMap['longitude'] as num?)
         ?.toDouble() ??
         0.0;
     final heading = (posObj['heading'] ??
@@ -187,16 +253,18 @@ class RealtimeDriverLocationEvent {
             posObj['direction'] ??
             posObj['course'] ??
             driverMap?['heading'] ??
-            json['heading'] ??
+            jsonMap['heading'] ??
             0.0 as num)
         .toDouble();
-    final speed = (posObj['speed'] ?? json['speed'] as num?)?.toDouble();
-    final accuracy = (posObj['accuracy'] ?? json['accuracy'] as num?)?.toDouble();
+    final speed = (posObj['speed'] ?? jsonMap['speed'] as num?)?.toDouble();
+    final accuracy = (posObj['accuracy'] ?? jsonMap['accuracy'] as num?)?.toDouble();
 
-    final rideId = (json['rideId'] ??
+    final rideId = (jsonMap['rideId'] ??
             posObj['rideId'] ??
             driverMap?['rideId'] ??
-            json['id'])
+            dataMap?['rideId'] ??
+            jsonMap['tripId'] ??
+            jsonMap['id'])
         ?.toString();
     final driverId = (json['driverId'] ??
             posObj['driverId'] ??
@@ -216,7 +284,88 @@ class RealtimeDriverLocationEvent {
       time = DateTime.fromMillisecondsSinceEpoch(rawTime);
     }
 
-    final durS = (json['durationSeconds'] ??
+    final remainingM = (json['remainingM'] ??
+            json['remainingDistance'] ??
+            json['remainingDistanceM'] ??
+            posObj['remainingM'] ??
+            dataMap?['remainingM'] ??
+            json['distanceMeters'] ??
+            posObj['distanceMeters'] ??
+            json['distance'] as num?)
+        ?.toDouble();
+
+    final etaS = (json['etaS'] ??
+            json['remainingSeconds'] ??
+            posObj['etaS'] ??
+            dataMap?['etaS'] ??
+            json['durationSeconds'] ??
+            posObj['durationSeconds'] ??
+            json['duration'] as num?)
+        ?.toInt();
+
+    final animateMs = (json['animateMs'] ??
+            json['animationMs'] ??
+            json['durationMs'] ??
+            posObj['animateMs'] ??
+            dataMap?['animateMs'] as num?)
+        ?.toInt();
+
+    final rawPoly = (json['polyline'] ??
+            posObj['polyline'] ??
+            dataMap?['polyline'] ??
+            json['plannedPolyline'] ??
+            posObj['plannedPolyline'] ??
+            dataMap?['plannedPolyline'] ??
+            json['encodedPolyline'])
+        ?.toString();
+    List<LatLng> points = [];
+    if (rawPoly != null && rawPoly.isNotEmpty) {
+      try {
+        points = RouteService.decodePolyline(rawPoly);
+      } catch (_) {}
+    }
+    if (points.isEmpty) {
+      final rawPts = json['points'] ??
+          posObj['points'] ??
+          dataMap?['points'] ??
+          json['coordinates'] ??
+          posObj['coordinates'];
+      if (rawPts is List) {
+        for (final p in rawPts) {
+          if (p is Map) {
+            final ptLat = (p['lat'] ?? p['latitude'] as num?)?.toDouble();
+            final ptLng =
+                (p['lng'] ?? p['longitude'] ?? p['lon'] as num?)?.toDouble();
+            if (ptLat != null && ptLng != null) {
+              points.add(LatLng(ptLat, ptLng));
+            }
+          } else if (p is List && p.length >= 2) {
+            final ptLng = (p[0] as num?)?.toDouble();
+            final ptLat = (p[1] as num?)?.toDouble();
+            if (ptLat != null && ptLng != null) {
+              points.add(LatLng(ptLat, ptLng));
+            }
+          }
+        }
+      }
+    }
+
+    List<TrafficSegmentModel> trafficSegments = [];
+    final rawTraffic =
+        json['traffic'] ?? posObj['traffic'] ?? dataMap?['traffic'];
+    if (rawTraffic is List) {
+      trafficSegments = rawTraffic
+          .whereType<Map<String, dynamic>>()
+          .map((t) => TrafficSegmentModel.fromJson(t))
+          .toList();
+    }
+
+    final phase = (json['phase'] ?? posObj['phase'] ?? dataMap?['phase'])?.toString();
+    final snapped = (posObj['snapped'] ?? json['snapped']) as bool?;
+    final simulated = (posObj['simulated'] ?? json['simulated']) as bool?;
+
+    final durS = etaS ??
+        (json['durationSeconds'] ??
             json['duration'] ??
             dataMap?['durationSeconds'] ??
             dataMap?['duration'] ??
@@ -231,7 +380,8 @@ class RealtimeDriverLocationEvent {
             posObj['eta'] ??
             (durS != null && durS > 0 ? (durS / 60.0).ceil() : null) as num?)
         ?.toInt();
-    final distM = (json['distanceMeters'] ??
+    final distM = remainingM ??
+        (json['distanceMeters'] ??
             json['distance'] ??
             dataMap?['distanceMeters'] ??
             dataMap?['distance'] ??
@@ -248,6 +398,15 @@ class RealtimeDriverLocationEvent {
       accuracy: accuracy,
       etaMinutes: etaM,
       distanceMeters: distM,
+      remainingM: remainingM,
+      etaS: etaS,
+      animateMs: animateMs,
+      polyline: rawPoly,
+      remainingPoints: points,
+      traffic: trafficSegments,
+      phase: phase,
+      snapped: snapped,
+      simulated: simulated,
       timestamp: time,
       version: version,
       raw: json,
@@ -287,7 +446,9 @@ class RealtimeRideEtaEvent {
             ? json['data'] as Map<String, dynamic>
             : json);
 
-    final durS = (rideObj['durationS'] ??
+    final durS = (rideObj['etaS'] ??
+            json['etaS'] ??
+            rideObj['durationS'] ??
             rideObj['duration'] ??
             rideObj['durationSeconds'] ??
             json['durationS'] ??
@@ -301,7 +462,9 @@ class RealtimeRideEtaEvent {
         ?.toInt() ??
         0;
 
-    final distM = (rideObj['distanceM'] ??
+    final distM = (rideObj['remainingM'] ??
+            json['remainingM'] ??
+            rideObj['distanceM'] ??
             rideObj['distanceMeters'] ??
             rideObj['distance'] ??
             json['distanceM'] ??
@@ -567,6 +730,10 @@ class RealtimeService {
   Stream<ChatMessageModel> get chatMessageStream => _chatMessageController.stream;
   Stream<void> get onReconnect => _reconnectController.stream;
 
+  // Cache du dernier événement de statut pour transmission instantanée aux nouveaux écrans
+  RealtimeRideStatusEvent? _lastRideStatusEvent;
+  RealtimeRideStatusEvent? get lastRideStatusEvent => _lastRideStatusEvent;
+
   RealtimeConnectionStatus get connectionStatus => _connectionStatus;
   bool get isConnected => _connectionStatus == RealtimeConnectionStatus.connected;
   bool get isConnecting =>
@@ -656,15 +823,20 @@ class RealtimeService {
   void joinRide(String rideId) {
     if (rideId.isEmpty) return;
     _currentActiveRideId = rideId;
+    if (!isConnected && !isConnecting) {
+      connect();
+    }
     if (_socket != null && _socket!.connected) {
       debugPrint('[RealtimeService] 🚪 Rejoindre canal ride:$rideId');
       _socket?.emit('join', 'ride:$rideId');
       _socket?.emit('join', {'room': 'ride:$rideId', 'rideId': rideId});
+      _socket?.emit('join', {'room': rideId, 'rideId': rideId});
       _socket?.emit('join_ride', {'rideId': rideId});
       _socket?.emit('joinRide', {'rideId': rideId});
       _socket?.emit('ride:join', {'rideId': rideId});
       _socket?.emit('subscribe', {'channel': 'ride:$rideId', 'rideId': rideId});
       _socket?.emit('subscribe', 'ride:$rideId');
+      _socket?.emit('subscribe', rideId);
     }
   }
 
@@ -777,17 +949,67 @@ class RealtimeService {
       _handleAnyEvent(event.toString(), data);
     });
 
-    // 1. Statut de la course (ride.status / ride:status)
+    // 1. Statut de la course (ride.status / ride:status, accepted, arrived, etc.)
     s.on('ride.status', (data) => _handleRideStatus(data));
     s.on('ride:status', (data) => _handleRideStatus(data));
+    s.on('ride_status', (data) => _handleRideStatus(data));
+    s.on('status', (data) => _handleRideStatus(data));
+    s.on('ride:accepted', (data) => _dispatchRideStatusFromEvent('ride:accepted', data));
+    s.on('ride.accepted', (data) => _dispatchRideStatusFromEvent('ride.accepted', data));
+    s.on('ride_accepted', (data) => _dispatchRideStatusFromEvent('ride_accepted', data));
+    s.on('driver:accepted', (data) => _dispatchRideStatusFromEvent('driver:accepted', data));
+    s.on('driver.accepted', (data) => _dispatchRideStatusFromEvent('driver.accepted', data));
+    s.on('driver_accepted', (data) => _dispatchRideStatusFromEvent('driver_accepted', data));
+    s.on('driver:assigned', (data) => _dispatchRideStatusFromEvent('driver:assigned', data));
+    s.on('driver.assigned', (data) => _dispatchRideStatusFromEvent('driver.assigned', data));
+    s.on('driver_assigned', (data) => _dispatchRideStatusFromEvent('driver_assigned', data));
+    s.on('ride:assigned', (data) => _dispatchRideStatusFromEvent('ride:assigned', data));
+    s.on('ride.assigned', (data) => _dispatchRideStatusFromEvent('ride.assigned', data));
+    s.on('ride_assigned', (data) => _dispatchRideStatusFromEvent('ride_assigned', data));
+    s.on('driver:arrived', (data) => _dispatchRideStatusFromEvent('driver:arrived', data));
+    s.on('driver.arrived', (data) => _dispatchRideStatusFromEvent('driver.arrived', data));
+    s.on('driver_arrived', (data) => _dispatchRideStatusFromEvent('driver_arrived', data));
+    s.on('ride:arrived', (data) => _dispatchRideStatusFromEvent('ride:arrived', data));
+    s.on('ride.arrived', (data) => _dispatchRideStatusFromEvent('ride.arrived', data));
+    s.on('ride:in_progress', (data) => _dispatchRideStatusFromEvent('ride:in_progress', data));
+    s.on('ride.in_progress', (data) => _dispatchRideStatusFromEvent('ride.in_progress', data));
+    s.on('ride:started', (data) => _dispatchRideStatusFromEvent('ride:started', data));
+    s.on('ride.started', (data) => _dispatchRideStatusFromEvent('ride.started', data));
+    s.on('ride:completed', (data) => _dispatchRideStatusFromEvent('ride:completed', data));
+    s.on('ride.completed', (data) => _dispatchRideStatusFromEvent('ride.completed', data));
+    s.on('ride:cancelled', (data) => _dispatchRideStatusFromEvent('ride:cancelled', data));
+    s.on('ride.cancelled', (data) => _dispatchRideStatusFromEvent('ride.cancelled', data));
+    s.on('ride:no_driver', (data) => _dispatchRideStatusFromEvent('ride:no_driver', data));
+    s.on('ride.no_driver', (data) => _dispatchRideStatusFromEvent('ride.no_driver', data));
 
-    // 2. Position en direct du chauffeur (driver.location / driver:location)
+    // 2. Position en direct du chauffeur (driver.location / telemetry / tracking)
     s.on('driver.location', (data) => _handleDriverLocation(data));
     s.on('driver:location', (data) => _handleDriverLocation(data));
+    s.on('driver_location', (data) => _handleDriverLocation(data));
+    s.on('driver.position', (data) => _handleDriverLocation(data));
+    s.on('driver:position', (data) => _handleDriverLocation(data));
+    s.on('driver_position', (data) => _handleDriverLocation(data));
+    s.on('location', (data) => _handleDriverLocation(data));
+    s.on('position', (data) => _handleDriverLocation(data));
+    s.on('telemetry', (data) => _handleDriverLocation(data));
+    s.on('ride.vehicle.location', (data) => _handleDriverLocation(data));
+    s.on('ride:vehicle:location', (data) => _handleDriverLocation(data));
+    s.on('ride.telemetry', (data) => _handleDriverLocation(data));
+    s.on('ride:telemetry', (data) => _handleDriverLocation(data));
+    s.on('ride.location', (data) => _handleDriverLocation(data));
+    s.on('ride:location', (data) => _handleDriverLocation(data));
+    s.on('vehicle.location', (data) => _handleDriverLocation(data));
+    s.on('vehicle:location', (data) => _handleDriverLocation(data));
+    s.on('tracking', (data) => _handleDriverLocation(data));
+    s.on('ride.tracking', (data) => _handleDriverLocation(data));
+    s.on('ride:tracking', (data) => _handleDriverLocation(data));
+    s.on('trip.location', (data) => _handleDriverLocation(data));
+    s.on('trip:location', (data) => _handleDriverLocation(data));
 
     // 3. Temps d'arrivée estimé (ride.eta / ride:eta)
     s.on('ride.eta', (data) => _handleRideEta(data));
     s.on('ride:eta', (data) => _handleRideEta(data));
+    s.on('eta', (data) => _handleRideEta(data));
 
     // 4. Mise à jour de course globale (ride.update, ride:update, ride_update, ride.updated, ride:updated, ride_updated, ride)
     s.on('ride.update', (data) => _handleRideUpdate(data));
@@ -844,99 +1066,52 @@ class RealtimeService {
   void _handleAnyEvent(String event, dynamic data) {
     final lower = event.toLowerCase();
 
-    // 1. Mise à jour de course globale (ride.update, ride:update, ride_update, ride.updated, ride:updated, ride_updated, ride)
-    if (lower == 'ride.update' ||
-        lower == 'ride:update' ||
-        lower == 'ride_update' ||
-        lower == 'ride.updated' ||
-        lower == 'ride:updated' ||
-        lower == 'ride_updated' ||
-        lower == 'ride') {
+    // 1. Mise à jour de course globale
+    if ((lower.contains('update') && lower.contains('ride')) || lower == 'ride') {
       _handleRideUpdate(data);
       return;
     }
 
-    // 2. Statut de course spécifique
-    if (lower == 'ride.status' ||
-        lower == 'ride:status' ||
-        lower == 'ride_status' ||
-        lower == 'ride.accepted' ||
-        lower == 'ride:accepted' ||
-        lower == 'offer.accepted' ||
-        lower == 'offer:accepted' ||
-        lower == 'driver.accepted' ||
-        lower == 'driver:accepted' ||
-        lower == 'driver.arrived' ||
-        lower == 'driver:arrived' ||
-        lower == 'ride.arrived' ||
-        lower == 'ride:arrived' ||
-        lower == 'ride.started' ||
-        lower == 'ride:started' ||
-        lower == 'ride.in_progress' ||
-        lower == 'ride:in_progress' ||
-        lower == 'ride.completed' ||
-        lower == 'ride:completed' ||
-        lower == 'ride.finished' ||
-        lower == 'ride.cancelled' ||
-        lower == 'ride:cancelled' ||
-        lower == 'ride.cancel' ||
-        lower == 'ride.no_driver' ||
-        lower == 'ride:no_driver') {
+    // 2. Statut de course spécifique (toutes les variations de statuts et d'événements)
+    if (lower.contains('status') ||
+        lower.contains('accept') ||
+        lower.contains('assign') ||
+        lower.contains('arriv') ||
+        lower.contains('start') ||
+        lower.contains('progress') ||
+        lower.contains('trip') ||
+        lower.contains('complet') ||
+        lower.contains('finish') ||
+        lower.contains('cancel') ||
+        lower.contains('no_driver')) {
       _dispatchRideStatusFromEvent(event, data);
       return;
     }
 
-    // 3. Position du chauffeur
-    if (lower == 'driver.location' ||
-        lower == 'driver:location' ||
-        lower == 'driver_location' ||
-        lower == 'location.update' ||
-        lower == 'driver:position' ||
-        lower == 'driver.position') {
+    // 3. Position du chauffeur / Télémétrie
+    if (lower.contains('location') ||
+        lower.contains('position') ||
+        lower.contains('telemetry') ||
+        lower.contains('tracking') ||
+        lower.contains('coords')) {
       _handleDriverLocation(data);
       return;
     }
 
     // 4. ETA
-    if (lower == 'ride.eta' ||
-        lower == 'ride:eta' ||
-        lower == 'ride_eta' ||
-        lower == 'eta.update') {
+    if (lower.contains('eta')) {
       _handleRideEta(data);
       return;
     }
 
     // 5. Route / Rerouting direct
-    if (lower == 'ride.route.updated' ||
-        lower == 'ride:route:updated' ||
-        lower == 'ride.route_updated' ||
-        lower == 'ride.route' ||
-        lower == 'ride:route' ||
-        lower == 'ride.reroute' ||
-        lower == 'ride:reroute' ||
-        lower == 'route.reroute' ||
-        lower == 'route.updated' ||
-        lower == 'route:updated' ||
-        lower == 'route_updated' ||
-        lower == 'route:update' ||
-        lower == 'route.update' ||
-        lower == 'route_update') {
+    if (lower.contains('route') || lower.contains('reroute')) {
       _handleRideRoute(data);
       return;
     }
 
     // Paiement
-    if (lower == 'payment.status' ||
-        lower == 'payment:status' ||
-        lower == 'payment_status' ||
-        lower == 'payment.success' ||
-        lower == 'payment:success' ||
-        lower == 'payment.confirmed' ||
-        lower == 'payment:confirmed' ||
-        lower == 'payment.paid' ||
-        lower == 'payment:paid' ||
-        lower == 'payment.completed' ||
-        lower == 'payment:completed') {
+    if (lower.contains('payment')) {
       final defaultStatus = (lower.contains('success') ||
               lower.contains('confirm') ||
               lower.contains('paid') ||
@@ -948,40 +1123,41 @@ class RealtimeService {
     }
 
     // Chauffeurs proches
-    if (lower == 'nearby.drivers' ||
-        lower == 'nearby:drivers' ||
-        lower == 'drivers:nearby' ||
-        lower == 'drivers.nearby' ||
-        lower == 'nearby_drivers' ||
-        lower == 'nearby' ||
-        lower == 'drivers' ||
-        lower == 'drivers:locations' ||
-        lower == 'driver:locations') {
+    if (lower.contains('nearby') || lower.contains('drivers')) {
       _handleNearbyDrivers(data);
       return;
     }
 
     // Chat
-    if (lower == 'ride.message' ||
-        lower == 'chat.message' ||
-        lower == 'chat:message') {
+    if (lower.contains('message') || lower.contains('chat')) {
       _handleChatMessage(data);
       return;
     }
   }
 
   void _dispatchRideStatusFromEvent(String event, dynamic data) {
-    if (data is! Map) return;
-    final map = Map<String, dynamic>.from(data);
+    dynamic effective = data;
+    if (effective is String) {
+      try {
+        effective = jsonDecode(effective);
+      } catch (_) {}
+    }
+    if (effective is List && effective.isNotEmpty) {
+      effective = effective.first;
+    }
+    if (effective is! Map) {
+      effective = <String, dynamic>{};
+    }
+    final map = Map<String, dynamic>.from(effective);
     final lower = event.toLowerCase();
 
     // Déduire le statut du nom de l'événement si non fourni
     if (map['status'] == null || map['status'].toString().isEmpty) {
-      if (lower.contains('accept')) {
+      if (lower.contains('accept') || lower.contains('assign')) {
         map['status'] = 'ACCEPTED';
-      } else if (lower.contains('arrive')) {
+      } else if (lower.contains('arriv')) {
         map['status'] = 'DRIVER_ARRIVED';
-      } else if (lower.contains('start') || lower.contains('in_progress')) {
+      } else if (lower.contains('start') || lower.contains('progress') || lower.contains('trip')) {
         map['status'] = 'IN_PROGRESS';
       } else if (lower.contains('complet') || lower.contains('finish')) {
         map['status'] = 'COMPLETED';
@@ -1007,6 +1183,10 @@ class RealtimeService {
         _lastKnownVersions[event.rideId] = event.version;
       }
       debugPrint('[RealtimeService] 📥 Reçu ride.status: ${event.status} pour course ${event.rideId}');
+      _lastRideStatusEvent = event;
+      if (event.raw.isNotEmpty) {
+        RideService.lastCreatedRideData = event.raw;
+      }
       _rideStatusController.add(event);
     } catch (e) {
       debugPrint('[RealtimeService] ⚠️ Erreur parsing ride.status: $e');
@@ -1017,30 +1197,27 @@ class RealtimeService {
     try {
       final event = RealtimeDriverLocationEvent.fromJson(data);
 
-      // Filtre 1 : Précision GPS minimale 50m (PDF page 3 & 5)
-      if (event.accuracy != null && event.accuracy! > 50.0) {
-        debugPrint('[RealtimeService] Ignoré driver.location imprécis (${event.accuracy}m > 50m)');
+      if (event.location.latitude == 0 && event.location.longitude == 0) {
         return;
       }
 
-      // Filtre 2 : Horodatage plus récent (PDF page 4 & 5)
+      // Filtre 1 : Précision GPS minimale uniquement si pas de tracé snapé backend
+      if (event.remainingPoints.isEmpty && event.phase == null) {
+        if (event.accuracy != null && event.accuracy! > 50.0) {
+          debugPrint('[RealtimeService] Ignoré driver.location imprécis (${event.accuracy}m > 50m)');
+          return;
+        }
+      }
+
+      // Filtre 2 : Horodatage (tolérance aux désynchronisations mineures de 2s)
       final trackKey = event.rideId ?? event.driverId ?? 'current';
       if (event.timestamp != null) {
         final lastTime = _lastLocationTimestamps[trackKey];
-        if (lastTime != null && event.timestamp!.isBefore(lastTime)) {
+        if (lastTime != null && lastTime.difference(event.timestamp!).inSeconds > 2) {
           debugPrint('[RealtimeService] Ignoré driver.location plus ancien que le dernier reçu');
           return;
         }
         _lastLocationTimestamps[trackKey] = event.timestamp!;
-      }
-
-      // Filtre 3 : Versionning
-      if (event.version > 0 && event.rideId != null) {
-        final lastV = _lastKnownVersions[event.rideId!] ?? 0;
-        if (event.version < lastV) {
-          return;
-        }
-        _lastKnownVersions[event.rideId!] = event.version;
       }
 
       _driverLocationController.add(event);
@@ -1095,6 +1272,8 @@ class RealtimeService {
       // 2. ETA / Temps restant / Distance restante
       final hasEta = rideObj['etaMinutes'] != null ||
           rideObj['eta'] != null ||
+          rideObj['etaS'] != null ||
+          rideObj['remainingM'] != null ||
           rideObj['durationSeconds'] != null ||
           rideObj['duration'] != null ||
           rideObj['durationS'] != null ||
@@ -1102,6 +1281,8 @@ class RealtimeService {
           rideObj['distance'] != null ||
           map['etaMinutes'] != null ||
           map['eta'] != null ||
+          map['etaS'] != null ||
+          map['remainingM'] != null ||
           map['durationSeconds'] != null ||
           map['duration'] != null;
 
@@ -1114,9 +1295,11 @@ class RealtimeService {
           rideObj['location'] != null ||
           rideObj['driverPosition'] != null ||
           rideObj['coords'] != null ||
+          rideObj['lat'] != null ||
           map['position'] != null ||
           map['location'] != null ||
-          map['driverPosition'] != null;
+          map['driverPosition'] != null ||
+          map['lat'] != null;
 
       if (hasLocation) {
         _handleDriverLocation(data);

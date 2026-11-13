@@ -21,288 +21,12 @@ class TransitPlaceSearchService {
     ),
   );
 
-  /// Base de repères et quartiers clés à Dakar avec coordonnées GPS réelles
-  static final List<PlaceModel> _dakarPresets = [
-    // Pôles de transit & Gares
-    PlaceModel(
-      latitude: 14.6750,
-      longitude: -17.4350,
-      name: 'Gare Petersen',
-      address: 'Gare Routière Petersen, Dakar Plateau',
-    ),
-    PlaceModel(
-      latitude: 14.6850,
-      longitude: -17.4420,
-      name: 'Gare de Colobane',
-      address: 'Colobane, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.6710,
-      longitude: -17.4320,
-      name: 'Gare de Dakar (TER)',
-      address: 'Place de la Gare, Dakar Plateau',
-    ),
-    PlaceModel(
-      latitude: 14.6790,
-      longitude: -17.4350,
-      name: 'Marché Sandaga',
-      address: 'Avenue Lamine Guèye, Dakar Plateau',
-    ),
-    PlaceModel(
-      latitude: 14.6700,
-      longitude: -17.4300,
-      name: 'Place de l\'Indépendance',
-      address: 'Dakar Plateau',
-    ),
-    PlaceModel(
-      latitude: 14.6650,
-      longitude: -17.4310,
-      name: 'Palais Présidentiel / Plateau',
-      address: 'Avenue Léopold Sédar Senghor, Dakar',
-    ),
-
-    // Ouakam, Almadies, Ngor, Yoff
-    PlaceModel(
-      latitude: 14.7231,
-      longitude: -17.4912,
-      name: 'Ouakam',
-      address: 'Commune de Ouakam, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7222,
-      longitude: -17.4950,
-      name: 'Monument de la Renaissance Africaine',
-      address: 'Ouakam, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7247,
-      longitude: -17.4994,
-      name: 'Phare des Mamelles',
-      address: 'Ouakam, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7210,
-      longitude: -17.4890,
-      name: 'Hôpital Militaire de Ouakam',
-      address: 'Route de Ouakam, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7431,
-      longitude: -17.5195,
-      name: 'Les Almadies',
-      address: 'Ngor-Almadies, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7550,
-      longitude: -17.5180,
-      name: 'Plage de Ngor',
-      address: 'Ngor, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7600,
-      longitude: -17.4670,
-      name: 'Yoff',
-      address: 'Yoff, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7530,
-      longitude: -17.4760,
-      name: 'BCEAO Yoff',
-      address: 'Route de l\'Aéroport, Yoff, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7495,
-      longitude: -17.4682,
-      name: 'Ouest Foire',
-      address: 'Ouest Foire, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7420,
-      longitude: -17.4610,
-      name: 'Nord Foire',
-      address: 'Nord Foire, CICES, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7390,
-      longitude: -17.4600,
-      name: 'CICES',
-      address: 'Centre International du Commerce Extérieur, Dakar',
-    ),
-
-    // Mermoz, Sacré-Cœur, Fann, Point E
-    PlaceModel(
-      latitude: 14.7074,
-      longitude: -17.4744,
-      name: 'Mermoz',
-      address: 'Mermoz, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7059,
-      longitude: -17.4785,
-      name: 'Mermoz Dépôt DDD',
-      address: 'Route de Ouakam, Mermoz, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7130,
-      longitude: -17.4813,
-      name: 'Bataillon du Train',
-      address: 'Route de Ouakam, Mermoz, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7150,
-      longitude: -17.4650,
-      name: 'Sacré-Cœur',
-      address: 'Sacré-Cœur 1, 2, 3, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7100,
-      longitude: -17.4670,
-      name: 'Rond-point Liberté 6',
-      address: 'Liberté 6, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7230,
-      longitude: -17.4620,
-      name: 'Liberté 6 Extension',
-      address: 'Liberté 6, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7000,
-      longitude: -17.4650,
-      name: 'Point E',
-      address: 'Point E, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.6910,
-      longitude: -17.4670,
-      name: 'Université Cheikh Anta Diop (UCAD)',
-      address: 'Avenue Cheikh Anta Diop, Fann, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.6930,
-      longitude: -17.4640,
-      name: 'Hôpital Fann',
-      address: 'Avenue Cheikh Anta Diop, Fann, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.6980,
-      longitude: -17.4740,
-      name: 'Sea Plaza',
-      address: 'Centre Commercial Sea Plaza, Corniche Ouest, Dakar',
-    ),
-
-    // Médina, Fass, Gueule Tapée, Grand Dakar
-    PlaceModel(
-      latitude: 14.6850,
-      longitude: -17.4470,
-      name: 'Médina',
-      address: 'Médina, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.6900,
-      longitude: -17.4520,
-      name: 'Fass',
-      address: 'Fass Paillote, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7050,
-      longitude: -17.4480,
-      name: 'Grand Dakar',
-      address: 'Grand Dakar, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7130,
-      longitude: -17.4520,
-      name: 'HLM',
-      address: 'Marché HLM, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7080,
-      longitude: -17.4550,
-      name: 'Castors',
-      address: 'Marché Castors, Dakar',
-    ),
-
-    // Parcelles Assainies, Grand Yoff, Maristes, Patte d'Oie
-    PlaceModel(
-      latitude: 14.7670,
-      longitude: -17.4430,
-      name: 'Parcelles Assainies',
-      address: 'Parcelles Assainies, Unités 1 à 26, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7370,
-      longitude: -17.4490,
-      name: 'Grand Yoff',
-      address: 'Grand Yoff, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7380,
-      longitude: -17.4400,
-      name: 'Patte d\'Oie',
-      address: 'Patte d\'Oie Builders, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7270,
-      longitude: -17.4370,
-      name: 'Les Maristes',
-      address: 'Hann Maristes, Dakar',
-    ),
-
-    // Banlieue & Stations BRT / AIBD
-    PlaceModel(
-      latitude: 14.7700,
-      longitude: -17.4000,
-      name: 'Guédiawaye',
-      address: 'Préfecture de Guédiawaye, Terminus BRT',
-    ),
-    PlaceModel(
-      latitude: 14.7550,
-      longitude: -17.3950,
-      name: 'Pikine',
-      address: 'Pikine Icotaf, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7480,
-      longitude: -17.3600,
-      name: 'Thiaroye',
-      address: 'Poste Thiaroye, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7850,
-      longitude: -17.3100,
-      name: 'Keur Massar',
-      address: 'Rond-point Keur Massar, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7150,
-      longitude: -17.2700,
-      name: 'Rufisque',
-      address: 'Gare de Rufisque, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.7200,
-      longitude: -17.1800,
-      name: 'Diamniadio',
-      address: 'Gare TER Diamniadio, Dakar',
-    ),
-    PlaceModel(
-      latitude: 14.6710,
-      longitude: -17.0730,
-      name: 'Aéroport International Blaise Diagne (AIBD)',
-      address: 'AIBD, Diass / Dakar',
-    ),
-  ];
-
-  /// Recherche avec autocomplétion : Google Places API (New) prioritaire + repli local et OSM
+  /// Recherche avec autocomplétion : 100% Google Places API (New) avec repli OSM
   Future<List<PlaceModel>> search(String query) async {
     final clean = query.trim().toLowerCase();
     if (clean.isEmpty) return [];
 
-    // 1. Filtrage local instantané avec score de pertinence
-    final localMatches = _searchLocal(clean);
-
-    // 2. Recherche en direct avec les vraies clés Google Maps (Places API New)
+    // 1. Recherche en direct avec les vraies clés Google Maps (Places API New)
     List<PlaceModel> remoteMatches = [];
     final apiKey = MapConfig.apiKey;
     if (apiKey.isNotEmpty) {
@@ -394,7 +118,7 @@ class TransitPlaceSearchService {
       }
     }
 
-    // 3. Si Google n'a rien renvoyé (hors-ligne ou clé inactive), repli sur OpenStreetMap Nominatim
+    // 2. Si Google n'a rien renvoyé (hors-ligne ou clé inactive), repli sur OpenStreetMap Nominatim
     if (remoteMatches.isEmpty) {
       try {
         final url =
@@ -443,7 +167,7 @@ class TransitPlaceSearchService {
       } catch (_) {}
     }
 
-    // 4. Fusionner les résultats sans doublons (Google Places 100% prioritaire)
+    // 3. Filtrer les doublons éventuels (100% Google Places)
     final merged = <PlaceModel>[];
     final seen = <String>{};
 
@@ -455,44 +179,11 @@ class TransitPlaceSearchService {
       }
     }
 
-    // Prioriser les résultats Google Maps en premier (100% Google)
     for (final p in remoteMatches) {
-      addIfNew(p);
-    }
-    // Compléter avec les raccourcis locaux
-    for (final p in localMatches) {
       addIfNew(p);
     }
 
     return merged.take(10).toList();
-  }
-
-  /// Recherche locale dans les presets Dakar avec pondération intelligente
-  List<PlaceModel> _searchLocal(String query) {
-    final scored = <MapEntry<int, PlaceModel>>[];
-
-    for (final item in _dakarPresets) {
-      final name = item.name.toLowerCase();
-      final address = item.address.toLowerCase();
-
-      int score = 0;
-      if (name.startsWith(query)) {
-        score = 100;
-      } else if (name.split(RegExp(r'\s+|[,\-]')).any((w) => w.startsWith(query))) {
-        score = 80;
-      } else if (name.contains(query)) {
-        score = 50;
-      } else if (address.contains(query)) {
-        score = 30;
-      }
-
-      if (score > 0) {
-        scored.add(MapEntry(score, item));
-      }
-    }
-
-    scored.sort((a, b) => b.key.compareTo(a.key));
-    return scored.map((e) => e.value).toList();
   }
 
   /// Géocodage inverse : Coordonnées GPS -> PlaceModel (Google Geocoding d'abord, Nominatim en secours)
@@ -515,32 +206,70 @@ class TransitPlaceSearchService {
         if (resp.statusCode == 200 && resp.data != null) {
           final results = (resp.data['results'] as List?) ?? [];
           if (results.isNotEmpty) {
-            final first = results.first as Map<String, dynamic>;
-            final formatted = first['formatted_address'] as String? ?? '';
-            final components = (first['address_components'] as List?) ?? [];
-            String name = '';
-            for (final c in components) {
-              final types = (c['types'] as List?) ?? [];
-              if (types.contains('point_of_interest') ||
-                  types.contains('establishment') ||
-                  types.contains('neighborhood') ||
-                  types.contains('sublocality') ||
-                  types.contains('route')) {
-                name = c['long_name'] as String? ?? '';
-                break;
+            String? bestRoute;
+            String? bestStreetNumber;
+            String? bestEstablishment;
+            String? bestNeighborhood;
+            String? bestSublocality;
+            String formatted = (results.first as Map<String, dynamic>)['formatted_address'] as String? ?? '';
+            String? placeId = (results.first as Map<String, dynamic>)['place_id'] as String?;
+
+            for (final item in results) {
+              final itemMap = item as Map<String, dynamic>;
+              final comps = (itemMap['address_components'] as List?) ?? [];
+              final types = (itemMap['types'] as List?) ?? [];
+
+              String? itemRoute;
+              String? itemStreetNum;
+              for (final c in comps) {
+                final cTypes = (c['types'] as List?) ?? [];
+                final name = c['long_name'] as String? ?? '';
+                if (cTypes.contains('street_number')) itemStreetNum = name;
+                if (cTypes.contains('route')) itemRoute = name;
+                if (cTypes.contains('neighborhood')) bestNeighborhood ??= name;
+                if (cTypes.contains('sublocality') || cTypes.contains('sublocality_level_1')) {
+                  bestSublocality ??= name;
+                }
+              }
+
+              if (types.contains('point_of_interest') || types.contains('establishment')) {
+                final cleaned = formatted.split(',').first.trim();
+                if (!cleaned.contains('+')) bestEstablishment ??= cleaned;
+              }
+
+              if (itemRoute != null &&
+                  !itemRoute.toLowerCase().contains('route sans nom') &&
+                  !itemRoute.toLowerCase().contains('unnamed road')) {
+                if (bestRoute == null || (itemStreetNum != null && bestStreetNumber == null)) {
+                  bestRoute = itemRoute;
+                  bestStreetNumber = itemStreetNum;
+                  formatted = itemMap['formatted_address'] as String? ?? formatted;
+                  placeId = itemMap['place_id'] as String? ?? placeId;
+                  if (bestStreetNumber != null) break;
+                }
               }
             }
-            if (name.isEmpty && formatted.isNotEmpty) {
-              name = formatted.split(',').first.trim();
+
+            String resolvedName = '';
+            if (bestRoute != null && bestRoute.isNotEmpty) {
+              resolvedName = bestStreetNumber != null ? '$bestStreetNumber $bestRoute' : bestRoute;
+            } else if (bestEstablishment != null && bestEstablishment.isNotEmpty) {
+              resolvedName = bestEstablishment;
+            } else if (bestNeighborhood != null && bestNeighborhood.isNotEmpty) {
+              resolvedName = bestNeighborhood;
+            } else if (bestSublocality != null && bestSublocality.isNotEmpty) {
+              resolvedName = bestSublocality;
+            } else if (formatted.isNotEmpty) {
+              resolvedName = formatted.split(',').first.trim();
             }
 
-            debugPrint('[TCU Geocode] ✅ Google Maps a résolu: "$name" ($formatted)');
+            debugPrint('[TCU Geocode] ✅ Google Maps a résolu: "$resolvedName" ($formatted)');
             return PlaceModel(
               latitude: lat,
               longitude: lon,
-              name: name.isNotEmpty ? name : 'Ma position actuelle',
+              name: resolvedName.isNotEmpty ? resolvedName : 'Ma position actuelle',
               address: formatted.isNotEmpty ? formatted : 'Position GPS actuelle',
-              placeId: first['place_id'] as String?,
+              placeId: placeId,
             );
           }
         }
@@ -553,7 +282,7 @@ class TransitPlaceSearchService {
     try {
       final url =
           'https://nominatim.openstreetmap.org/reverse'
-          '?lat=$lat&lon=$lon&format=json';
+          '?lat=$lat&lon=$lon&format=json&addressdetails=1';
 
       final resp = await _dio.get(
         url,
@@ -567,17 +296,25 @@ class TransitPlaceSearchService {
         final data = resp.data as Map;
         final displayName = data['display_name']?.toString() ?? '';
         final address = data['address'] as Map?;
-        final name = data['name']?.toString().isNotEmpty == true
-            ? data['name'].toString()
-            : address?['suburb'] ??
-                address?['neighbourhood'] ??
-                address?['road'] ??
-                'Ma position actuelle';
+        final road = address?['road']?.toString();
+        final houseNumber = address?['house_number']?.toString();
+        final neighbourhood = address?['neighbourhood']?.toString();
+        final suburb = address?['suburb']?.toString();
+        final name = data['name']?.toString();
+
+        String finalName;
+        if (road != null && road.isNotEmpty) {
+          finalName = houseNumber != null ? '$houseNumber $road' : road;
+        } else if (name != null && name.isNotEmpty) {
+          finalName = name;
+        } else {
+          finalName = neighbourhood ?? suburb ?? 'Ma position actuelle';
+        }
 
         return PlaceModel(
           latitude: lat,
           longitude: lon,
-          name: name.toString(),
+          name: finalName,
           address: displayName.isNotEmpty ? displayName : 'Position GPS actuelle',
         );
       }

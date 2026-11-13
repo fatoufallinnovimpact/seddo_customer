@@ -38,14 +38,83 @@ class UserLocationStorage {
   static String _coordKey(double lat, double lng) =>
       '${lat.toStringAsFixed(3)}_${lng.toStringAsFixed(3)}';
 
-  /// Récupère l'adresse en cache mémoire pour ces coordonnées si déjà résolue
+  /// Vérifie si le libellé correspond à une adresse de rue précise (ex: "77 Rue 4", "Rue PE 34", "Avenue...")
+  /// et NON à un quartier générique ou une commune (ex: "Fann-Point E-Amitié", "Point E", "Fann Hock").
+  static bool isStreetLevelAddress(String address) {
+    final clean = address.trim();
+    if (clean.isEmpty ||
+        clean == 'Chargement...' ||
+        clean == 'Position GPS actuelle' ||
+        clean == 'Position sélectionnée' ||
+        clean == 'Ma position actuelle') {
+      return false;
+    }
+    final lower = clean.toLowerCase();
+    // Exclure les libellés de commune ou de quartier générique sans rue
+    if (lower == 'fann-point e-amitié' ||
+        lower == 'fann-point e' ||
+        lower == 'fann point e' ||
+        lower == 'point e' ||
+        lower == 'point e, dakar' ||
+        lower == 'fann hock' ||
+        lower == 'fann hock, dakar' ||
+        lower == 'fann résidence' ||
+        lower == 'fann residence' ||
+        lower == 'dakar' ||
+        lower == 'dakar, sénégal' ||
+        lower == 'dakar, senegal') {
+      return false;
+    }
+    // Indicateurs typiques de rue, voie ou numéro
+    final streetKeywords = [
+      'rue',
+      'rte',
+      'route',
+      'av.',
+      'av ',
+      'avenue',
+      'bd',
+      'boulevard',
+      'allée',
+      'allee',
+      'allees',
+      'impasse',
+      'voie',
+      'place',
+      'rond-point',
+      'rond point',
+      'cité',
+      'cite',
+      'villa',
+      'immeuble',
+      'lot',
+    ];
+    for (final kw in streetKeywords) {
+      if (lower.contains(kw)) return true;
+    }
+    // Présence d'un chiffre suivi ou précédé d'un nom de lieu (ex: "77 PE 34", "5065 L", "YF-557, 20")
+    if (RegExp(r'\d').hasMatch(clean) && clean.length >= 4) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Récupère l'adresse en cache mémoire pour ces coordonnées si déjà résolue avec précision
   static ({String short, String details})? getCachedGeocode(LatLng location) {
-    return _reverseGeocodeMemoryCache[_coordKey(location.latitude, location.longitude)];
+    final cachedEntry =
+        _reverseGeocodeMemoryCache[_coordKey(location.latitude, location.longitude)];
+    if (cachedEntry != null && isStreetLevelAddress(cachedEntry.short)) {
+      return cachedEntry;
+    }
+    return null;
   }
 
   /// Met en cache mémoire l'adresse résolue
   static void cacheGeocode(LatLng location, String short, String details) {
-    if (short.isNotEmpty && short != 'Chargement...' && short != 'Position GPS actuelle') {
+    if (short.isNotEmpty &&
+        short != 'Chargement...' &&
+        short != 'Position GPS actuelle' &&
+        isStreetLevelAddress(short)) {
       _reverseGeocodeMemoryCache[_coordKey(location.latitude, location.longitude)] =
           (short: short, details: details);
     }
@@ -83,6 +152,13 @@ class UserLocationStorage {
     if (addressShort.isEmpty ||
         addressShort == 'Chargement...' ||
         addressShort == 'Position GPS actuelle') {
+      return;
+    }
+
+    // Si on a déjà une vraie adresse de rue en mémoire, ne pas la remplacer par un libellé générique de quartier
+    if (cached != null &&
+        isStreetLevelAddress(cached!.addressShort) &&
+        !isStreetLevelAddress(addressShort)) {
       return;
     }
 

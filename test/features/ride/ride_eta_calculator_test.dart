@@ -45,8 +45,8 @@ void main() {
     });
 
     test('5. etaLabel matches page 2 rules', () {
-      // Less than 50 meters -> Arrivé
-      expect(RideEtaCalculator.etaLabel(120, 30.0), equals('Arrivé'));
+      // Driver arrived -> Arrivé
+      expect(RideEtaCalculator.etaLabel(120, 30.0, isDriverArrived: true), equals('Arrivé'));
 
       // 45 seconds (>= 50m) -> 1 min
       expect(RideEtaCalculator.etaLabel(45, 200.0), equals('1 min'));

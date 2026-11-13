@@ -153,6 +153,7 @@ class RideEtaCalculator {
 
   /// Construit un jeu de Polylines aux couleurs du trafic Google / Seddo
   /// (Vert fluide #00C853, ambre ralenti #F59E0B, rouge bouchon #DC2626).
+  /// Ne trace JAMAIS de vol d'oiseau ou de segment artificiel reliant la voiture à la route.
   static Set<Polyline> buildTrafficPolylines({
     required String baseId,
     required List<LatLng> points,
@@ -165,21 +166,7 @@ class RideEtaCalculator {
     if (points.isEmpty) return {};
 
     final effectiveStart = startIndex.clamp(0, points.length - 1);
-    final bool canConnectCar = currentCarPosition != null &&
-        effectiveStart > 0 &&
-        effectiveStart < points.length &&
-        dist(currentCarPosition, points[effectiveStart]) <= 50.0;
-
-    final List<LatLng> remainingPoints;
-    if (canConnectCar) {
-      final nextIdx = (effectiveStart + 1).clamp(0, points.length);
-      remainingPoints = [
-        currentCarPosition,
-        ...points.sublist(nextIdx),
-      ];
-    } else {
-      remainingPoints = points.sublist(effectiveStart);
-    }
+    final remainingPoints = points.sublist(effectiveStart);
     if (remainingPoints.length < 2) return {};
 
     final polylines = <Polyline>{};
@@ -216,19 +203,7 @@ class RideEtaCalculator {
 
       final actualFrom = math.max(segFrom, effectiveStart);
       final actualTo = math.min(segTo, points.length - 1);
-
-      final List<LatLng> segPoints;
-      if (canConnectCar &&
-          actualFrom == effectiveStart &&
-          effectiveStart > 0) {
-        final nextIdx = (actualFrom + 1).clamp(0, points.length);
-        segPoints = [
-          currentCarPosition,
-          ...points.sublist(nextIdx, actualTo + 1),
-        ];
-      } else {
-        segPoints = points.sublist(actualFrom, actualTo + 1);
-      }
+      final segPoints = points.sublist(actualFrom, actualTo + 1);
 
       if (segPoints.length >= 2) {
         polylines.add(
@@ -265,7 +240,8 @@ class RideEtaCalculator {
     if (points.isEmpty) return {};
 
     final effectiveStart = startIndex.clamp(0, points.length - 1);
-    if (points.length - effectiveStart < 2 && currentCarPosition == null) {
+    final remainingPoints = points.sublist(effectiveStart);
+    if (remainingPoints.length < 2) {
       return {};
     }
 
@@ -278,36 +254,20 @@ class RideEtaCalculator {
     final polylines = <Polyline>{};
 
     // Si aucune donnée de trafic n'est disponible, tracer toute la ligne restante en vert trafic fluide
-    final bool canConnectCar = currentCarPosition != null &&
-        effectiveStart > 0 &&
-        effectiveStart < points.length &&
-        dist(currentCarPosition, points[effectiveStart]) <= 50.0;
-
     if (traffic.isEmpty) {
-      final List<LatLng> pts;
-      if (canConnectCar) {
-        pts = [
-          currentCarPosition,
-          ...points.sublist((effectiveStart + 1).clamp(0, points.length)),
-        ];
-      } else {
-        pts = points.sublist(effectiveStart);
-      }
-      if (pts.length >= 2) {
-        polylines.add(
-          Polyline(
-            polylineId: PolylineId(baseId),
-            points: pts,
-            color: AppColors.trafficNormal,
-            width: width,
-            patterns: effectivePatterns,
-            jointType: JointType.round,
-            startCap: Cap.roundCap,
-            endCap: Cap.roundCap,
-            zIndex: zIndex,
-          ),
-        );
-      }
+      polylines.add(
+        Polyline(
+          polylineId: PolylineId(baseId),
+          points: remainingPoints,
+          color: AppColors.trafficNormal,
+          width: width,
+          patterns: effectivePatterns,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          zIndex: zIndex,
+        ),
+      );
       return polylines;
     }
 
@@ -319,16 +279,7 @@ class RideEtaCalculator {
     for (int i = effectiveStart + 1; i < points.length; i++) {
       final speed = _speedAtPointIndex(i - 1, traffic);
       if (speed != curSpeed) {
-        final List<LatLng> segPts;
-        if (segIndex == 0 && canConnectCar && curFrom > 0) {
-          final nextIdx = (curFrom + 1).clamp(0, points.length);
-          segPts = [
-            currentCarPosition,
-            ...points.sublist(nextIdx, i),
-          ];
-        } else {
-          segPts = points.sublist(curFrom, i);
-        }
+        final segPts = points.sublist(curFrom, i);
 
         if (segPts.length >= 2) {
           polylines.add(
@@ -352,16 +303,7 @@ class RideEtaCalculator {
     }
 
     // Dernier intervalle jusqu'à la fin des points
-    final List<LatLng> lastPts;
-    if (segIndex == 0 && currentCarPosition != null && curFrom > 0) {
-      final nextIdx = (curFrom + 1).clamp(0, points.length);
-      lastPts = [
-        currentCarPosition,
-        ...points.sublist(nextIdx),
-      ];
-    } else {
-      lastPts = points.sublist(curFrom);
-    }
+    final lastPts = points.sublist(curFrom);
 
     if (lastPts.length >= 2) {
       polylines.add(

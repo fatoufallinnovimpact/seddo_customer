@@ -303,10 +303,30 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       // Déclenchement direct immédiat pour garantir l'affichage sans délai
       _syncLiveUpdate(progress: 0.05, etaMinutes: _remainingEtaMinutes);
 
+      // Traiter immédiatement le dernier statut en mémoire WebSocket
+      final cachedStatus = RealtimeService().lastRideStatusEvent;
+      if (cachedStatus != null) {
+        final matchesRide = cachedStatus.rideId.isEmpty ||
+            cachedStatus.rideId == effectiveRideId ||
+            cachedStatus.rideId.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(cachedStatus.rideId);
+        if (matchesRide) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _handleRealtimeRideStatus(cachedStatus);
+            }
+          });
+        }
+      }
+
       // Écoute du statut de la course (ride.status)
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId);
+        if (matchesRide) {
           _handleRealtimeRideStatus(event);
         }
       });
@@ -314,7 +334,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       // Écoute de la position GPS du chauffeur (driver.location)
       _realtimeLocationSub = RealtimeService().driverLocationStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId!.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId!);
+        if (matchesRide) {
           _handleRealtimeDriverLocation(event);
         }
       });
@@ -322,7 +347,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       // Écoute du temps restant estimé (ride.eta)
       _realtimeEtaSub = RealtimeService().rideEtaStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId!.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId!);
+        if (matchesRide) {
           _handleRealtimeEta(event);
         }
       });
@@ -330,7 +360,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       // Écoute des mises à jour d'itinéraire (ride.route.updated)
       _realtimeRouteSub = RealtimeService().rideRouteStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId!.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId!);
+        if (matchesRide) {
           _handleRealtimeRoute(event);
         }
       });
@@ -342,10 +377,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
 
-      // Filet de sécurité passif : uniquement en cas de déconnexion du WebSocket
+      // Filet de sécurité actif : rafraîchissement périodique (toutes les 6s) pour garantir la synchronisation
       if (!isTest) {
-        _ridePollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-          if (mounted && !RealtimeService().isConnected) {
+        _ridePollTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+          if (mounted && !_driverArrived) {
             _fetchRideDetails(effectiveRideId);
           }
         });
@@ -371,10 +406,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   }
 
   void _handleRealtimeRideStatus(RealtimeRideStatusEvent event) {
-    final status = event.status;
-    if (status.startsWith('CANCELLED') ||
-        status == 'NO_DRIVER' ||
-        status == 'NO_SHOW') {
+    final s = event.status.toUpperCase();
+    if (s.startsWith('CANCEL') ||
+        s == 'NO_DRIVER' ||
+        s == 'NO_SHOW' ||
+        s == 'REJECTED') {
       _cleanupTimersAndSubs();
       Navigator.of(context).pushReplacement(
         SlideRightToLeftRoute(
@@ -388,13 +424,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       return;
     }
 
-    if (status == 'IN_PROGRESS') {
+    if (s == 'IN_PROGRESS' ||
+        s == 'STARTED' ||
+        s == 'RIDE_STARTED' ||
+        s == 'TRIP' ||
+        s == 'ON_TRIP' ||
+        s == 'INPROGRESS') {
       _cleanupTimersAndSubs();
       startRide();
       return;
     }
 
-    if (status == 'DRIVER_ARRIVED' || status == 'ARRIVED') {
+    if (s == 'DRIVER_ARRIVED' ||
+        s == 'ARRIVED' ||
+        s == 'DRIVER_AT_PICKUP') {
       _onDriverReachedPickup();
     }
 
@@ -408,6 +451,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       setState(() {
         _currentDriver = event.driver!;
       });
+    }
+
+    // Mise à jour de la polyline si renvoyée dans le statut
+    final raw = event.raw;
+    final rideObj = raw['ride'] is Map<String, dynamic>
+        ? raw['ride'] as Map<String, dynamic>
+        : (raw['data'] is Map<String, dynamic>
+            ? raw['data'] as Map<String, dynamic>
+            : raw);
+    final plannedPoly = rideObj['plannedPolyline'] as String? ??
+        (rideObj['route'] is Map ? rideObj['route']['polyline'] as String? : null);
+    if (plannedPoly != null && plannedPoly.isNotEmpty) {
+      final tripPts = RouteService.decodePolyline(plannedPoly);
+      if (tripPts.length >= 2) {
+        _tripPolylinePoints = tripPts;
+      }
     }
   }
 
@@ -425,16 +484,52 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         ? event.heading
         : _calculateBearing(_currentCarPosition, event.location);
 
-    if (event.etaMinutes != null && event.etaMinutes! > 0) {
-      _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
-    }
-    if (event.distanceMeters != null && event.distanceMeters! > 0) {
+    // 1. polyline : tracé restant, déjà coupé à la voiture -> remplacer la ligne affichée, tel quel
+    if (event.remainingPoints.length >= 2) {
       setState(() {
-        _remainingDistanceM = event.distanceMeters!.toDouble();
+        _approachRoutePoints = List<LatLng>.from(event.remainingPoints);
+        if (event.traffic.isNotEmpty) {
+          _approachTraffic = event.traffic;
+        }
+      });
+    } else if (event.traffic.isNotEmpty) {
+      setState(() {
+        _approachTraffic = event.traffic;
       });
     }
 
-    updateDriverGpsLocation(event.location, heading: heading);
+    // 2. remainingM, etaS : distance et temps restants, barre de progression, Live Activity
+    final effectiveRemainingM = event.remainingM ?? event.distanceMeters;
+    if (effectiveRemainingM != null && effectiveRemainingM > 0) {
+      setState(() {
+        _remainingDistanceM = effectiveRemainingM;
+      });
+    }
+
+    final effectiveEtaS = event.etaS;
+    if (effectiveEtaS != null && effectiveEtaS > 0) {
+      final mins = (effectiveEtaS / 60.0).ceil();
+      _setEtaLabel('$mins min', mins);
+    } else if (event.etaMinutes != null && event.etaMinutes! > 0) {
+      _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
+    }
+
+    // 3. phase : APPROACH (vers le client) ou TRIP (vers la destination)
+    if (event.phase != null) {
+      final p = event.phase!.toUpperCase();
+      if (p == 'TRIP' && !_isNavigatingToActiveRide) {
+        _cleanupTimersAndSubs();
+        startRide();
+        return;
+      }
+    }
+
+    // 4. animateMs, lat, lng, heading : animation fluide voiture et caméra
+    updateDriverGpsLocation(
+      event.location,
+      heading: heading,
+      animateMs: event.animateMs,
+    );
   }
 
   void _handleRealtimeEta(RealtimeRideEtaEvent event) {
@@ -451,10 +546,19 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   void _handleRealtimeRoute(RealtimeRideRouteEvent event) {
     if (event.points.length >= 2) {
+      final raw = event.raw;
+      final phase = (raw['phase'] ?? raw['routeType'] ?? raw['type'])?.toString().toUpperCase();
       setState(() {
-        _approachRoutePoints = event.points;
-        if (event.traffic.isNotEmpty) {
-          _approachTraffic = event.traffic;
+        if (phase == 'TRIP' || phase == 'DESTINATION') {
+          _tripPolylinePoints = event.points;
+          if (event.traffic.isNotEmpty) {
+            _tripTraffic = event.traffic;
+          }
+        } else {
+          _approachRoutePoints = event.points;
+          if (event.traffic.isNotEmpty) {
+            _approachTraffic = event.traffic;
+          }
         }
       });
     }
@@ -1163,7 +1267,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   /// Méthode publique prête pour connecter l'API backend / WebSocket en direct :
   /// Appelée lorsque le chauffeur accepte et se déplace vers le point de départ
-  void updateDriverGpsLocation(LatLng position, {double? heading}) {
+  void updateDriverGpsLocation(
+    LatLng position, {
+    double? heading,
+    int? animateMs,
+  }) {
     if (_isOffline) return;
     if (_approachController != null && _approachController!.isAnimating) {
       _approachController!.stop();
@@ -1191,12 +1299,26 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       return;
     }
 
+    // Durée d'animation transmise par le backend (animateMs)
+    if (animateMs != null && animateMs > 0) {
+      _smoothCarController?.duration = Duration(milliseconds: animateMs);
+    } else {
+      _smoothCarController?.duration = const Duration(milliseconds: 1000);
+    }
+
     _animStartPos = _currentCarPosition;
     _animEndPos = position;
     _animStartHeading = _currentCarHeading;
     _animEndHeading = calcHeading;
 
     _smoothCarController?.forward(from: 0.0);
+
+    // Animation fluide de la caméra pour suivre la position du véhicule
+    if (_mapController != null) {
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(position),
+      );
+    }
   }
 
   /// Démarre la course vers la destination (transition vers ActiveRidePage)
@@ -1628,8 +1750,6 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         points: _approachRoutePoints,
         traffic: _approachTraffic,
         startIndex: _currentApproachIndex,
-        currentCarPosition:
-            _currentApproachIndex > 0 ? _currentCarPosition : null,
         width: 5,
         zIndexBase: 4,
       );

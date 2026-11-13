@@ -52,8 +52,11 @@ class FcmService {
       debugPrint('[FCM] Token FCM de cet appareil : $token');
       if (token != null && token.isNotEmpty) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('fcm_device_token', token);
-        await AuthRepository().registerCurrentDevicePushToken();
+        final accessToken = prefs.getString('auth_access_token');
+        if (accessToken != null && accessToken.isNotEmpty) {
+          await prefs.setString('fcm_device_token', token);
+          await AuthRepository().registerCurrentDevicePushToken();
+        }
       }
 
       // 4. Écoute du renouvellement de token
@@ -61,8 +64,11 @@ class FcmService {
       fcm.onTokenRefresh.listen((newToken) async {
         debugPrint('[FCM] Token FCM renouvelé : $newToken');
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('fcm_device_token', newToken);
-        await AuthRepository().registerCurrentDevicePushToken();
+        final accessToken = prefs.getString('auth_access_token');
+        if (accessToken != null && accessToken.isNotEmpty) {
+          await prefs.setString('fcm_device_token', newToken);
+          await AuthRepository().registerCurrentDevicePushToken();
+        }
       });
 
       // 5. Configuration des messages entrants en premier plan pour les Live Updates
@@ -79,7 +85,14 @@ class FcmService {
     }
   }
 
-  static void _handleIncomingLiveUpdate(RemoteMessage message) {
+  static Future<void> _handleIncomingLiveUpdate(RemoteMessage message) async {
+    final prefs = await SharedPreferences.getInstance();
+    final accessToken = prefs.getString('auth_access_token');
+    if (accessToken == null || accessToken.isEmpty) {
+      debugPrint('[FCM] Message entrant ignoré : utilisateur non connecté');
+      return;
+    }
+
     final data = message.data;
     if (data['type'] == 'ride_live_update') {
       final action = data['action']?.toString().toUpperCase() ?? 'UPDATE';
@@ -98,6 +111,13 @@ class FcmService {
 /// Global top-level background handler waking the app when FCM sends a data message
 @pragma('vm:entry-point')
 Future<void> fcmBackgroundLiveUpdateHandler(RemoteMessage message) async {
+  final prefs = await SharedPreferences.getInstance();
+  final accessToken = prefs.getString('auth_access_token');
+  if (accessToken == null || accessToken.isEmpty) {
+    debugPrint('[FCM Background] Message d\'arrière-plan ignoré : utilisateur non connecté');
+    return;
+  }
+
   final data = message.data;
   if (data['type'] == 'ride_live_update') {
     final action = data['action']?.toString().toUpperCase() ?? 'UPDATE';

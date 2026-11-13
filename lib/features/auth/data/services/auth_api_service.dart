@@ -224,15 +224,22 @@ class AuthApiService {
 
   /// POST /v1/auth/logout
   /// Closes the current active session.
-  Future<void> logout({String? accessToken}) async {
+  Future<void> logout({String? accessToken, String? deviceToken}) async {
     try {
       final options = Options();
       if (accessToken != null && accessToken.isNotEmpty) {
         options.headers = {'Authorization': 'Bearer $accessToken'};
       }
 
+      final payload = <String, dynamic>{};
+      if (deviceToken != null && deviceToken.isNotEmpty) {
+        payload['deviceToken'] = deviceToken;
+        payload['token'] = deviceToken;
+      }
+
       await _dio.post(
         ApiEndpoints.logout,
+        data: payload.isNotEmpty ? payload : null,
         options: options,
       );
     } on DioException catch (e) {

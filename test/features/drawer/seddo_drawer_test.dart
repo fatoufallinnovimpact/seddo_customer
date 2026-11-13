@@ -139,7 +139,7 @@ void main() {
     expect(find.text('Fatou Fall'), findsOneWidget);
     expect(find.text('FF'), findsOneWidget);
     expect(find.text('4,8'), findsOneWidget);
-    expect(find.text('77 123 45 12'), findsOneWidget);
+    expect(find.text('+221 77 123 45 12'), findsOneWidget);
 
     // 2. Payment card removed
     expect(find.text('Paiement'), findsNothing);
@@ -301,7 +301,7 @@ void main() {
     // 1. Profile with real user name and phone
     expect(find.text('Fatou Fall'), findsOneWidget);
     expect(find.text('FF'), findsOneWidget);
-    expect(find.text('77 100 43 13'), findsOneWidget);
+    expect(find.text('+221 77 100 43 13'), findsOneWidget);
 
     // 2. Payment card is removed
     expect(find.text('Paiement'), findsNothing);
@@ -405,6 +405,6 @@ void main() {
     expect(find.text('Nouveau'), findsNothing);
     expect(find.byKey(const Key('drawer_user_name_button')), findsOneWidget);
     expect(find.text('Fatou Fall'), findsOneWidget);
-    expect(find.text('77 100 43 13'), findsOneWidget);
+    expect(find.text('+221 77 100 43 13'), findsOneWidget);
   });
 }

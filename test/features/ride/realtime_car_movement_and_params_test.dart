@@ -68,6 +68,40 @@ void main() {
       expect(event.location.longitude, closeTo(-17.4567, 0.0001));
       expect(event.heading, equals(180.0));
     });
+
+    test('parses exact backend contract payload: lat, lng, heading, polyline, traffic, phase, remainingM, etaS, animateMs, speed, snapped, simulated', () {
+      final json = {
+        'lat': 14.7123,
+        'lng': -17.4567,
+        'heading': 85.5,
+        'polyline': '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+        'traffic': [
+          {'startRatio': 0.0, 'endRatio': 1.0, 'color': '#FFA726'}
+        ],
+        'phase': 'APPROACH',
+        'remainingM': 1250,
+        'etaS': 180,
+        'animateMs': 1500,
+        'speed': 11.2,
+        'snapped': true,
+        'simulated': false,
+      };
+
+      final event = RealtimeDriverLocationEvent.fromJson(json);
+      expect(event.location.latitude, closeTo(14.7123, 0.0001));
+      expect(event.location.longitude, closeTo(-17.4567, 0.0001));
+      expect(event.heading, equals(85.5));
+      expect(event.remainingPoints, isNotEmpty);
+      expect(event.traffic, isNotEmpty);
+      expect(event.phase, equals('APPROACH'));
+      expect(event.remainingM, equals(1250.0));
+      expect(event.etaS, equals(180));
+      expect(event.etaMinutes, equals(3));
+      expect(event.animateMs, equals(1500));
+      expect(event.speed, equals(11.2));
+      expect(event.snapped, isTrue);
+      expect(event.simulated, isFalse);
+    });
   });
 
   group('RealtimeRideRouteEvent Parsing & Recalculation Tests', () {

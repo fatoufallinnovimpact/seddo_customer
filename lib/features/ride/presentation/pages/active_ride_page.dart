@@ -233,10 +233,34 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       RealtimeService().connect();
       RealtimeService().joinRide(effectiveRideId);
 
+      // Appliquer immédiatement le dernier statut en mémoire WebSocket
+      final cachedStatus = RealtimeService().lastRideStatusEvent;
+      if (cachedStatus != null) {
+        final matchesRide = cachedStatus.rideId.isEmpty ||
+            cachedStatus.rideId == effectiveRideId ||
+            cachedStatus.rideId.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(cachedStatus.rideId);
+        if (matchesRide) {
+          final s = cachedStatus.status.toUpperCase();
+          if (s == 'COMPLETED' || s == 'FINISHED' || s == 'DONE' || s == 'RIDE_COMPLETED') {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _cleanupRealtime();
+                _onTripCompleted();
+              }
+            });
+          }
+        }
+      }
+
       _realtimeStatusSub =
           RealtimeService().rideStatusStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId.isEmpty || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId);
+        if (matchesRide) {
           // Si l'événement statut ou mise à jour de course inclut un nouvel itinéraire
           final raw = event.raw;
           final rideObj = raw['ride'] is Map<String, dynamic>
@@ -255,14 +279,18 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             }
           }
 
-          if (event.status == 'ARRIVED' || event.status == 'DRIVER_ARRIVED') {
+          final s = event.status.toUpperCase();
+          if (s == 'ARRIVED' || s == 'DRIVER_ARRIVED' || s == 'DRIVER_AT_DESTINATION') {
             setState(() {
               _driverArrivedAtDestination = true;
             });
-          } else if (event.status == 'COMPLETED') {
+          } else if (s == 'COMPLETED' ||
+              s == 'FINISHED' ||
+              s == 'DONE' ||
+              s == 'RIDE_COMPLETED') {
             _cleanupRealtime();
             _onTripCompleted();
-          } else if (event.status.startsWith('CANCELLED')) {
+          } else if (s.startsWith('CANCEL')) {
             _cleanupRealtime();
             Navigator.of(context).pushReplacement(
               SlideRightToLeftRoute(
@@ -280,33 +308,75 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _realtimeLocationSub =
           RealtimeService().driverLocationStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId!.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId!);
+        if (matchesRide) {
           _lastDriverLocationTime = DateTime.now();
           if (_isPositionUpdating) {
             setState(() {
               _isPositionUpdating = false;
             });
           }
-          if (event.etaMinutes != null && event.etaMinutes! > 0) {
+
+          // 1. polyline : tracé restant, déjà coupé à la voiture -> remplacer la ligne affichée, tel quel
+          if (event.remainingPoints.length >= 2) {
+            setState(() {
+              _remainingPoints = List<LatLng>.from(event.remainingPoints);
+              _effectiveRoute = List<LatLng>.from(event.remainingPoints);
+              if (event.traffic.isNotEmpty) {
+                _traffic = event.traffic;
+              }
+            });
+          } else if (event.traffic.isNotEmpty) {
+            setState(() {
+              _traffic = event.traffic;
+            });
+          }
+
+          // 2. remainingM, etaS : distance et temps restants, barre de progression, Live Activity
+          final effectiveRemainingM = event.remainingM ?? event.distanceMeters;
+          if (effectiveRemainingM != null && effectiveRemainingM > 0) {
+            setState(() {
+              _remainingDistanceKm = effectiveRemainingM > 100
+                  ? effectiveRemainingM / 1000.0
+                  : effectiveRemainingM;
+            });
+          }
+
+          final effectiveEtaS = event.etaS;
+          if (effectiveEtaS != null && effectiveEtaS > 0) {
+            final mins = (effectiveEtaS / 60.0).ceil();
+            setState(() {
+              _remainingEtaMinutes = mins;
+            });
+            _syncLiveUpdate(etaMinutes: mins);
+          } else if (event.etaMinutes != null && event.etaMinutes! > 0) {
             setState(() {
               _remainingEtaMinutes = event.etaMinutes!;
             });
             _syncLiveUpdate(etaMinutes: event.etaMinutes!);
           }
-          if (event.distanceMeters != null && event.distanceMeters! > 0) {
-            setState(() {
-              _remainingDistanceKm = event.distanceMeters! > 100
-                  ? event.distanceMeters! / 1000.0
-                  : event.distanceMeters!;
-            });
-          }
-          updateCarLocation(event.location, heading: event.heading);
+
+          // 3. animateMs, lat, lng, heading : animation fluide voiture et caméra
+          updateCarLocation(
+            event.location,
+            heading: event.heading,
+            animateMs: event.animateMs,
+          );
         }
       });
 
       _realtimeEtaSub = RealtimeService().rideEtaStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null || event.rideId == effectiveRideId) {
+        final matchesRide = event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == effectiveRideId ||
+            event.rideId!.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId!);
+        if (matchesRide) {
           if (event.etaMinutes > 0) {
             setState(() {
               _remainingEtaMinutes = event.etaMinutes;
@@ -323,9 +393,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
       _realtimeRouteSub = RealtimeService().rideRouteStream.listen((event) {
         if (!mounted) return;
-        if (event.rideId == null ||
+        final matchesRide = event.rideId == null ||
             event.rideId!.isEmpty ||
-            event.rideId == effectiveRideId) {
+            event.rideId == effectiveRideId ||
+            event.rideId!.endsWith(effectiveRideId) ||
+            effectiveRideId.endsWith(event.rideId!);
+        if (matchesRide) {
           if (event.points.length >= 2) {
             debugPrint(
                 '[ActiveRide] 🗺️ Nouvel itinéraire reçu via rideRouteStream (${event.points.length} points)');
@@ -376,10 +449,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         }
       });
 
-      // Filet de sécurité passif: uniquement en cas de déconnexion du WebSocket
+      // Filet de sécurité actif : vérification périodique (toutes les 6s)
       if (!isTest) {
-        _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-          if (mounted && !RealtimeService().isConnected) {
+        _pollTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+          if (mounted) {
             _fetchRideDetails(effectiveRideId);
           }
         });
@@ -410,11 +483,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final status = (rideObj['status'] as String? ?? '').toUpperCase();
 
     // 1. Course arrivée ou terminée
-    if (status == 'ARRIVED' || status == 'DRIVER_ARRIVED') {
+    if (status == 'ARRIVED' || status == 'DRIVER_ARRIVED' || status == 'DRIVER_AT_DESTINATION') {
       setState(() {
         _driverArrivedAtDestination = true;
       });
-    } else if (status == 'COMPLETED') {
+    } else if (status == 'COMPLETED' ||
+        status == 'FINISHED' ||
+        status == 'DONE' ||
+        status == 'RIDE_COMPLETED') {
       _cleanupRealtime();
       _onTripCompleted();
       return;
@@ -458,8 +534,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         (routeObj?['polyline'] as String?);
     if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
       final tripPts = RouteService.decodePolyline(plannedPolyStr);
-      // Ne remplacer la route que si les points correspondent à un vrai tracé routier (>= 5 points)
-      if (tripPts.length >= 5 && tripPts != _effectiveRoute) {
+      // Ne remplacer la route que si les points correspondent à un vrai tracé routier (>= 2 points)
+      if (tripPts.length >= 2 && tripPts != _effectiveRoute) {
         _setNewRoute(tripPts);
       }
     }
@@ -746,7 +822,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         ? widget.driver.etaMinutes
         : optEtaMin;
 
-    _traveledPoints = [_currentCarPosition];
+    _traveledPoints = [];
     _remainingPoints = List<LatLng>.from(_effectiveRoute);
     _progressRatio = 0.0;
 
@@ -790,10 +866,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   /// Découpe la route réelle en tronçon parcouru et tronçon restant basé sur
-  /// la vraie position du chauffeur reçue en direct sans jamais déplacer ou contraindre la voiture.
+  /// la vraie position du chauffeur reçue en direct sans jamais déplacer ou contraindre la voiture
+  /// et SANS JAMAIS tracer de ligne artificielle en vol d'oiseau vers la voiture.
   void _updateRouteProgressForCar(LatLng curPos) {
     if (_effectiveRoute.length < 2) {
-      _traveledPoints = [curPos];
+      _traveledPoints = [];
       _remainingPoints = [];
       return;
     }
@@ -802,21 +879,16 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final nearestPt = _effectiveRoute[nearestIdx];
     final distToRoute = _haversineMeters(curPos, nearestPt);
 
+    // Tronçon déjà parcouru : uniquement composé des points réels de la polyline backend
     final traveled = <LatLng>[];
     for (int i = 0; i <= nearestIdx && i < _effectiveRoute.length; i++) {
       traveled.add(_effectiveRoute[i]);
     }
-    // N'ajouter curPos que si le véhicule est tout proche de la route (<= 50m)
-    // afin d'éradiquer tout tracé en vol d'oiseau diagonal à travers la ville
-    if (distToRoute <= 50.0) {
-      traveled.add(curPos);
-    }
 
+    // Tronçon restant : uniquement composé des points réels de la polyline backend
+    // Ne JAMAIS ajouter curPos ici pour éradiquer tout tracé en vol d'oiseau
     final remaining = <LatLng>[];
-    if (distToRoute <= 50.0) {
-      remaining.add(curPos);
-    }
-    for (int i = nearestIdx + 1; i < _effectiveRoute.length; i++) {
+    for (int i = nearestIdx; i < _effectiveRoute.length; i++) {
       remaining.add(_effectiveRoute[i]);
     }
 
@@ -964,8 +1036,12 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     final effProgress = (progress ?? _progressRatio).clamp(0.0, 1.0);
     final effEta = etaMinutes ?? _remainingEtaMinutes;
-    final isDone = effProgress >= 0.98 || (statusLabel?.contains('terminée') == true);
-    final effLabel = statusLabel ?? (isDone ? 'Course terminée' : 'En route vers la destination');
+    // La course n'est terminée QUE si le chauffeur ou le backend a explicitement clôturé la course
+    final isDone = statusLabel != null && statusLabel.contains('terminée');
+    final effLabel = statusLabel ??
+        (_driverArrivedAtDestination
+            ? 'Arrivé à destination'
+            : 'En route vers la destination');
 
     try {
       RideLiveUpdateServiceImpl().updateLiveUpdate(
@@ -989,7 +1065,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
   /// Méthode appelée lorsque le serveur envoie une mise à jour GPS du chauffeur (via WebSocket driverLocationStream).
   /// Positionne le véhicule exactement là où se trouve le chauffeur en animant son déplacement de manière fluide.
-  void updateCarLocation(LatLng newPosition, {double? heading}) {
+  void updateCarLocation(
+    LatLng newPosition, {
+    double? heading,
+    int? animateMs,
+  }) {
     if (_isOffline) {
       // Hors-ligne: conserver strictement la dernière position connue sur la carte
       return;
@@ -1033,12 +1113,27 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     _smoothCarController?.stop();
 
+    // Durée d'animation transmise par le backend (animateMs)
+    if (animateMs != null && animateMs > 0) {
+      _smoothCarController?.duration = Duration(milliseconds: animateMs);
+    } else {
+      _smoothCarController?.duration = const Duration(milliseconds: 1000);
+    }
+
     _animStartPos = _currentCarPosition;
     _animEndPos = newPosition;
     _animStartHeading = _currentCarHeading;
     _animEndHeading = targetHeading;
 
     _smoothCarController?.forward(from: 0.0);
+
+    // Suivi de caméra fluide avec la position reçue
+    if (_followCar && _mapController != null) {
+      _isProgrammaticCameraMove = true;
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLng(newPosition),
+      );
+    }
   }
 
   @visibleForTesting

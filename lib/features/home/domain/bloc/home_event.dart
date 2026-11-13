@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/features/ride/data/models/nearby_driver_model.dart';
 
 abstract class HomeEvent extends Equatable {
   const HomeEvent();
@@ -55,5 +56,19 @@ class HomeSelectDestinationEvent extends HomeEvent {
 /// Dispatched when the user clears the selected destination
 class HomeClearDestinationEvent extends HomeEvent {
   const HomeClearDestinationEvent();
+}
+
+/// Dispatched when real-time nearby drivers or available cars count is updated (WebSocket/HTTP)
+class HomeNearbyDriversUpdatedEvent extends HomeEvent {
+  final int count;
+  final List<NearbyDriverModel>? drivers;
+
+  const HomeNearbyDriversUpdatedEvent({
+    required this.count,
+    this.drivers,
+  });
+
+  @override
+  List<Object?> get props => [count, drivers];
 }
 

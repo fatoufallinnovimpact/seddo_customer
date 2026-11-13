@@ -136,6 +136,7 @@ class NearbyDriversResponseModel extends Equatable {
   List<NearbyCarModel> get ecoCars => ecoCategory?.cars ?? [];
   List<NearbyCarModel> get confortCars => confortCategory?.cars ?? [];
   List<NearbyCarModel> get allCars => [...ecoCars, ...confortCars];
+  int get totalCount => ecoCount + confortCount;
 
   factory NearbyDriversResponseModel.fromJson(Map<String, dynamic> json) {
     final effectiveJson = (json['data'] is Map<String, dynamic>)

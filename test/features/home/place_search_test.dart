@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,9 +11,6 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/services/places_service.dart';
-
-import 'dart:convert';
-import 'dart:io';
 
 class MockSearchAssetLoader extends AssetLoader {
   const MockSearchAssetLoader();
@@ -24,6 +25,124 @@ class MockSearchAssetLoader extends AssetLoader {
   }
 }
 
+class MockPlacesHttpClientAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final uri = options.uri.toString();
+
+    // 1. Google Places Autocomplete API
+    if (uri.contains('places:autocomplete')) {
+      final data = options.data is Map ? options.data as Map : {};
+      final input = (data['input'] as String? ?? '').toLowerCase();
+
+      List<Map<String, dynamic>> suggestions = [];
+      if (input.startsWith('o')) {
+        suggestions = [
+          {
+            'placePrediction': {
+              'placeId': 'ChIJ_ouakam',
+              'text': {'text': 'Ouakam, Dakar, Sénégal'},
+              'structuredFormat': {
+                'mainText': {'text': 'Ouakam'},
+                'secondaryText': {'text': 'Dakar, Sénégal'}
+              }
+            }
+          },
+          {
+            'placePrediction': {
+              'placeId': 'ChIJ_ouest_foire',
+              'text': {'text': 'Ouest Foire, Dakar, Sénégal'},
+              'structuredFormat': {
+                'mainText': {'text': 'Ouest Foire'},
+                'secondaryText': {'text': 'Dakar, Sénégal'}
+              }
+            }
+          }
+        ];
+      } else if (input.startsWith('almad')) {
+        suggestions = [
+          {
+            'placePrediction': {
+              'placeId': 'ChIJ_almadies',
+              'text': {'text': 'Les Almadies, Dakar, Sénégal'},
+              'structuredFormat': {
+                'mainText': {'text': 'Almadies'},
+                'secondaryText': {'text': 'Dakar, Sénégal'}
+              }
+            }
+          }
+        ];
+      }
+
+      return ResponseBody.fromString(
+        jsonEncode({'suggestions': suggestions}),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    // 2. Google Places Details API
+    if (uri.contains('places/')) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'formattedAddress': 'Ouakam, Dakar, Sénégal',
+          'location': {
+            'latitude': 14.7231,
+            'longitude': -17.4912,
+          }
+        }),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    // 3. Google Maps Geocoding API
+    if (uri.contains('geocode/json')) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'status': 'OK',
+          'results': [
+            {
+              'formatted_address': 'Route des Almadies, Les Almadies, Dakar, Sénégal',
+              'place_id': 'ChIJ_almadies_geo',
+              'types': ['street_address'],
+              'address_components': [
+                {'long_name': 'Route des Almadies', 'types': ['route']},
+                {'long_name': 'Les Almadies', 'types': ['neighborhood', 'sublocality']},
+                {'long_name': 'Dakar', 'types': ['locality', 'administrative_area_level_1']},
+                {'long_name': 'Sénégal', 'types': ['country']}
+              ]
+            }
+          ]
+        }),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    return ResponseBody.fromString(
+      jsonEncode({}),
+      200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +154,8 @@ void main() {
     late PlacesService service;
 
     setUp(() {
-      service = PlacesService();
+      final dio = Dio()..httpClientAdapter = MockPlacesHttpClientAdapter();
+      service = PlacesService('mock_api_key', dio);
     });
 
     test('Query "o" immediately proposes "Ouakam" at the top of results',
@@ -56,7 +176,7 @@ void main() {
     });
 
     test('details returns valid coordinates for a placeId', () async {
-      final details = await service.details('dakar_ouakam');
+      final details = await service.details('ChIJ_ouakam');
 
       expect(details.address, contains('Ouakam'));
       expect(details.lat, 14.7231);
@@ -90,9 +210,14 @@ void main() {
                     return Scaffold(
                       body: ElevatedButton(
                         onPressed: () async {
+                          final dio = Dio()..httpClientAdapter = MockPlacesHttpClientAdapter();
+                          final mockService = PlacesService('mock_api_key', dio);
                           await Navigator.of(ctx).push<PlaceSearchResult>(
                             MaterialPageRoute(
-                              builder: (_) => const PlaceSearchPage(),
+                              builder: (_) => PlaceSearchPage(
+                                placesService: mockService,
+                                currentUserLocation: const LatLng(14.7167, -17.4677),
+                              ),
                             ),
                           );
                         },
@@ -156,9 +281,10 @@ void main() {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
 
+      final dio = Dio()..httpClientAdapter = MockPlacesHttpClientAdapter();
       final placesService = PlacesService(
-        null,
-        null,
+        'mock_api_key',
+        dio,
         () async => const LatLng(14.7431, -17.5195), // Almadies coordinates
       );
 
@@ -182,9 +308,9 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Find "Ma position"
+      // Find quick action chip "Ma position"
       final useCurrentLocationBtn =
-          find.text('Ma position');
+          find.byIcon(Icons.my_location_rounded);
       expect(useCurrentLocationBtn, findsOneWidget);
 
       await tester.tap(useCurrentLocationBtn);
@@ -200,6 +326,9 @@ void main() {
 
     testWidgets('Tapping "Lieux enregistrés" opens SavedPlacesPage and selecting auto-fills the field',
         (tester) async {
+      final dio = Dio()..httpClientAdapter = MockPlacesHttpClientAdapter();
+      final mockService = PlacesService('mock_api_key', dio);
+
       await tester.pumpWidget(
         EasyLocalization(
           supportedLocales: const [Locale('fr')],
@@ -209,8 +338,8 @@ void main() {
           startLocale: const Locale('fr'),
           saveLocale: false,
           useOnlyLangCode: true,
-          child: const MaterialApp(
-            home: PlaceSearchPage(),
+          child: MaterialApp(
+            home: PlaceSearchPage(placesService: mockService),
           ),
         ),
       );

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
@@ -49,7 +50,22 @@ void main() {
 
     test('reverseGeocode for Ngor coordinates returns clean Dakar address',
         () async {
-      final result = await service.reverseGeocode(14.7547, -17.5142);
+      final ngorDio = Dio()
+        ..httpClientAdapter = MockGeocodeAdapter({
+          'results': [
+            {
+              'formatted_address': 'Plage de Ngor, Ngor, Dakar, Sénégal',
+              'address_components': [
+                {'long_name': 'Plage de Ngor', 'types': ['route']},
+                {'long_name': 'Ngor', 'types': ['neighborhood', 'sublocality']},
+                {'long_name': 'Dakar', 'types': ['locality', 'political']},
+                {'long_name': 'Sénégal', 'types': ['country', 'political']},
+              ],
+            }
+          ]
+        });
+      final ngorService = PlacesService(null, ngorDio);
+      final result = await ngorService.reverseGeocode(14.7547, -17.5142);
 
       expect(result.mainText, isNotEmpty);
       expect(result.fullAddress, contains('Ngor'));
@@ -59,7 +75,22 @@ void main() {
 
     test('reverseGeocode for Plateau coordinates returns Dakar Plateau',
         () async {
-      final result = await service.reverseGeocode(14.6720, -17.4330);
+      final plateauDio = Dio()
+        ..httpClientAdapter = MockGeocodeAdapter({
+          'results': [
+            {
+              'formatted_address': 'Avenue Léopold Sédar Senghor, Dakar Plateau, Dakar, Sénégal',
+              'address_components': [
+                {'long_name': 'Avenue Léopold Sédar Senghor', 'types': ['route']},
+                {'long_name': 'Dakar Plateau', 'types': ['neighborhood', 'sublocality']},
+                {'long_name': 'Dakar', 'types': ['locality', 'political']},
+                {'long_name': 'Sénégal', 'types': ['country', 'political']},
+              ],
+            }
+          ]
+        });
+      final plateauService = PlacesService(null, plateauDio);
+      final result = await plateauService.reverseGeocode(14.6720, -17.4330);
 
       expect(result.mainText, isNotEmpty);
       expect(result.fullAddress, contains('Dakar'));
@@ -129,6 +160,64 @@ void main() {
 
       expect(offlineResult.secondaryText, isNot(contains('Dakar')));
       expect(offlineResult.secondaryText, isNot(contains('Sénégal')));
+    });
+
+    test(
+        'reverseGeocode at Point E resolves exact street (77 Rue 4) instead of generic commune (Fann-Point E-Amitié)',
+        () async {
+      final pointEDio = Dio()
+        ..httpClientAdapter = MockGeocodeAdapter({
+          'results': [
+            {
+              'formatted_address': 'MGWQ+X8X, Dakar, Sénégal',
+              'types': ['premise', 'street_address'],
+              'address_components': [
+                {'long_name': 'Fann-Point E-Amitié', 'types': ['sublocality', 'sublocality_level_1']},
+                {'long_name': 'Dakar', 'types': ['locality']},
+                {'long_name': 'Sénégal', 'types': ['country']},
+              ],
+            },
+            {
+              'formatted_address': '77 Rue 4, Dakar, Sénégal',
+              'types': ['street_address', 'subpremise'],
+              'address_components': [
+                {'long_name': '77', 'types': ['street_number']},
+                {'long_name': 'Rue 4', 'types': ['route']},
+                {'long_name': 'Point E', 'types': ['neighborhood']},
+                {'long_name': 'Fann-Point E-Amitié', 'types': ['sublocality', 'sublocality_level_1']},
+                {'long_name': 'Dakar', 'types': ['locality']},
+                {'long_name': 'Sénégal', 'types': ['country']},
+              ],
+            },
+          ]
+        });
+      final pointEService = PlacesService(null, pointEDio);
+
+      final result = await pointEService.reverseGeocode(14.6974, -17.4618);
+
+      expect(result.mainText, '77 Rue 4');
+      expect(result.mainText, isNot(contains('Fann-Point E-Amitié')));
+      expect(result.mainText, isNot(contains('Point E')));
+      expect(result.secondaryText, contains('Point E'));
+      expect(result.secondaryText, contains('Dakar'));
+    });
+
+    test('UserLocationStorage.isStreetLevelAddress identifies real streets vs communes', () {
+      // Vraies rues
+      expect(UserLocationStorage.isStreetLevelAddress('77 Rue 4'), isTrue);
+      expect(UserLocationStorage.isStreetLevelAddress('Rue PE 34'), isTrue);
+      expect(UserLocationStorage.isStreetLevelAddress('Avenue Cheikh Anta Diop'), isTrue);
+      expect(UserLocationStorage.isStreetLevelAddress('Boulevard de la République'), isTrue);
+      expect(UserLocationStorage.isStreetLevelAddress('Route Ngor Village'), isTrue);
+      expect(UserLocationStorage.isStreetLevelAddress('Rue YF-557, 20'), isTrue);
+
+      // Quartiers ou communes génériques (doivent renvoyer false pour forcer la résolution exacte)
+      expect(UserLocationStorage.isStreetLevelAddress('Fann-Point E-Amitié'), isFalse);
+      expect(UserLocationStorage.isStreetLevelAddress('Fann Point E'), isFalse);
+      expect(UserLocationStorage.isStreetLevelAddress('Point E'), isFalse);
+      expect(UserLocationStorage.isStreetLevelAddress('Fann Hock'), isFalse);
+      expect(UserLocationStorage.isStreetLevelAddress('Chargement...'), isFalse);
+      expect(UserLocationStorage.isStreetLevelAddress('Position GPS actuelle'), isFalse);
     });
   });
 

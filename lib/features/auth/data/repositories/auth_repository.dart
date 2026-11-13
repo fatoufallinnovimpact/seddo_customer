@@ -7,6 +7,8 @@ import 'package:seddo/features/auth/data/models/otp_request_response_model.dart'
 import 'package:seddo/features/auth/data/models/user_model.dart';
 import 'package:seddo/features/auth/data/services/auth_api_service.dart';
 import 'package:seddo/features/auth/data/services/device_api_service.dart';
+import 'package:seddo/services/notification_service.dart';
+import 'package:seddo/services/realtime_service.dart';
 
 /// Repository coordinating authentication business logic and caching.
 /// Follows Innov & Impact Africa guidelines (data/repositories/).
@@ -177,26 +179,61 @@ class AuthRepository {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     final accessToken = prefs.getString('auth_access_token');
-    final pushToken = prefs.getString('fcm_device_token');
+    String? pushToken = prefs.getString('fcm_device_token');
 
     if (!_isTest) {
-      // 1. Delete push device token on backend if available
+      // 1. If pushToken is not cached, attempt to retrieve current token from Firebase
+      if (pushToken == null || pushToken.isEmpty) {
+        try {
+          final fcm = FirebaseMessaging.instance;
+          // ignore: deprecated_member_use
+          pushToken = await fcm.getToken();
+        } catch (_) {}
+      }
+
+      // 2. Delete push device token on backend if available
       if (pushToken != null && pushToken.isNotEmpty) {
         try {
           await _deviceApiService.deleteDeviceToken(
             token: pushToken,
             accessToken: accessToken,
           );
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[AuthRepository] ⚠️ Erreur deleteDeviceToken backend: $e');
+        }
       }
 
-      // 2. Terminate session on backend
+      // 3. Terminate session on backend
       try {
-        await _apiService.logout(accessToken: accessToken);
+        await _apiService.logout(
+          accessToken: accessToken,
+          deviceToken: pushToken,
+        );
+      } catch (e) {
+        debugPrint('[AuthRepository] ⚠️ Erreur logout backend: $e');
+      }
+
+      // 4. Invalidate FCM token on Firebase and APNs so this device receives NO MORE push notifications
+      try {
+        // ignore: deprecated_member_use
+        await FirebaseMessaging.instance.deleteToken();
+        debugPrint('[AuthRepository] ✅ Token FCM invalidé et supprimé sur l\'appareil');
+      } catch (e) {
+        debugPrint('[AuthRepository] Note suppression FCM client: $e');
+      }
+
+      // 5. Disconnect Realtime Socket.IO WebSocket
+      try {
+        RealtimeService().disconnect();
+      } catch (_) {}
+
+      // 6. Cancel any active or pending local notifications
+      try {
+        await NotificationService().cancelAll();
       } catch (_) {}
     }
 
-    // 3. Clear all cached session data
+    // 7. Clear all cached session data
     _currentUser = null;
     await prefs.remove('auth_access_token');
     await prefs.remove('auth_refresh_token');
@@ -207,6 +244,7 @@ class AuthRepository {
     await prefs.remove('user_full_name');
     await prefs.remove('user_phone');
     await prefs.remove('onboarding_completed');
+    await prefs.remove('fcm_device_token');
   }
 
   /// Clears session when profile was not completed so user can restart cleanly from onboarding
@@ -222,6 +260,7 @@ class AuthRepository {
     await prefs.remove('user_full_name');
     await prefs.remove('user_phone');
     await prefs.remove('onboarding_completed');
+    await prefs.remove('fcm_device_token');
   }
 
   /// Reads cached user from SharedPreferences

@@ -19,6 +19,7 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     on<HomeSelectCategoryEvent>(_onSelectCategory);
     on<HomeSelectDestinationEvent>(_onSelectDestination);
     on<HomeClearDestinationEvent>(_onClearDestination);
+    on<HomeNearbyDriversUpdatedEvent>(_onNearbyDriversUpdated);
 
     add(const HomeInitEvent());
   }
@@ -80,6 +81,16 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
     Emitter<HomeState> emit,
   ) {
     emit(state.copyWith(clearDestination: true));
+  }
+
+  void _onNearbyDriversUpdated(
+    HomeNearbyDriversUpdatedEvent event,
+    Emitter<HomeState> emit,
+  ) {
+    emit(state.copyWith(
+      driversCount: event.count,
+      drivers: event.drivers ?? state.drivers,
+    ));
   }
 
   List<NearbyDriverModel> _generateDriversAround(LatLng center) {

@@ -92,6 +92,9 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
         if (event.rideId == null || event.rideId == effectiveRideId) {
           setState(() {
             _liveDriverPos = event.location;
+            if (event.remainingPoints.length >= 2) {
+              _liveRoutePoints = List<LatLng>.from(event.remainingPoints);
+            }
           });
         }
       });

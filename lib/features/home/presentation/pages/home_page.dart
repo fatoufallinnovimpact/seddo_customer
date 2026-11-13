@@ -29,6 +29,7 @@ import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart
 import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/realtime_service.dart';
+import 'package:seddo/features/home/presentation/widgets/home_promo_banners_widget.dart';
 
 /// Main Home Screen of Seddo:
 /// - Top Bar: SEDDO logo on left + real user street address beneath it (tapping opens "VOTRE POSITION" modal),
@@ -120,8 +121,13 @@ class _HomePageContentState extends State<_HomePageContent>
     RealtimeService().connect();
 
     _realtimeNearbySub = RealtimeService().nearbyDriversStream.listen((cars) {
-      if (mounted && cars.isNotEmpty) {
-        // Chauffeurs proches reçus en temps réel sans requête GET
+      if (mounted) {
+        // Envoi au HomeBloc pour respecter l'architecture BLoC
+        context.read<HomeBloc>().add(
+              HomeNearbyDriversUpdatedEvent(
+                count: cars.length,
+              ),
+            );
       }
     });
 
@@ -218,6 +224,7 @@ class _HomePageContentState extends State<_HomePageContent>
         );
         final currentCached = UserLocationStorage.cached;
         if (currentCached == null ||
+            !UserLocationStorage.isStreetLevelAddress(_currentAddressShort) ||
             Geolocator.distanceBetween(
                   currentCached.location.latitude,
                   currentCached.location.longitude,
@@ -244,7 +251,7 @@ class _HomePageContentState extends State<_HomePageContent>
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 5),
+          timeLimit: Duration(seconds: 7),
         ),
       );
       if (mounted) {
@@ -262,6 +269,7 @@ class _HomePageContentState extends State<_HomePageContent>
         );
         final currentCached = UserLocationStorage.cached;
         if (currentCached == null ||
+            !UserLocationStorage.isStreetLevelAddress(_currentAddressShort) ||
             Geolocator.distanceBetween(
                   currentCached.location.latitude,
                   currentCached.location.longitude,
@@ -457,6 +465,11 @@ class _HomePageContentState extends State<_HomePageContent>
         setState(() {
           _lastNearbyFetchPos = location;
         });
+        context.read<HomeBloc>().add(
+              HomeNearbyDriversUpdatedEvent(
+                count: res.totalCount,
+              ),
+            );
       }
     } catch (_) {}
   }
@@ -638,6 +651,59 @@ class _HomePageContentState extends State<_HomePageContent>
     }
   }
 
+  /// Ouvre la recherche pré-remplie vers l'Aéroport Blaise Diagne (AIBD)
+  Future<void> _openAeroportReservation() async {
+    await _checkActiveRide();
+    if (!mounted) return;
+    if (_activeRideData != null) {
+      _showActiveRideReminderDialog(context);
+      return;
+    }
+
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      await OfflineModalSheet.show(
+        context,
+        currentPosition: _currentUserLocation,
+        currentAddress: '$_currentAddressShort, $_currentAddressDetails',
+        onRetry: () => _openAeroportReservation(),
+      );
+      return;
+    }
+
+    final homeBloc = context.read<HomeBloc>();
+    final PlaceSearchResult? selectedPlace =
+        await Navigator.of(context).push<PlaceSearchResult>(
+      SlideRightToLeftRoute(
+        page: PlaceSearchPage(
+          currentUserLocation:
+              _currentUserLocation ?? homeBloc.state.userLocation,
+          initialPickup: _currentAddressShort,
+          initialDestination: 'Aéroport Blaise Diagne (AIBD)',
+        ),
+      ),
+    );
+
+    if (selectedPlace != null && mounted) {
+      await RecentTripStorage.saveLastRecentTrip(selectedPlace);
+      homeBloc.add(
+        HomeSelectDestinationEvent(
+          destinationLocation: LatLng(
+            selectedPlace.latitude,
+            selectedPlace.longitude,
+          ),
+          destinationAddress: selectedPlace.fullAddress,
+        ),
+      );
+    }
+
+    if (mounted) {
+      _fetchSuggestions();
+      _checkActiveRide();
+    }
+  }
+
   Future<void> _onSelectSuggestion(PlaceSearchResult place) async {
     await _checkActiveRide();
     if (!mounted) return;
@@ -718,7 +784,7 @@ class _HomePageContentState extends State<_HomePageContent>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
+              color: AppColors.slateDark,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: AppColors.primary,
@@ -868,9 +934,16 @@ class _HomePageContentState extends State<_HomePageContent>
 
                   // 3. Search card aérée : "Où allez-vous ?"
                   _buildSearchBar(context),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 20),
 
-                  // 4. Suggestions section : trajets récents listés par ligne aérée
+                  // 4. Bannières automatiques promotionnelles (Seddo en direct, Parrainage, Aéroport, Fidélité)
+                  HomePromoBannersWidget(
+                    onOpenSeddoDirect: _openDestinationSearch,
+                    onOpenAeroport: _openAeroportReservation,
+                  ),
+                  const SizedBox(height: 26),
+
+                  // 5. Suggestions section : trajets récents listés par ligne aérée
                   _buildSuggestionsSection(context),
                 ],
               ),
@@ -1010,10 +1083,10 @@ class _HomePageContentState extends State<_HomePageContent>
           vertical: 16,
         ),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: AppColors.slateLightBg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: const Color(0xFFE2E8F0),
+            color: AppColors.neutralInputBorder,
             width: 1.0,
           ),
         ),
@@ -1151,7 +1224,7 @@ class _HomePageContentState extends State<_HomePageContent>
                 child: Divider(
                   height: 12,
                   thickness: 0.8,
-                  color: Color(0xFFF1F5F9),
+                  color: AppColors.slateLightBg,
                 ),
               ),
           ],
@@ -1199,12 +1272,12 @@ class _HomePageContentState extends State<_HomePageContent>
               width: 42,
               height: 42,
               decoration: const BoxDecoration(
-                color: Color(0xFFF1F5F9),
+                color: AppColors.slateLightBg,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.history_rounded,
-                color: Color(0xFF64748B),
+                color: AppColors.neutralIconGrey,
                 size: 22,
               ),
             ),
@@ -1390,15 +1463,15 @@ class _HomePageContentState extends State<_HomePageContent>
               height: 104,
               width: double.infinity,
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: AppColors.neutralInputBg,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: const Color(0xFFE2E8F0),
+                  color: AppColors.neutralInputBorder,
                   width: AppConstants.strokeWidthBorder,
                 ),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x06000000),
+                    color: AppColors.shadowFaintBlack,
                     blurRadius: 10,
                     offset: Offset(0, 3),
                   ),
@@ -1429,7 +1502,7 @@ class _HomePageContentState extends State<_HomePageContent>
                   style: GoogleFonts.inter(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF0F172A),
+                    color: AppColors.slateDark,
                     letterSpacing: -0.2,
                   ),
                 ),

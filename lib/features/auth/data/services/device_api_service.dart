@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:seddo/core/network/api_client.dart';
 import 'package:seddo/core/utils/api_endpoints.dart';
@@ -82,10 +83,28 @@ class DeviceApiService {
         options.headers = {'Authorization': 'Bearer $accessToken'};
       }
 
+      try {
+        await _dio.delete(
+          ApiEndpoints.deviceToken(token),
+          options: options,
+        );
+        debugPrint('[DeviceApiService] ✅ Push token supprimé du backend');
+        return;
+      } catch (pathErr) {
+        debugPrint(
+            '[DeviceApiService] Note path delete: $pathErr, essai endpoint alternatif');
+      }
+
+      // Alternative: DELETE /v1/users/me/devices avec body ou query params
       await _dio.delete(
-        ApiEndpoints.deviceToken(token),
+        ApiEndpoints.devices,
+        data: {'token': token},
+        queryParameters: {'token': token},
         options: options,
       );
-    } catch (_) {}
+      debugPrint('[DeviceApiService] ✅ Push token supprimé via /devices');
+    } catch (e) {
+      debugPrint('[DeviceApiService] ⚠️ Échec suppression device token: $e');
+    }
   }
 }
