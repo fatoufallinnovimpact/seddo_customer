@@ -65,6 +65,8 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
   StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocSub;
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
   StreamSubscription<RealtimeRideRouteEvent>? _realtimeRouteSub;
+  int _routeVersion = 0;
+  DateTime _lastRouteUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   LatLng? _liveDriverPos;
   String? _effectiveToken;
   late String _displayShareUrl;
@@ -90,9 +92,17 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
           RealtimeService().driverLocationStream.listen((event) {
         if (!mounted) return;
         if (event.rideId == null || event.rideId == effectiveRideId) {
+          final now = DateTime.now();
+          final isRecentReroute =
+              now.difference(_lastRouteUpdateTime).inSeconds < 8;
+          final isOlderVersion =
+              event.version > 0 && event.version < _routeVersion;
+
           setState(() {
             _liveDriverPos = event.location;
-            if (event.remainingPoints.length >= 2) {
+            if (event.remainingPoints.length >= 2 &&
+                !isRecentReroute &&
+                !isOlderVersion) {
               _liveRoutePoints = List<LatLng>.from(event.remainingPoints);
             }
           });
@@ -114,6 +124,10 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
             event.rideId!.isEmpty ||
             event.rideId == effectiveRideId) {
           if (event.points.length >= 2) {
+            _lastRouteUpdateTime = DateTime.now();
+            if (event.version > _routeVersion) {
+              _routeVersion = event.version;
+            }
             setState(() {
               _liveRoutePoints = List<LatLng>.from(event.points);
             });

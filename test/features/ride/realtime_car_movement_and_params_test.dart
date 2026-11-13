@@ -337,6 +337,27 @@ void main() {
       expect(event.location.latitude, closeTo(14.6937, 0.0001));
     });
 
+    test('copyWith properly neutralizes remainingPoints for obsolete route version', () {
+      const initial = RealtimeDriverLocationEvent(
+        rideId: 'ride_123',
+        location: LatLng(14.69, -17.44),
+        heading: 90.0,
+        version: 1,
+        remainingPoints: [LatLng(14.69, -17.44), LatLng(14.70, -17.45)],
+      );
+
+      final neutralized = initial.copyWith(
+        remainingPoints: const [],
+        polyline: '',
+      );
+
+      expect(neutralized.rideId, equals('ride_123'));
+      expect(neutralized.location, equals(const LatLng(14.69, -17.44)));
+      expect(neutralized.heading, equals(90.0));
+      expect(neutralized.remainingPoints, isEmpty);
+      expect(neutralized.polyline, isEmpty);
+    });
+
     testWidgets('ActiveRidePage with connected rideId does not recalculate ETA/distance on car movement',
         (tester) async {
       final polylinePoints = [

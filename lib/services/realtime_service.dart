@@ -189,6 +189,52 @@ class RealtimeDriverLocationEvent {
     this.raw = const {},
   });
 
+  RealtimeDriverLocationEvent copyWith({
+    String? rideId,
+    String? driverId,
+    LatLng? location,
+    double? heading,
+    double? speed,
+    double? accuracy,
+    int? etaMinutes,
+    double? distanceMeters,
+    double? remainingM,
+    int? etaS,
+    int? animateMs,
+    String? polyline,
+    List<LatLng>? remainingPoints,
+    List<TrafficSegmentModel>? traffic,
+    String? phase,
+    bool? snapped,
+    bool? simulated,
+    DateTime? timestamp,
+    int? version,
+    Map<String, dynamic>? raw,
+  }) {
+    return RealtimeDriverLocationEvent(
+      rideId: rideId ?? this.rideId,
+      driverId: driverId ?? this.driverId,
+      location: location ?? this.location,
+      heading: heading ?? this.heading,
+      speed: speed ?? this.speed,
+      accuracy: accuracy ?? this.accuracy,
+      etaMinutes: etaMinutes ?? this.etaMinutes,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+      remainingM: remainingM ?? this.remainingM,
+      etaS: etaS ?? this.etaS,
+      animateMs: animateMs ?? this.animateMs,
+      polyline: polyline ?? this.polyline,
+      remainingPoints: remainingPoints ?? this.remainingPoints,
+      traffic: traffic ?? this.traffic,
+      phase: phase ?? this.phase,
+      snapped: snapped ?? this.snapped,
+      simulated: simulated ?? this.simulated,
+      timestamp: timestamp ?? this.timestamp,
+      version: version ?? this.version,
+      raw: raw ?? this.raw,
+    );
+  }
+
   factory RealtimeDriverLocationEvent.fromJson(dynamic json) {
     dynamic effective = json;
     if (effective is String) {
@@ -249,11 +295,25 @@ class RealtimeDriverLocationEvent {
         ?.toDouble() ??
         0.0;
     final heading = (posObj['heading'] ??
+            posObj['cap'] ??
             posObj['bearing'] ??
             posObj['direction'] ??
             posObj['course'] ??
             driverMap?['heading'] ??
+            driverMap?['cap'] ??
+            driverMap?['bearing'] ??
+            driverMap?['direction'] ??
+            driverMap?['course'] ??
+            dataMap?['heading'] ??
+            dataMap?['cap'] ??
+            dataMap?['bearing'] ??
+            dataMap?['direction'] ??
+            dataMap?['course'] ??
             jsonMap['heading'] ??
+            jsonMap['cap'] ??
+            jsonMap['bearing'] ??
+            jsonMap['direction'] ??
+            jsonMap['course'] ??
             0.0 as num)
         .toDouble();
     final speed = (posObj['speed'] ?? jsonMap['speed'] as num?)?.toDouble();
@@ -1220,7 +1280,38 @@ class RealtimeService {
         _lastLocationTimestamps[trackKey] = event.timestamp!;
       }
 
-      _driverLocationController.add(event);
+      // Filtre 3 : Versioning d'itinéraire (protection contre les paquets télémétrie portant un ancien tracé)
+      RealtimeDriverLocationEvent effectiveEvent = event;
+      if (event.rideId != null && event.version > 0) {
+        final lastKnownVersion = _lastKnownVersions[event.rideId!] ?? 0;
+        if (event.version < lastKnownVersion) {
+          debugPrint(
+              '[RealtimeService] 🛡️ Neutralisation polyline obsolète v${event.version} < v$lastKnownVersion dans driver.location');
+          effectiveEvent = event.copyWith(
+            remainingPoints: const [],
+            polyline: '',
+          );
+        } else if (event.version > lastKnownVersion) {
+          _lastKnownVersions[event.rideId!] = event.version;
+          if (event.remainingPoints.length >= 2 ||
+              (event.polyline != null && event.polyline!.isNotEmpty)) {
+            debugPrint(
+                '[RealtimeService] 🗺️ Nouvelle route v${event.version} détectée dans driver.location');
+            _rideRouteController.add(RealtimeRideRouteEvent(
+              rideId: event.rideId,
+              polyline: event.polyline ?? '',
+              points: event.remainingPoints,
+              traffic: event.traffic,
+              durationSeconds: event.etaS,
+              distanceMeters: event.distanceMeters?.toInt(),
+              version: event.version,
+              raw: event.raw,
+            ));
+          }
+        }
+      }
+
+      _driverLocationController.add(effectiveEvent);
     } catch (e) {
       debugPrint('[RealtimeService] ⚠️ Erreur parsing driver.location: $e');
     }

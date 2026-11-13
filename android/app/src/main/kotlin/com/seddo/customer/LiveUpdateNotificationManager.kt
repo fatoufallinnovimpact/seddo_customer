@@ -154,8 +154,18 @@ object LiveUpdateNotificationManager {
                 statusSubtitlePlain = "Au point de départ"
             }
             isTrip -> {
-                val dest = if (destinationText.isNotBlank()) destinationText else "la destination"
-                etaHeadline = "En route vers $dest"
+                val cleanDest = if (destinationText.isNotBlank()) {
+                    val trimmed = destinationText.trim()
+                    val commaParts = trimmed.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    if (commaParts.size > 1 && commaParts[0].length in 3..28) {
+                        commaParts[0]
+                    } else {
+                        trimmed
+                    }
+                } else {
+                    "la destination"
+                }
+                etaHeadline = "En route vers $cleanDest"
                 val etaTimeMillis = System.currentTimeMillis() + (etaMinutes * 60 * 1000L)
                 val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                 val etaClock = timeFormat.format(java.util.Date(etaTimeMillis))

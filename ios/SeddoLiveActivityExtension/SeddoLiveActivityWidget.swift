@@ -211,10 +211,13 @@ struct SeddoLockScreenLiveView: View {
                         .foregroundColor(.white)
                         .lineLimit(1)
 
-                    Text(isTrip ? "En route vers la destination" : (isArrivedAtPickup ? "Au point de départ" : "\(context.attributes.driverName) arrive bientôt"))
+                    let destName = context.attributes.destinationText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let cleanDest = destName.isEmpty ? "la destination" : (destName.components(separatedBy: ",").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? destName)
+                    Text(isTrip ? "En route vers \(cleanDest)" : (isArrivedAtPickup ? "Au point de départ" : "\(context.attributes.driverName) arrive bientôt"))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.white.opacity(0.85))
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                 }
 
                 Spacer()

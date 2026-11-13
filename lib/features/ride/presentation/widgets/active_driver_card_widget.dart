@@ -33,6 +33,15 @@ class ActiveDriverCardWidget extends StatelessWidget {
             .toUpperCase()
         : 'MS';
 
+    final carColorStr = driver.carColor.trim();
+    final carModelStr = driver.carModel.trim().isNotEmpty
+        ? driver.carModel.trim()
+        : 'Véhicule';
+    final vehicleDescription = carColorStr.isNotEmpty
+        ? '$carModelStr ${carColorStr.toLowerCase()}'
+        : carModelStr;
+    final plateStr = driver.licensePlate.trim();
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -102,10 +111,11 @@ class ActiveDriverCardWidget extends StatelessWidget {
 
           const SizedBox(width: 12),
 
-          // Driver name, rating, vehicle model & license plate
+          // Driver name, rating, vehicle model & color, and full license plate badge
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
@@ -113,7 +123,7 @@ class ActiveDriverCardWidget extends StatelessWidget {
                       child: Text(
                         '${driver.name.split(' ').first} · ★ ${driver.rating}',
                         style: GoogleFonts.inter(
-                          fontSize: 15.5,
+                          fontSize: 15.0,
                           fontWeight: FontWeight.w800,
                           color: AppColors.textPrimary,
                           letterSpacing: -0.2,
@@ -124,47 +134,66 @@ class ActiveDriverCardWidget extends StatelessWidget {
                     ),
                     if (isOffline) ...[
                       const SizedBox(width: 4),
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1.5,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.grayLight,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'Position non à jour',
+                          style: GoogleFonts.inter(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.grayText,
                           ),
-                          decoration: BoxDecoration(
-                            color: AppColors.grayLight,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Position non à jour',
-                            style: GoogleFonts.inter(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.grayText,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          maxLines: 1,
                         ),
                       ),
                     ],
                   ],
                 ),
+                const SizedBox(height: 3),
+                // Vehicle model AND color (e.g., "Toyota Corolla gris")
+                Text(
+                  vehicleDescription,
+                  style: GoogleFonts.inter(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        '${driver.carModel} · ${driver.licensePlate}',
-                        style: GoogleFonts.inter(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                // Full license plate badge (100% visible, NEVER truncated with "...")
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.grayLight,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: AppColors.cardBorder,
+                      width: 0.9,
                     ),
-                  ],
+                  ),
+                  child: Text(
+                    plateStr.isNotEmpty ? plateStr : 'DK-482-AB',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: 0.4,
+                    ),
+                    maxLines: 1,
+                    softWrap: false,
+                  ),
                 ),
               ],
             ),

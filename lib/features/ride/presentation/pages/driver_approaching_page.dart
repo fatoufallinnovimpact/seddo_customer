@@ -121,12 +121,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   late RideService _rideService;
   Timer? _ridePollTimer;
 
-  // Realtime Socket.IO streams & smooth movement (PDF Seddo : 4s interpolation)
+  // Realtime Socket.IO streams
   AnimationController? _smoothCarController;
-  LatLng? _animStartPos;
-  LatLng? _animEndPos;
-  double? _animStartHeading;
-  double? _animEndHeading;
 
   StreamSubscription<RealtimeRideStatusEvent>? _realtimeStatusSub;
   StreamSubscription<RealtimeDriverLocationEvent>? _realtimeLocationSub;
@@ -136,6 +132,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   RideLiveUpdateBloc? _liveUpdateBloc;
 
   DateTime _lastDriverLocationTime = DateTime.now();
+  int _approachRouteVersion = 0;
+  DateTime _lastRouteUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _stalePositionCheckTimer;
   bool _isPositionUpdating = false;
 
@@ -232,45 +230,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         }
       });
 
-    // Contrôleur de déplacement fluide de la voiture (interpolation fluide 1000ms)
+    // Contrôleur conservé pour cycle de vie sans animation artificielle
     _smoothCarController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
-    )..addListener(() {
-        if (_animStartPos != null && _animEndPos != null && mounted) {
-          final t = _smoothCarController!.value;
-          final curLat = _animStartPos!.latitude +
-              (_animEndPos!.latitude - _animStartPos!.latitude) * t;
-          final curLng = _animStartPos!.longitude +
-              (_animEndPos!.longitude - _animStartPos!.longitude) * t;
-
-          double curHead = _currentCarHeading;
-          if (_animStartHeading != null && _animEndHeading != null) {
-            curHead = _animStartHeading! +
-                (_animEndHeading! - _animStartHeading!) * t;
-          }
-
-          final newPos = LatLng(curLat, curLng);
-          setState(() {
-            _currentCarPosition = newPos;
-            _currentCarHeading = curHead;
-          });
-          _updateEtaAndDistance(newPos);
-        }
-      })
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          if (_animEndPos != null && mounted) {
-            setState(() {
-              _currentCarPosition = _animEndPos!;
-              if (_animEndHeading != null) {
-                _currentCarHeading = _animEndHeading!;
-              }
-            });
-            _updateEtaAndDistance(_animEndPos!);
-          }
-        }
-      });
+    );
 
     if (widget.autoStartSimulation && !isTest) {
       Future.delayed(const Duration(milliseconds: 600), () {
@@ -463,9 +427,14 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final plannedPoly = rideObj['plannedPolyline'] as String? ??
         (rideObj['route'] is Map ? rideObj['route']['polyline'] as String? : null);
     if (plannedPoly != null && plannedPoly.isNotEmpty) {
-      final tripPts = RouteService.decodePolyline(plannedPoly);
-      if (tripPts.length >= 2) {
-        _tripPolylinePoints = tripPts;
+      final now = DateTime.now();
+      final isRecentReroute =
+          now.difference(_lastRouteUpdateTime).inSeconds < 8;
+      if (!isRecentReroute) {
+        final tripPts = RouteService.decodePolyline(plannedPoly);
+        if (tripPts.length >= 2) {
+          _tripPolylinePoints = tripPts;
+        }
       }
     }
   }
@@ -482,10 +451,19 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
     final heading = event.heading != 0.0
         ? event.heading
-        : _calculateBearing(_currentCarPosition, event.location);
+        : _currentCarHeading;
 
-    // 1. polyline : tracé restant, déjà coupé à la voiture -> remplacer la ligne affichée, tel quel
-    if (event.remainingPoints.length >= 2) {
+    // 1. polyline : tracé restant, uniquement si aucun recalcul récent n'a eu lieu
+    // et que le paquet n'est pas obsolète (protection anti-clignotement)
+    final now = DateTime.now();
+    final isRecentReroute =
+        now.difference(_lastRouteUpdateTime).inSeconds < 8;
+    final isOlderVersion =
+        event.version > 0 && event.version < _approachRouteVersion;
+
+    if (event.remainingPoints.length >= 2 &&
+        !isRecentReroute &&
+        !isOlderVersion) {
       setState(() {
         _approachRoutePoints = List<LatLng>.from(event.remainingPoints);
         if (event.traffic.isNotEmpty) {
@@ -548,6 +526,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     if (event.points.length >= 2) {
       final raw = event.raw;
       final phase = (raw['phase'] ?? raw['routeType'] ?? raw['type'])?.toString().toUpperCase();
+      final now = DateTime.now();
+      _approachRouteVersion =
+          event.version > 0 ? event.version : (_approachRouteVersion + 1);
+      _lastRouteUpdateTime = now;
+
       setState(() {
         if (phase == 'TRIP' || phase == 'DESTINATION') {
           _tripPolylinePoints = event.points;
@@ -1278,42 +1261,16 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
     _smoothCarController?.stop();
 
-    final calcHeading =
-        heading ?? _calculateBearing(_currentCarPosition, position);
+    // Supprimer toute animation côté front : le backend calcule et envoie déjà le cap / heading exact
+    final targetHeading = heading ?? _currentCarHeading;
 
-    // Si la position a très peu changé (< 0.5m), ignorer
-    final distChange = RideEtaCalculator.dist(_currentCarPosition, position);
-    if (distChange < 0.5) {
-      return;
-    }
+    setState(() {
+      _currentCarPosition = position;
+      _currentCarHeading = targetHeading;
+    });
+    _updateEtaAndDistance(position);
 
-    // Si le déplacement est important (> 80m, ex: reconnexion ou grand déplacement),
-    // positionner immédiatement et exactement le véhicule à l'endroit du chauffeur
-    if (distChange > 80) {
-      _smoothCarController?.stop();
-      setState(() {
-        _currentCarPosition = position;
-        _currentCarHeading = calcHeading;
-      });
-      _updateEtaAndDistance(position);
-      return;
-    }
-
-    // Durée d'animation transmise par le backend (animateMs)
-    if (animateMs != null && animateMs > 0) {
-      _smoothCarController?.duration = Duration(milliseconds: animateMs);
-    } else {
-      _smoothCarController?.duration = const Duration(milliseconds: 1000);
-    }
-
-    _animStartPos = _currentCarPosition;
-    _animEndPos = position;
-    _animStartHeading = _currentCarHeading;
-    _animEndHeading = calcHeading;
-
-    _smoothCarController?.forward(from: 0.0);
-
-    // Animation fluide de la caméra pour suivre la position du véhicule
+    // Animation de la caméra pour suivre la position du véhicule
     if (_mapController != null) {
       _mapController?.animateCamera(
         CameraUpdate.newLatLng(position),

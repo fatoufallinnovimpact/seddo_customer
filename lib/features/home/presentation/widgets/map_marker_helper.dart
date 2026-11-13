@@ -288,23 +288,28 @@ abstract class MapMarkerHelper {
 
   /// Generate modern Departure Location Pin marker (compact Yango-style):
   /// Modern Seddo departure pin marker:
-  /// Orange squircle with passenger silhouette (Icons.hail_rounded), needle stalk and ground shadow.
+  /// Ultra-crisp HD rendering (3x DPR) with orange squircle, white passenger icon (Icons.hail_rounded), needle stalk and ground shadow.
   /// Anchor at (0.5, 1.0) so the pin stalk tip points directly at the departure point.
   static Future<BitmapDescriptor> getDeparturePinMarker() async {
     if (_departurePinIcon != null) return _departurePinIcon!;
 
+    const double dpr = 3.0;
+    const double logicalWidth = 38.0;
+    const double logicalHeight = 48.0;
+    const double boxSize = 32.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 36.0;
-    const double height = 46.0;
-    const double boxSize = 30.0;
+    canvas.scale(dpr, dpr);
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
       ..color = AppColors.shadowCanvasMedium
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
     canvas.drawOval(
-      const Rect.fromLTWH((width - 12) / 2, height - 3.5, 12, 3.0),
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
       shadowPaint,
     );
 
@@ -314,14 +319,14 @@ abstract class MapMarkerHelper {
       ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(
-      const Offset(width / 2, boxSize - 2),
-      const Offset(width / 2, height - 2.5),
+      const Offset(logicalWidth / 2, boxSize - 2),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
       stalkPaint,
     );
 
     // 3. Orange squircle box (matches current position marker)
     final boxRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH((width - boxSize) / 2, 0, boxSize, boxSize),
+      const Rect.fromLTWH((logicalWidth - boxSize) / 2, 0, boxSize, boxSize),
       const Radius.circular(9),
     );
     final boxPaint = Paint()
@@ -333,7 +338,7 @@ abstract class MapMarkerHelper {
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
+      ..strokeWidth = 1.8;
     canvas.drawRRect(boxRect, borderPaint);
 
     // 4. Icons.hail_rounded silhouette icon
@@ -341,7 +346,7 @@ abstract class MapMarkerHelper {
       text: TextSpan(
         text: String.fromCharCode(Icons.hail_rounded.codePoint),
         style: TextStyle(
-          fontSize: 19.0,
+          fontSize: 20.0,
           fontFamily: Icons.hail_rounded.fontFamily,
           package: Icons.hail_rounded.fontPackage,
           color: AppColors.white,
@@ -351,35 +356,43 @@ abstract class MapMarkerHelper {
     )..layout();
     textPainter.paint(
       canvas,
-      Offset((width - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
+      Offset((logicalWidth - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
     );
 
     final picture = pictureRecorder.endRecording();
-    final image = await picture.toImage(width.toInt(), height.toInt());
+    final image = await picture.toImage(pixelWidth, pixelHeight);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
-    _departurePinIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    _departurePinIcon = BitmapDescriptor.bytes(
+      byteData!.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
     return _departurePinIcon!;
   }
 
   /// Modern Seddo destination / arrival pin marker:
-  /// Executive dark squircle with flag icon (Icons.flag_rounded), needle stalk and ground shadow.
+  /// Ultra-crisp HD rendering (3x DPR) with executive dark squircle, flag icon (Icons.flag_rounded), needle stalk and ground shadow.
   /// Anchor at (0.5, 1.0) so the pin stalk tip points directly at destination point.
   static Future<BitmapDescriptor> getDestinationPinMarker() async {
     if (_destinationPinIcon != null) return _destinationPinIcon!;
 
+    const double dpr = 3.0;
+    const double logicalWidth = 38.0;
+    const double logicalHeight = 48.0;
+    const double boxSize = 32.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
     final pictureRecorder = ui.PictureRecorder();
     final canvas = Canvas(pictureRecorder);
-    const double width = 36.0;
-    const double height = 46.0;
-    const double boxSize = 30.0;
+    canvas.scale(dpr, dpr);
 
     // 1. Soft ground shadow under pin point
     final shadowPaint = Paint()
       ..color = AppColors.shadowCanvasMedium
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
     canvas.drawOval(
-      const Rect.fromLTWH((width - 12) / 2, height - 3.5, 12, 3.0),
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
       shadowPaint,
     );
 
@@ -389,14 +402,14 @@ abstract class MapMarkerHelper {
       ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(
-      const Offset(width / 2, boxSize - 2),
-      const Offset(width / 2, height - 2.5),
+      const Offset(logicalWidth / 2, boxSize - 2),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
       stalkPaint,
     );
 
     // 3. Executive dark squircle box
     final boxRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH((width - boxSize) / 2, 0, boxSize, boxSize),
+      const Rect.fromLTWH((logicalWidth - boxSize) / 2, 0, boxSize, boxSize),
       const Radius.circular(9),
     );
     final boxPaint = Paint()
@@ -408,7 +421,7 @@ abstract class MapMarkerHelper {
     final borderPaint = Paint()
       ..color = AppColors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
+      ..strokeWidth = 1.8;
     canvas.drawRRect(boxRect, borderPaint);
 
     // 4. Icons.flag_rounded icon
@@ -416,7 +429,7 @@ abstract class MapMarkerHelper {
       text: TextSpan(
         text: String.fromCharCode(Icons.flag_rounded.codePoint),
         style: TextStyle(
-          fontSize: 18.0,
+          fontSize: 19.0,
           fontFamily: Icons.flag_rounded.fontFamily,
           package: Icons.flag_rounded.fontPackage,
           color: AppColors.white,
@@ -426,14 +439,17 @@ abstract class MapMarkerHelper {
     )..layout();
     textPainter.paint(
       canvas,
-      Offset((width - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
+      Offset((logicalWidth - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
     );
 
     final picture = pictureRecorder.endRecording();
-    final image = await picture.toImage(width.toInt(), height.toInt());
+    final image = await picture.toImage(pixelWidth, pixelHeight);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
-    _destinationPinIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    _destinationPinIcon = BitmapDescriptor.bytes(
+      byteData!.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
     return _destinationPinIcon!;
   }
 
