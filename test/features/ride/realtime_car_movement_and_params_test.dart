@@ -459,5 +459,74 @@ void main() {
       // Progress must be 1.0 - (0.25 * totalM / totalM) = 0.75 (75%)
       expect(state.progressRatio, closeTo(0.75, 0.02));
     });
+
+    testWidgets('ActiveRidePage updates polyline and car heading when chauffeur takes another route',
+        (tester) async {
+      final initialRoute = [
+        const LatLng(14.6700, -17.4300),
+        const LatLng(14.6720, -17.4320),
+        const LatLng(14.6750, -17.4350),
+      ];
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            rideId: 'ride_reroute_test_1',
+            departure: departure,
+            destination: destination,
+            driver: driver,
+            rideOption: rideOption,
+            polylinePoints: initialRoute,
+            isOffline: false,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(ActiveRidePage));
+      expect(state.currentCarPosition.latitude, equals(14.6700));
+
+      // 1. Chauffeur change de route et envoie la nouvelle polyline + nouveau cap dans driver.location
+      RealtimeService().emitMockEvent('driver.location', {
+        'rideId': 'ride_reroute_test_1',
+        'lat': 14.6800,
+        'lng': -17.4400,
+        'heading': 145.0,
+        'points': [
+          {'lat': 14.6800, 'lng': -17.4400},
+          {'lat': 14.6850, 'lng': -17.4450},
+          {'lat': 14.6900, 'lng': -17.4500},
+        ],
+        'remainingM': 2500,
+        'etaS': 900,
+        'accuracy': 5.0,
+      });
+
+      await tester.pump();
+
+      // Vérifier que la position et le cap ont été immédiatement mis à jour selon le backend
+      expect(state.currentCarPosition.latitude, closeTo(14.6800, 0.0001));
+      expect(state.currentCarPosition.longitude, closeTo(-17.4400, 0.0001));
+      expect(state.currentCarHeading, equals(145.0));
+
+      // Vérifier que le tracé restant est bien le nouveau tracé du chauffeur et non l'ancien tracé initial
+      final List<LatLng> currentRemaining = state.remainingPoints;
+      expect(currentRemaining.length, equals(3));
+      expect(currentRemaining.first.latitude, closeTo(14.6800, 0.0001));
+
+      // 2. Prochain paquet télémétrie sans cap explicite (heading absent) : ne doit PAS réinitialiser à 0.0 (Nord)
+      RealtimeService().emitMockEvent('driver.location', {
+        'rideId': 'ride_reroute_test_1',
+        'lat': 14.6805,
+        'lng': -17.4405,
+        'accuracy': 5.0,
+      });
+
+      await tester.pump();
+
+      expect(state.currentCarPosition.latitude, closeTo(14.6805, 0.0001));
+      expect(state.currentCarHeading, equals(145.0)); // Conservé sans remise à zéro
+    });
   });
 }

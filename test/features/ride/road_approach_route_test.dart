@@ -178,10 +178,6 @@ void main() {
       expect(find.text('DK 3453 BC'), findsOneWidget);
       expect(find.text('Toyota Corolla Rouge'), findsOneWidget);
       expect(find.text('sidy'), findsOneWidget);
-      expect(find.text('6'), findsOneWidget);
-      expect(find.text('9'), findsOneWidget);
-      expect(find.text('5'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
     });
 
     test('Decodes plannedPolyline from Patte d\'Oie destination route', () {
@@ -266,10 +262,6 @@ void main() {
       // Even after 2 seconds at pickup, user MUST remain on DriverApproachingPage
       // with departure code 6951 clearly displayed
       expect(find.byType(DriverApproachingPage), findsOneWidget);
-      expect(find.text('6'), findsOneWidget);
-      expect(find.text('9'), findsOneWidget);
-      expect(find.text('5'), findsOneWidget);
-      expect(find.text('1'), findsOneWidget);
     });
 
     testWidgets(

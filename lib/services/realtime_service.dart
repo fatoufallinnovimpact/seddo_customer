@@ -148,7 +148,7 @@ class RealtimeDriverLocationEvent {
   final String? rideId;
   final String? driverId;
   final LatLng location;
-  final double heading;
+  final double? heading;
   final double? speed;
   final double? accuracy;
   final int? etaMinutes;
@@ -170,7 +170,7 @@ class RealtimeDriverLocationEvent {
     this.rideId,
     this.driverId,
     required this.location,
-    this.heading = 0.0,
+    this.heading,
     this.speed,
     this.accuracy,
     this.etaMinutes,
@@ -294,28 +294,27 @@ class RealtimeDriverLocationEvent {
             jsonMap['longitude'] as num?)
         ?.toDouble() ??
         0.0;
-    final heading = (posObj['heading'] ??
-            posObj['cap'] ??
-            posObj['bearing'] ??
-            posObj['direction'] ??
-            posObj['course'] ??
-            driverMap?['heading'] ??
-            driverMap?['cap'] ??
-            driverMap?['bearing'] ??
-            driverMap?['direction'] ??
-            driverMap?['course'] ??
-            dataMap?['heading'] ??
-            dataMap?['cap'] ??
-            dataMap?['bearing'] ??
-            dataMap?['direction'] ??
-            dataMap?['course'] ??
-            jsonMap['heading'] ??
-            jsonMap['cap'] ??
-            jsonMap['bearing'] ??
-            jsonMap['direction'] ??
-            jsonMap['course'] ??
-            0.0 as num)
-        .toDouble();
+    final rawHeading = posObj['heading'] ??
+        posObj['cap'] ??
+        posObj['bearing'] ??
+        posObj['direction'] ??
+        posObj['course'] ??
+        driverMap?['heading'] ??
+        driverMap?['cap'] ??
+        driverMap?['bearing'] ??
+        driverMap?['direction'] ??
+        driverMap?['course'] ??
+        dataMap?['heading'] ??
+        dataMap?['cap'] ??
+        dataMap?['bearing'] ??
+        dataMap?['direction'] ??
+        dataMap?['course'] ??
+        jsonMap['heading'] ??
+        jsonMap['cap'] ??
+        jsonMap['bearing'] ??
+        jsonMap['direction'] ??
+        jsonMap['course'];
+    final heading = rawHeading is num ? rawHeading.toDouble() : null;
     final speed = (posObj['speed'] ?? jsonMap['speed'] as num?)?.toDouble();
     final accuracy = (posObj['accuracy'] ?? jsonMap['accuracy'] as num?)?.toDouble();
 
@@ -370,13 +369,20 @@ class RealtimeDriverLocationEvent {
             dataMap?['animateMs'] as num?)
         ?.toInt();
 
+    final routeObj = json['route'] is Map
+        ? json['route'] as Map
+        : (posObj['route'] is Map ? posObj['route'] as Map : null);
     final rawPoly = (json['polyline'] ??
             posObj['polyline'] ??
             dataMap?['polyline'] ??
             json['plannedPolyline'] ??
             posObj['plannedPolyline'] ??
             dataMap?['plannedPolyline'] ??
-            json['encodedPolyline'])
+            json['encodedPolyline'] ??
+            routeObj?['polyline'] ??
+            routeObj?['plannedPolyline'] ??
+            routeObj?['encodedPolyline'] ??
+            (json['route'] is String ? json['route'] : null))
         ?.toString();
     List<LatLng> points = [];
     if (rawPoly != null && rawPoly.isNotEmpty) {
@@ -388,6 +394,11 @@ class RealtimeDriverLocationEvent {
       final rawPts = json['points'] ??
           posObj['points'] ??
           dataMap?['points'] ??
+          json['remainingPoints'] ??
+          posObj['remainingPoints'] ??
+          dataMap?['remainingPoints'] ??
+          routeObj?['points'] ??
+          routeObj?['coordinates'] ??
           json['coordinates'] ??
           posObj['coordinates'];
       if (rawPts is List) {
@@ -1282,25 +1293,32 @@ class RealtimeService {
 
       // Filtre 3 : Versioning d'itinéraire (protection contre les paquets télémétrie portant un ancien tracé)
       RealtimeDriverLocationEvent effectiveEvent = event;
-      if (event.rideId != null && event.version > 0) {
+      if (event.rideId != null) {
         final lastKnownVersion = _lastKnownVersions[event.rideId!] ?? 0;
-        if (event.version < lastKnownVersion) {
+        if (event.version > 0 && event.version < lastKnownVersion) {
           debugPrint(
               '[RealtimeService] 🛡️ Neutralisation polyline obsolète v${event.version} < v$lastKnownVersion dans driver.location');
           effectiveEvent = event.copyWith(
             remainingPoints: const [],
             polyline: '',
           );
-        } else if (event.version > lastKnownVersion) {
-          _lastKnownVersions[event.rideId!] = event.version;
-          if (event.remainingPoints.length >= 2 ||
-              (event.polyline != null && event.polyline!.isNotEmpty)) {
+        } else if (event.remainingPoints.length >= 2 ||
+            (event.polyline != null && event.polyline!.isNotEmpty)) {
+          if (event.version > lastKnownVersion) {
+            _lastKnownVersions[event.rideId!] = event.version;
+          }
+          final points = event.remainingPoints.isNotEmpty
+              ? event.remainingPoints
+              : (event.polyline != null
+                  ? RouteService.decodePolyline(event.polyline!)
+                  : <LatLng>[]);
+          if (points.length >= 2) {
             debugPrint(
-                '[RealtimeService] 🗺️ Nouvelle route v${event.version} détectée dans driver.location');
+                '[RealtimeService] 🗺️ Nouvelle route détectée dans driver.location (${points.length} points, v${event.version})');
             _rideRouteController.add(RealtimeRideRouteEvent(
               rideId: event.rideId,
               polyline: event.polyline ?? '',
-              points: event.remainingPoints,
+              points: points,
               traffic: event.traffic,
               durationSeconds: event.etaS,
               distanceMeters: event.distanceMeters?.toInt(),

@@ -340,7 +340,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           id: driverKey,
           lat: event.location.latitude,
           lng: event.location.longitude,
-          heading: event.heading,
+          heading: event.heading ?? 0.0,
         );
 
         final index = _nearbyCars.indexWhere((c) => c.id == driverKey);
