@@ -479,6 +479,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     // 2. remainingM, etaS : distance et temps restants, barre de progression, Live Activity
     final effectiveRemainingM = event.remainingM ?? event.distanceMeters;
     if (effectiveRemainingM != null && effectiveRemainingM > 0) {
+      if (_totalApproachM <= 0) {
+        _totalApproachM = effectiveRemainingM.round();
+      } else if (effectiveRemainingM > _totalApproachM) {
+        _totalApproachM = effectiveRemainingM.round();
+      }
       setState(() {
         _remainingDistanceM = effectiveRemainingM;
       });
@@ -488,8 +493,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     if (effectiveEtaS != null && effectiveEtaS > 0) {
       final mins = (effectiveEtaS / 60.0).ceil();
       _setEtaLabel('$mins min', mins);
+      _syncLiveUpdate(etaMinutes: mins);
     } else if (event.etaMinutes != null && event.etaMinutes! > 0) {
       _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
+      _syncLiveUpdate(etaMinutes: event.etaMinutes!);
     }
 
     // 3. phase : APPROACH (vers le client) ou TRIP (vers la destination)

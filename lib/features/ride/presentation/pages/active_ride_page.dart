@@ -136,6 +136,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   List<LatLng> get remainingPoints => _remainingPoints;
 
   @visibleForTesting
+  bool get hasBackendRemainingPoints => _hasBackendRemainingPoints;
+
+  @visibleForTesting
   double get totalTripDistanceMeters => _totalTripDistanceMeters;
 
   double _progressRatio = 0.05;
@@ -167,7 +170,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   DateTime _lastDriverLocationTime = DateTime.now();
   DateTime _lastRerouteFetchTime = DateTime.fromMillisecondsSinceEpoch(0);
   int _currentRouteVersion = 0;
-  DateTime _lastRouteUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _stalePositionCheckTimer;
   Timer? _pollTimer;
   bool _isPositionUpdating = false;
@@ -286,14 +288,21 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               : (raw['data'] is Map<String, dynamic>
                   ? raw['data'] as Map<String, dynamic>
                   : raw);
-          final rawPoly = rideObj['plannedPolyline'] ??
-              rideObj['polyline'] ??
-              (rideObj['route'] is Map ? rideObj['route']['polyline'] : null);
+          // Prioriser les tracés dynamiques recalculés par rapport au plannedPolyline initial
+          final rawPoly = (rideObj['polyline'] as String?) ??
+              (rideObj['activePolyline'] as String?) ??
+              (rideObj['currentPolyline'] as String?) ??
+              (rideObj['route'] is Map ? (rideObj['route']['polyline'] as String?) : null) ??
+              (_effectiveRoute.isEmpty ? (rideObj['plannedPolyline'] as String?) : null);
+          final statusVer = (rideObj['routeVersion'] ??
+                  rideObj['version'] ??
+                  (rideObj['route'] is Map ? rideObj['route']['version'] : null) as num?)
+              ?.toInt() ?? 0;
           if (rawPoly is String && rawPoly.isNotEmpty) {
             final pts = RouteService.decodePolyline(rawPoly);
             if (pts.length >= 2 && pts != _effectiveRoute) {
-              debugPrint('[ActiveRide] 🔄 Nouvel itinéraire reçu dans le statut/raw: ${pts.length} pts');
-              _setNewRoute(pts);
+              debugPrint('[ActiveRide] 🔄 Nouvel itinéraire reçu dans le statut/raw: ${pts.length} pts (v$statusVer)');
+              _setNewRoute(pts, version: statusVer);
             }
           }
 
@@ -350,6 +359,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               _hasBackendRemainingPoints = true;
               _remainingPoints = List<LatLng>.from(event.remainingPoints);
               _effectiveRoute = List<LatLng>.from(event.remainingPoints);
+              _lastNearestRouteIndex = 0;
               _traveledPoints = []; // Réinitialiser pour éviter de tracer sur une ancienne rue
               if (event.traffic.isNotEmpty) {
                 _traffic = event.traffic;
@@ -608,25 +618,33 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       return;
     }
 
-    // 3. Mise à jour de la polyline réelle si fournie par l'API
+    // 3. Mise à jour de la polyline réelle si fournie par l'API (priorité aux tracés dynamiques recalculés)
     final routeObj = rideObj['route'] is Map<String, dynamic>
         ? rideObj['route'] as Map<String, dynamic>
         : null;
-    final plannedPolyStr = rideObj['plannedPolyline'] as String? ??
-        rideObj['polyline'] as String? ??
-        rideObj['encodedPolyline'] as String? ??
-        (routeObj?['polyline'] as String?) ??
-        (routeObj?['plannedPolyline'] as String?) ??
-        (routeObj?['encodedPolyline'] as String?);
+    final activePolyStr = (routeObj?['polyline'] as String?) ??
+        (routeObj?['currentPolyline'] as String?) ??
+        (routeObj?['activePolyline'] as String?) ??
+        (rideObj['activePolyline'] as String?) ??
+        (rideObj['currentPolyline'] as String?) ??
+        (rideObj['polyline'] as String?) ??
+        (rideObj['encodedPolyline'] as String?) ??
+        (routeObj?['encodedPolyline'] as String?) ??
+        // Le plannedPolyline statique initial ne sert qu'au tout premier affichage s'il n'y a aucun tracé
+        (_effectiveRoute.isEmpty
+            ? ((rideObj['plannedPolyline'] as String?) ??
+                (routeObj?['plannedPolyline'] as String?))
+            : null);
     final restVersion = (rideObj['routeVersion'] ??
             rideObj['version'] ??
             routeObj?['version'] as num?)
         ?.toInt() ?? 0;
-    if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
-      final tripPts = RouteService.decodePolyline(plannedPolyStr);
+    if (activePolyStr != null && activePolyStr.isNotEmpty) {
+      final tripPts = RouteService.decodePolyline(activePolyStr);
       // Ne remplacer la route que si les points correspondent à un vrai tracé routier (>= 2 points)
+      // et ne JAMAIS forcer l'écrasement d'un itinéraire direct WebSocket avec un tracé REST non-versionné (v0)
       if (tripPts.length >= 2 && tripPts != _effectiveRoute) {
-        _setNewRoute(tripPts, version: restVersion, force: true);
+        _setNewRoute(tripPts, version: restVersion, force: false);
       }
     }
 
@@ -961,7 +979,6 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   void _setNewRoute(List<LatLng> newRoute,
       {int version = 0, bool force = false}) {
     if (newRoute.length < 2) return;
-    final now = DateTime.now();
 
     // Protection 1 : Rejet des versions de route strictement antérieures
     if (!force && version > 0 && version < _currentRouteVersion) {
@@ -970,21 +987,18 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       return;
     }
 
-    // Protection 2 : Verrou anti-clignotement pendant 4 secondes après un recalcul
-    // Rejette les tracés non-versionnés (ex: polling REST GET /v1/rides/{id} en cache)
-    if (!force &&
-        version == 0 &&
-        _currentRouteVersion > 0 &&
-        now.difference(_lastRouteUpdateTime).inSeconds < 4) {
+    // Protection 2 : Verrou anti-écrasement permanent : si un itinéraire dynamique versionné est déjà actif
+    // (reçu en direct via WebSocket), rejeter les tracés non-versionnés (v0) provenant du polling REST
+    // ou du plannedPolyline statique initial pour empêcher que le tracé ne disparaisse ou ne revienne à l'ancien départ.
+    if (!force && version == 0 && _currentRouteVersion > 0) {
       debugPrint(
-          '[ActiveRide] 🛡️ Verrou recalcul actif : tracé REST non versionné ignoré pour éviter tout clignotement');
+          '[ActiveRide] 🛡️ Tracé REST non versionné (v0) ignoré car itinéraire dynamique v$_currentRouteVersion déjà actif');
       return;
     }
 
     if (version > _currentRouteVersion) {
       _currentRouteVersion = version;
     }
-    _lastRouteUpdateTime = now;
 
     setState(() {
       _hasBackendRemainingPoints = true;
@@ -1070,9 +1084,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? '';
 
-    // Si la voiture s'est écartée de l'itinéraire (> 60m), le chauffeur a pris une autre route
+    // Si la voiture s'est écartée de l'itinéraire (> 120m), le chauffeur a pris une autre route
     // et le backend recalcule : NE JAMAIS découper artificiellement l'ancien tracé !
-    if (distToRoute > 60.0) {
+    if (distToRoute > 120.0) {
       if (effectiveRideId.isNotEmpty &&
           mounted &&
           !isTest &&
@@ -1084,20 +1098,19 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       return;
     }
 
-    // Si le backend a déjà transmis le tracé restant exact (remainingPoints),
-    // ne JAMAIS l'écraser par un calcul local côté front !
-    if (!_hasBackendRemainingPoints) {
-      final traveled = <LatLng>[];
-      for (int i = 0; i <= nearestIdx && i < _effectiveRoute.length; i++) {
-        traveled.add(_effectiveRoute[i]);
-      }
+    // Découper les points dépassés au fur et à mesure que le véhicule avance le long de l'itinéraire
+    final traveled = <LatLng>[];
+    for (int i = 0; i <= nearestIdx && i < _effectiveRoute.length; i++) {
+      traveled.add(_effectiveRoute[i]);
+    }
 
-      final remaining = <LatLng>[];
-      for (int i = nearestIdx; i < _effectiveRoute.length; i++) {
-        remaining.add(_effectiveRoute[i]);
-      }
+    final remaining = <LatLng>[];
+    for (int i = nearestIdx; i < _effectiveRoute.length; i++) {
+      remaining.add(_effectiveRoute[i]);
+    }
 
-      _traveledPoints = traveled;
+    _traveledPoints = traveled;
+    if (remaining.length >= 2) {
       _remainingPoints = remaining;
     }
 
@@ -1272,7 +1285,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   /// Méthode appelée lorsque le serveur envoie une mise à jour GPS du chauffeur (via WebSocket driverLocationStream).
-  /// Positionne le véhicule exactement là où se trouve le chauffeur en animant son déplacement de manière fluide.
+  /// Positionne le véhicule exactement là où se trouve le chauffeur en utilisant le cap (heading) exact géré par le backend.
   void updateCarLocation(
     LatLng newPosition, {
     double? heading,
@@ -1285,61 +1298,20 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     _hasReceivedRealGps = true;
 
-    // Cap/heading : connecté directement au cap renvoyé par le backend
+    // Cap/heading : connecté directement au cap renvoyé par le backend (déjà aligné dans le sens de la route)
     final targetHeading = (heading != null && heading != 0.0)
         ? heading
         : _currentCarHeading;
 
-    final isTest =
-        WidgetsBinding.instance.runtimeType.toString().contains('Test');
-
-    if (isTest) {
-      _smoothCarController?.stop();
-      setState(() {
-        _currentCarPosition = newPosition;
-        _currentCarHeading = targetHeading;
-        _updateRouteProgressForCar(newPosition);
-      });
-      return;
-    }
-
-    final distChange = _haversineMeters(_currentCarPosition, newPosition);
-    // Anti-jitter: si le déplacement est négligeable (< 0.5m), ignorer
-    if (distChange < 0.5) {
-      return;
-    }
-
-    // Si le déplacement est important (> 120m, ex: grand saut, reconnexion),
-    // positionner immédiatement le véhicule sans animation longue
-    if (distChange > 120) {
-      _smoothCarController?.stop();
-      setState(() {
-        _currentCarPosition = newPosition;
-        _currentCarHeading = targetHeading;
-        _updateRouteProgressForCar(newPosition);
-      });
-      if (_followCar && _mapController != null) {
-        _isProgrammaticCameraMove = true;
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLng(newPosition),
-        );
-      }
-      return;
-    }
-
+    // Supprimer toute interpolation 2D linéaire en vol d'oiseau qui dévie le véhicule de la route :
+    // Le backend positionne déjà la voiture sur la route et fournit la rotation exacte (heading).
     _smoothCarController?.stop();
 
-    final durMs = (animateMs != null && animateMs > 0) ? animateMs : 1000;
-    _smoothCarController?.duration = Duration(milliseconds: durMs);
-
-    _animStartPos = _currentCarPosition;
-    _animEndPos = newPosition;
-    _animStartHeading = _currentCarHeading;
-    _animEndHeading = targetHeading;
-
-    _updateRouteProgressForCar(newPosition);
-
-    _smoothCarController?.forward(from: 0.0);
+    setState(() {
+      _currentCarPosition = newPosition;
+      _currentCarHeading = targetHeading;
+      _updateRouteProgressForCar(newPosition);
+    });
 
     // Suivi de caméra fluide avec la position reçue
     if (_followCar && _mapController != null) {
@@ -1775,30 +1747,24 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Set<Polyline> _buildPolylines() {
-    final activePts = _remainingPoints.length >= 2
+    final basePts = _remainingPoints.length >= 2
         ? _remainingPoints
         : _effectiveRoute;
 
-    if (activePts.length < 2) return {};
+    if (basePts.length < 2) return {};
+
+    // S'assurer que le tracé part toujours exactement du véhicule (la voiture est en tête de polyline)
+    final distToStart = _haversineMeters(_currentCarPosition, basePts.first);
+    final List<LatLng> activePts;
+    if (distToStart > 0.5 && distToStart < 120.0) {
+      activePts = [_currentCarPosition, ...basePts];
+    } else {
+      activePts = basePts;
+    }
 
     final polylines = <Polyline>{};
 
-    // 1. Distance déjà parcourue avec couleur différenciée (gris discret AppColors.routeTraveled)
-    if (_traveledPoints.length >= 2 && _progressRatio > 0.005) {
-      polylines.add(
-        Polyline(
-          polylineId: const PolylineId('traveled_route'),
-          points: _traveledPoints,
-          color: AppColors.routeTraveled,
-          width: 4,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      );
-    }
-
-    // 2. Distance restante avec couleurs dynamiques de trafic (Vert fluide, ambre ralenti, rouge bouchon)
+    // Distance restante avec couleurs dynamiques de trafic (Vert fluide, ambre ralenti, rouge bouchon)
     final activePolylines = RideEtaCalculator.buildTrafficPolylines(
       baseId: 'active_route',
       points: activePts,

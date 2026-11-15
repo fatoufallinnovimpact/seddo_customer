@@ -375,12 +375,12 @@ class RealtimeDriverLocationEvent {
     final rawPoly = (json['polyline'] ??
             posObj['polyline'] ??
             dataMap?['polyline'] ??
-            json['plannedPolyline'] ??
-            posObj['plannedPolyline'] ??
-            dataMap?['plannedPolyline'] ??
-            json['encodedPolyline'] ??
+            json['remainingPolyline'] ??
+            posObj['remainingPolyline'] ??
+            dataMap?['remainingPolyline'] ??
             routeObj?['polyline'] ??
-            routeObj?['plannedPolyline'] ??
+            routeObj?['remainingPolyline'] ??
+            json['encodedPolyline'] ??
             routeObj?['encodedPolyline'] ??
             (json['route'] is String ? json['route'] : null))
         ?.toString();

@@ -7,6 +7,7 @@ import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/utils/active_ride_navigation_helper.dart';
 import 'package:seddo/services/realtime_service.dart';
+import 'package:seddo/services/route_service.dart';
 import '../../test_helpers/test_localization_helper.dart';
 
 void main() {
@@ -528,5 +529,123 @@ void main() {
       expect(state.currentCarPosition.latitude, closeTo(14.6805, 0.0001));
       expect(state.currentCarHeading, equals(145.0)); // Conservé sans remise à zéro
     });
+
+    testWidgets('ActiveRidePage does not overwrite live dynamic route with unversioned plannedPolyline',
+        (tester) async {
+      final initialRoute = [
+        const LatLng(14.6700, -17.4300),
+        const LatLng(14.6720, -17.4320),
+        const LatLng(14.6750, -17.4350),
+      ];
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            rideId: 'ride_reroute_test_2',
+            departure: departure,
+            destination: destination,
+            driver: driver,
+            rideOption: rideOption,
+            polylinePoints: initialRoute,
+            isOffline: false,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(ActiveRidePage));
+
+      // 1. Chauffeur envoie un nouvel itinéraire dynamique via WebSocket (v1)
+      RealtimeService().emitMockEvent('driver.location', {
+        'rideId': 'ride_reroute_test_2',
+        'lat': 14.6800,
+        'lng': -17.4400,
+        'heading': 90.0,
+        'version': 1,
+        'points': [
+          {'lat': 14.6800, 'lng': -17.4400},
+          {'lat': 14.6850, 'lng': -17.4450},
+          {'lat': 14.6900, 'lng': -17.4500},
+        ],
+        'accuracy': 5.0,
+      });
+      await tester.pump();
+
+      expect(state.remainingPoints.first.latitude, closeTo(14.6800, 0.0001));
+
+      // 2. Un événement statut ou REST arrive avec l'ancien plannedPolyline (version 0 ou absent)
+      RealtimeService().emitMockEvent('ride.status', {
+        'rideId': 'ride_reroute_test_2',
+        'status': 'IN_PROGRESS',
+        'ride': {
+          'id': 'ride_reroute_test_2',
+          'status': 'IN_PROGRESS',
+          'plannedPolyline': RouteService.encodePolyline(initialRoute),
+          'version': 0,
+        },
+      });
+      await tester.pump();
+
+      // Vérifier que le tracé dynamique v1 n'a PAS été écrasé par l'ancien plannedPolyline v0
+      expect(state.remainingPoints.first.latitude, closeTo(14.6800, 0.0001));
+    });
+
+    testWidgets('ActiveRidePage applies backend car location and heading directly and anchors polyline at vehicle head',
+        (tester) async {
+      final initialRoute = [
+        const LatLng(14.6700, -17.4300),
+        const LatLng(14.6720, -17.4320),
+        const LatLng(14.6750, -17.4350),
+      ];
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: ActiveRidePage(
+            rideId: 'ride_car_heading_anchor_test',
+            departure: departure,
+            destination: destination,
+            driver: driver,
+            rideOption: rideOption,
+            polylinePoints: initialRoute,
+            isOffline: false,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final dynamic state = tester.state(find.byType(ActiveRidePage));
+
+      // 1. Simuler l'arrivée d'une mise à jour backend avec un cap routier (heading) précis
+      RealtimeService().emitMockEvent('driver.location', {
+        'rideId': 'ride_car_heading_anchor_test',
+        'lat': 14.6705,
+        'lng': -17.4305,
+        'heading': 245.0,
+        'points': [
+          {'lat': 14.6710, 'lng': -17.4310},
+          {'lat': 14.6725, 'lng': -17.4325},
+          {'lat': 14.6750, 'lng': -17.4350},
+        ],
+        'accuracy': 5.0,
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Vérifier que la position et le cap exacts du backend sont appliqués directement sans interpolation décalée
+      expect(state.currentCarPosition.latitude, closeTo(14.6705, 0.0001));
+      expect(state.currentCarPosition.longitude, closeTo(-17.4305, 0.0001));
+      expect(state.currentCarHeading, equals(245.0));
+
+      // 2. Vérifier que la voiture est directement liée à la tête du polyline (sans trou ni décalage)
+      final polylines = (tester.widget(find.byType(GoogleMap)) as GoogleMap).polylines;
+      expect(polylines, isNotEmpty);
+      final activePoly = polylines.firstWhere((p) => p.polylineId.value.contains('active_route'));
+      // Le premier point du polyline actif part exactement de la position du véhicule
+      expect(activePoly.points.first.latitude, closeTo(14.6705, 0.0001));
+      expect(activePoly.points.first.longitude, closeTo(-17.4305, 0.0001));
+    });
   });
 }
+
