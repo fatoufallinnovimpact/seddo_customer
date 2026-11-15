@@ -10,6 +10,7 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/auth/data/models/user_model.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
@@ -66,7 +67,8 @@ class RideBookingPage extends StatefulWidget {
   State<RideBookingPage> createState() => _RideBookingPageState();
 }
 
-class _RideBookingPageState extends State<RideBookingPage> {
+class _RideBookingPageState extends State<RideBookingPage>
+    with SingleTickerProviderStateMixin {
   late final RideService _rideService;
   GoogleMapController? _mapController;
 
@@ -90,12 +92,25 @@ class _RideBookingPageState extends State<RideBookingPage> {
   String? _pickupLandmark;
   String _userPhoneDisplay = '77 ••• 45 12';
 
+  late PlaceSearchResult _departure;
+
   final GlobalKey _bottomSheetKey = GlobalKey();
   double _bottomSheetHeight = 440.0;
+  double _sheetDragOffset = 0.0;
+  late AnimationController _sheetAnimController;
+  Animation<double>? _sheetAnimation;
 
   @override
   void initState() {
     super.initState();
+    _departure = widget.departure;
+    _sanitizeAndResolveDeparture();
+
+    _sheetAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+
     _pickupLandmark = widget.initialPickupLandmark;
     _rideService = widget.rideService ?? RideService();
     _computeRideOptions();
@@ -178,8 +193,101 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
   @override
   void dispose() {
+    _sheetAnimController.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  void _sanitizeAndResolveDeparture() {
+    final raw = _departure.mainText;
+    final isGenericOrCoords = raw.isEmpty ||
+        raw == 'Position sur la carte' ||
+        raw == 'Position sélectionnée' ||
+        raw == 'Position GPS actuelle' ||
+        raw == 'Ma position actuelle' ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(raw);
+
+    if (isGenericOrCoords) {
+      final fallback = PlacesService.getDakarDistrictFallback(
+        _departure.latitude,
+        _departure.longitude,
+      );
+      _departure = PlaceSearchResult(
+        id: _departure.id,
+        mainText: fallback.mainText,
+        secondaryText: fallback.secondaryText,
+        fullAddress: fallback.fullAddress,
+        latitude: _departure.latitude,
+        longitude: _departure.longitude,
+        category: 'pickup',
+      );
+    }
+
+    if (!UserLocationStorage.isStreetLevelAddress(_departure.mainText)) {
+      final service = widget.placesService ?? PlacesService();
+      service.reverseGeocode(_departure.latitude, _departure.longitude).then((res) {
+        if (mounted &&
+            res.mainText.isNotEmpty &&
+            res.mainText != 'Position sur la carte' &&
+            res.mainText != 'Position sélectionnée' &&
+            !RegExp(r'^-?\d+\.\d+').hasMatch(res.mainText)) {
+          setState(() {
+            _departure = PlaceSearchResult(
+              id: _departure.id,
+              mainText: res.mainText,
+              secondaryText: res.secondaryText.isNotEmpty
+                  ? res.secondaryText
+                  : 'Dakar, Sénégal',
+              fullAddress: res.fullAddress,
+              latitude: _departure.latitude,
+              longitude: _departure.longitude,
+              category: 'pickup',
+            );
+          });
+        }
+      }).catchError((_) {});
+    }
+  }
+
+  void _onSheetDragUpdate(DragUpdateDetails details, double maxOffset) {
+    if (maxOffset <= 0) return;
+    setState(() {
+      _sheetDragOffset =
+          (_sheetDragOffset + details.primaryDelta!).clamp(0.0, maxOffset);
+    });
+  }
+
+  void _onSheetDragEnd(DragEndDetails details, double maxOffset) {
+    if (maxOffset <= 0) return;
+    final velocity = details.primaryVelocity ?? 0.0;
+    if (velocity > 250) {
+      _animateSheetTo(maxOffset);
+    } else if (velocity < -250) {
+      _animateSheetTo(0.0);
+    } else {
+      if (_sheetDragOffset > maxOffset * 0.4) {
+        _animateSheetTo(maxOffset);
+      } else {
+        _animateSheetTo(0.0);
+      }
+    }
+  }
+
+  void _animateSheetTo(double targetOffset) {
+    _sheetAnimController.stop();
+    _sheetAnimation = Tween<double>(
+      begin: _sheetDragOffset,
+      end: targetOffset,
+    ).animate(CurvedAnimation(
+      parent: _sheetAnimController,
+      curve: Curves.easeOutCubic,
+    ))..addListener(() {
+        setState(() {
+          _sheetDragOffset = _sheetAnimation!.value;
+        });
+      });
+    _sheetAnimController.reset();
+    _sheetAnimController.forward();
   }
 
   void _computeRideOptions() {
@@ -232,8 +340,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
   Future<void> _fetchNearbyDrivers() async {
     try {
       final res = await _rideService.getNearbyDrivers(
-        lat: widget.departure.latitude,
-        lng: widget.departure.longitude,
+        lat: _departure.latitude,
+        lng: _departure.longitude,
       );
 
       if (res != null && mounted) {
@@ -264,7 +372,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
     RideQuoteModel? quote;
     try {
       quote = await _rideService.getQuote(
-        departure: widget.departure,
+        departure: _departure,
         destination: widget.destination,
         pickupNote: _pickupLandmark,
       );
@@ -407,10 +515,10 @@ class _RideBookingPageState extends State<RideBookingPage> {
     if (_mapController == null) return;
 
     if (_polylinePoints.isNotEmpty) {
-      double south = widget.departure.latitude;
-      double north = widget.departure.latitude;
-      double west = widget.departure.longitude;
-      double east = widget.departure.longitude;
+      double south = _departure.latitude;
+      double north = _departure.latitude;
+      double west = _departure.longitude;
+      double east = _departure.longitude;
 
       for (final p in _polylinePoints) {
         if (p.latitude < south) south = p.latitude;
@@ -428,10 +536,10 @@ class _RideBookingPageState extends State<RideBookingPage> {
         CameraUpdate.newLatLngBounds(bounds, 90),
       );
     } else {
-      final south = math.min(widget.departure.latitude, widget.destination.latitude);
-      final north = math.max(widget.departure.latitude, widget.destination.latitude);
-      final west = math.min(widget.departure.longitude, widget.destination.longitude);
-      final east = math.max(widget.departure.longitude, widget.destination.longitude);
+      final south = math.min(_departure.latitude, widget.destination.latitude);
+      final north = math.max(_departure.latitude, widget.destination.latitude);
+      final west = math.min(_departure.longitude, widget.destination.longitude);
+      final east = math.max(_departure.longitude, widget.destination.longitude);
 
       final bounds = LatLngBounds(
         southwest: LatLng(south, west),
@@ -453,8 +561,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
         Marker(
           markerId: const MarkerId('pickup_marker'),
           position: LatLng(
-            widget.departure.latitude,
-            widget.departure.longitude,
+            _departure.latitude,
+            _departure.longitude,
           ),
           icon: _pickupBadgeIcon!,
           anchor: const Offset(0.5, 1.0),
@@ -519,8 +627,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
       await OfflineModalSheet.show(
         context,
         currentPosition:
-            LatLng(widget.departure.latitude, widget.departure.longitude),
-        currentAddress: widget.departure.fullAddress,
+            LatLng(_departure.latitude, _departure.longitude),
+        currentAddress: _departure.fullAddress,
         onRetry: () => _onOrderRide(),
       );
       return;
@@ -603,7 +711,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
           Navigator.of(context).push(
             SlideRightToLeftRoute(
               page: DriverApproachingPage(
-                departure: widget.departure,
+                departure: _departure,
                 destination: widget.destination,
                 rideOption: selectedOption,
                 driver: driver,
@@ -619,7 +727,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
           Navigator.of(context).push(
             SlideRightToLeftRoute(
               page: DriverSearchPage(
-                departure: widget.departure,
+                departure: _departure,
                 destination: widget.destination,
                 rideOption: selectedOption,
                 polylinePoints: effectivePoints,
@@ -641,8 +749,12 @@ class _RideBookingPageState extends State<RideBookingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final _ = context.locale;
+    try {
+      final _ = EasyLocalization.of(context)?.locale;
+    } catch (_) {}
     final systemBottom = MediaQuery.of(context).padding.bottom;
+    final maxDragOffset =
+        math.max(0.0, _bottomSheetHeight - (systemBottom + 92.0));
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
 
@@ -658,8 +770,8 @@ class _RideBookingPageState extends State<RideBookingPage> {
             style: MapStyleService.style,
             initialCameraPosition: CameraPosition(
               target: LatLng(
-                widget.departure.latitude,
-                widget.departure.longitude,
+                _departure.latitude,
+                _departure.longitude,
               ),
               zoom: 14.5,
             ),
@@ -793,12 +905,15 @@ class _RideBookingPageState extends State<RideBookingPage> {
           // 3. Bouton flottant de caméra cyclique (Départ / Arrivée / Trajet complet)
           Positioned(
             right: 16,
-            bottom: _bottomSheetHeight + 14,
+            bottom: math.max(
+              14.0,
+              (_bottomSheetHeight - _sheetDragOffset) + 14.0,
+            ),
             child: RideMapCameraToggleButton(
               mapControllerGetter: () => _mapController,
               departureLocation: LatLng(
-                widget.departure.latitude,
-                widget.departure.longitude,
+                _departure.latitude,
+                _departure.longitude,
               ),
               destinationLocation: LatLng(
                 widget.destination.latitude,
@@ -809,78 +924,113 @@ class _RideBookingPageState extends State<RideBookingPage> {
             ),
           ),
 
-          // 4. Modal Sheet avec options de course et prix
+          // 4. Modal Sheet avec options de course et prix (Déplaçable vers le bas et le haut)
           Positioned(
             left: 0,
             right: 0,
-            bottom: 0,
-            child: Container(
-              key: _bottomSheetKey,
-              decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(AppConstants.radiusSheet),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.shadowCardBlack,
-                    blurRadius: 24,
-                    offset: Offset(0, -6),
+            bottom: -_sheetDragOffset,
+            child: GestureDetector(
+              behavior: HitTestBehavior.deferToChild,
+              onTap: _sheetDragOffset > 20 ? () => _animateSheetTo(0.0) : null,
+              child: Container(
+                key: _bottomSheetKey,
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(AppConstants.radiusSheet),
                   ),
-                ],
-              ),
-              padding: EdgeInsets.fromLTRB(
-                AppConstants.spacingMd + 4,
-                10,
-                AppConstants.spacingMd + 4,
-                systemBottom + AppConstants.spacingMd,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Barre de glissement
-                  Container(
-                    width: AppConstants.circularIconContainerSize,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.dragHandle,
-                      borderRadius: BorderRadius.circular(
-                        AppConstants.radiusXs,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.shadowCardBlack,
+                      blurRadius: 24,
+                      offset: Offset(0, -6),
+                    ),
+                  ],
+                ),
+                padding: EdgeInsets.fromLTRB(
+                  AppConstants.spacingMd + 4,
+                  10,
+                  AppConstants.spacingMd + 4,
+                  systemBottom + AppConstants.spacingMd,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Barre de glissement et en-tête déplaçables
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) =>
+                          _onSheetDragUpdate(details, maxDragOffset),
+                      onVerticalDragEnd: (details) =>
+                          _onSheetDragEnd(details, maxDragOffset),
+                      onTap: () {
+                        if (_sheetDragOffset > 20) {
+                          _animateSheetTo(0.0);
+                        }
+                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: AppConstants.circularIconContainerSize,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: AppColors.dragHandle,
+                                borderRadius: BorderRadius.circular(
+                                  AppConstants.radiusXs,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // 1. En-tête tout en haut du modal (centré) : "Choisissez une course" & "Dakar et banlieue"
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  'ride.choose_ride'.tr(),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.textPrimary,
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                              ),
+                              if (_sheetDragOffset > 30) ...[
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.keyboard_arrow_up_rounded,
+                                  size: 22,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _zoneName != null && _zoneName!.isNotEmpty
+                                ? _zoneName!
+                                : 'ride.dakar_and_suburbs'.tr(),
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // 1. En-tête tout en haut du modal (centré) : "Choisissez une course" & "Dakar et banlieue"
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(
-                        'ride.choose_ride'.tr(),
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _zoneName != null && _zoneName!.isNotEmpty
-                            ? _zoneName!
-                            : 'ride.dakar_and_suburbs'.tr(),
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
 
                   // 2. Bloc Départ & Arrivée (sans texte Arrêts)
                   Container(
@@ -905,7 +1055,7 @@ class _RideBookingPageState extends State<RideBookingPage> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                widget.departure.mainText,
+                                _departure.mainText,
                                 style: GoogleFonts.inter(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
@@ -1159,9 +1309,10 @@ class _RideBookingPageState extends State<RideBookingPage> {
               ),
             ),
           ),
-        ],
-      ),
-    );
+        ),
+      ],
+    ),
+  );
   }
 }
 

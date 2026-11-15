@@ -335,11 +335,17 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _realtimeLocationSub =
           RealtimeService().driverLocationStream.listen((event) {
         if (!mounted) return;
-        final matchesRide = event.rideId == null ||
+        final matchesRide = effectiveRideId.isEmpty ||
+            event.rideId == null ||
             event.rideId!.isEmpty ||
             event.rideId == effectiveRideId ||
             event.rideId!.endsWith(effectiveRideId) ||
-            effectiveRideId.endsWith(event.rideId!);
+            effectiveRideId.endsWith(event.rideId!) ||
+            (event.driverId != null &&
+                event.driverId!.isNotEmpty &&
+                (event.driverId == widget.driver.id ||
+                    widget.driver.id.endsWith(event.driverId!) ||
+                    event.driverId!.endsWith(widget.driver.id)));
         if (matchesRide) {
           _lastDriverLocationTime = DateTime.now();
           if (_isPositionUpdating) {
@@ -353,14 +359,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               event.version > 0 && event.version < _currentRouteVersion;
 
           if (event.remainingPoints.length >= 2 && !isOlderVersion) {
-            final remainingDistM =
+            final remainingDistM = event.remainingM ??
                 _calculatePolylineDistanceMeters(event.remainingPoints);
             setState(() {
               _hasBackendRemainingPoints = true;
               _remainingPoints = List<LatLng>.from(event.remainingPoints);
               _effectiveRoute = List<LatLng>.from(event.remainingPoints);
               _lastNearestRouteIndex = 0;
-              _traveledPoints = []; // Réinitialiser pour éviter de tracer sur une ancienne rue
+              _traveledPoints = []; // Pas de ligne artificielle
               if (event.traffic.isNotEmpty) {
                 _traffic = event.traffic;
               }
@@ -397,6 +403,15 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             if (_totalTripDistanceMeters <= 0) {
               _totalTripDistanceMeters =
                   _calculatePolylineDistanceMeters(_effectiveRoute);
+              if (_totalTripDistanceMeters <= 0 && widget.rideOption.distanceM != null) {
+                _totalTripDistanceMeters = widget.rideOption.distanceM!.toDouble();
+              }
+              if (_totalTripDistanceMeters <= 0 && widget.driver.distanceKm > 0) {
+                _totalTripDistanceMeters = widget.driver.distanceKm * 1000.0;
+              }
+              if (_totalTripDistanceMeters <= 0) {
+                _totalTripDistanceMeters = effectiveRemainingM / 0.95;
+              }
             }
             if (_totalTripDistanceMeters > 0) {
               if (effectiveRemainingM > _totalTripDistanceMeters) {
@@ -433,14 +448,19 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             });
             _syncLiveUpdate(
                 progress: _progressRatio, etaMinutes: event.etaMinutes!);
+          } else {
+            _syncLiveUpdate(
+                progress: _progressRatio, etaMinutes: _remainingEtaMinutes);
           }
 
-          // 3. animateMs, lat, lng, heading : animation fluide voiture et caméra
-          updateCarLocation(
-            event.location,
-            heading: event.heading,
-            animateMs: event.animateMs,
-          );
+          // 3. animateMs, lat, lng, heading : position posée sur la route et cap direct backend
+          if (event.location.latitude != 0 && event.location.longitude != 0) {
+            updateCarLocation(
+              event.location,
+              heading: event.heading,
+              animateMs: event.animateMs,
+            );
+          }
         }
       });
 
@@ -695,9 +715,17 @@ class _ActiveRidePageState extends State<ActiveRidePage>
             rideObj['longitude'] as num?)
         ?.toDouble();
     final heading = (posObj?['heading'] ??
+            posObj?['cap'] ??
             posObj?['bearing'] ??
+            posObj?['direction'] ??
+            posObj?['course'] ??
             driverObj?['heading'] ??
-            rideObj['heading'] as num?)
+            driverObj?['cap'] ??
+            driverObj?['bearing'] ??
+            driverObj?['direction'] ??
+            driverObj?['course'] ??
+            rideObj['heading'] ??
+            rideObj['cap'] as num?)
         ?.toDouble();
 
     final durS = (rideObj['durationSeconds'] ??
@@ -930,16 +958,41 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _totalTripDistanceMeters = widget.rideOption.distanceM!.toDouble();
     }
 
-    // Position initiale du véhicule
+    // Position et cap initiaux du véhicule :
+    // Priorité absolue aux données fournies par le backend (position et cap) sans aucun recalcul front
     if (_effectiveRoute.isNotEmpty) {
       _currentCarPosition = _effectiveRoute.first;
-      if (_effectiveRoute.length >= 2) {
-        _currentCarHeading =
-            _calculateBearing(_effectiveRoute[0], _effectiveRoute[1]);
-      }
+    } else if (widget.driver.currentLocation.latitude != 0 &&
+        widget.driver.currentLocation.longitude != 0 &&
+        widget.driver.currentLocation.latitude != 14.6937) {
+      _currentCarPosition = widget.driver.currentLocation;
     } else {
       _currentCarPosition =
           LatLng(widget.departure.latitude, widget.departure.longitude);
+    }
+
+    final initialRouteBearing = _effectiveRoute.length >= 2
+        ? _calculateBearing(_effectiveRoute[0], _effectiveRoute[1])
+        : null;
+
+    if (_effectiveRoute.length >= 2) {
+      if (widget.driver.heading != null && widget.driver.heading != 0.0) {
+        final diff =
+            (widget.driver.heading! - initialRouteBearing!).abs() % 360.0;
+        final angleDiff = diff > 180.0 ? 360.0 - diff : diff;
+        // Si le cap transmis est en sens inverse (> 100°, ex: cap d'approche résiduel à 180°),
+        // orienter immédiatement l'avant de la voiture face à la polyline de course
+        if (angleDiff > 100.0) {
+          _currentCarHeading = initialRouteBearing;
+        } else {
+          _currentCarHeading = widget.driver.heading!;
+        }
+      } else {
+        _currentCarHeading = initialRouteBearing!;
+      }
+    } else if (widget.driver.heading != null) {
+      _currentCarHeading = widget.driver.heading!;
+    } else {
       _currentCarHeading = 0.0;
     }
 
@@ -1010,10 +1063,29 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       _lastNearestRouteIndex = 0;
       // Si aucun GPS réel n'a encore été reçu, positionner le véhicule au début
       if (!_hasReceivedRealGps) {
-        _currentCarPosition = _effectiveRoute.first;
+        if (widget.driver.currentLocation.latitude != 0 &&
+            widget.driver.currentLocation.longitude != 0 &&
+            widget.driver.currentLocation.latitude != 14.6937) {
+          _currentCarPosition = widget.driver.currentLocation;
+        } else {
+          _currentCarPosition = _effectiveRoute.first;
+        }
         if (_effectiveRoute.length >= 2) {
-          _currentCarHeading =
+          final routeBearing =
               _calculateBearing(_effectiveRoute[0], _effectiveRoute[1]);
+          if (widget.driver.heading != null && widget.driver.heading != 0.0) {
+            final diff = (widget.driver.heading! - routeBearing).abs() % 360.0;
+            final angleDiff = diff > 180.0 ? 360.0 - diff : diff;
+            if (angleDiff > 100.0) {
+              _currentCarHeading = routeBearing;
+            } else {
+              _currentCarHeading = widget.driver.heading!;
+            }
+          } else {
+            _currentCarHeading = routeBearing;
+          }
+        } else if (widget.driver.heading != null) {
+          _currentCarHeading = widget.driver.heading!;
         }
       }
     });
@@ -1068,6 +1140,11 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   /// la vraie position du chauffeur reçue en direct sans jamais déplacer ou contraindre la voiture
   /// et SANS JAMAIS tracer de ligne artificielle en vol d'oiseau vers la voiture.
   void _updateRouteProgressForCar(LatLng curPos) {
+    if (_hasBackendRemainingPoints) {
+      // Le backend gère déjà l'intégralité du tracé restant (déjà coupé à la voiture)
+      // Aucun calcul côté front ne doit découper ou modifier ce tracé.
+      return;
+    }
     if (_effectiveRoute.length < 2) {
       _traveledPoints = [];
       _remainingPoints = [];
@@ -1299,9 +1376,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _hasReceivedRealGps = true;
 
     // Cap/heading : connecté directement au cap renvoyé par le backend (déjà aligné dans le sens de la route)
-    final targetHeading = (heading != null && heading != 0.0)
-        ? heading
-        : _currentCarHeading;
+    // Conservé sans remise à zéro si le paquet suivant ne contient pas de cap explicite
+    final targetHeading = heading ?? _currentCarHeading;
 
     // Supprimer toute interpolation 2D linéaire en vol d'oiseau qui dévie le véhicule de la route :
     // Le backend positionne déjà la voiture sur la route et fournit la rotation exacte (heading).
@@ -1310,8 +1386,16 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     setState(() {
       _currentCarPosition = newPosition;
       _currentCarHeading = targetHeading;
-      _updateRouteProgressForCar(newPosition);
+      if (!_hasBackendRemainingPoints) {
+        _updateRouteProgressForCar(newPosition);
+      }
     });
+
+    final now = DateTime.now();
+    if (now.difference(_lastLiveUpdateSync).inMilliseconds > 2000) {
+      _lastLiveUpdateSync = now;
+      _syncLiveUpdate();
+    }
 
     // Suivi de caméra fluide avec la position reçue
     if (_followCar && _mapController != null) {
@@ -1329,14 +1413,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   @visibleForTesting
   void applyExternalGpsLocation(LatLng newPosition, {double? heading}) {
     if (!mounted) return;
-    final targetHeading = (heading != null && heading != 0.0)
-        ? heading
-        : _currentCarHeading;
+    final targetHeading = heading ?? _currentCarHeading;
     _smoothCarController?.stop();
     setState(() {
       _currentCarPosition = newPosition;
       _currentCarHeading = targetHeading;
-      _updateRouteProgressForCar(newPosition);
+      if (!_hasBackendRemainingPoints) {
+        _updateRouteProgressForCar(newPosition);
+      }
     });
   }
 
@@ -1731,19 +1815,61 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     // 3. Driver car marker moving along route from departure to destination
     if (_carMarkerIcon != null) {
+      final carPos = _getEffectiveCarMarkerPosition();
       markers.add(
         Marker(
           markerId: const MarkerId('driver_car_marker'),
-          position: _currentCarPosition,
+          position: carPos,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
-          rotation: _currentCarHeading,
+          rotation: _getCarMarkerRotation(),
           flat: true,
         ),
       );
     }
 
     return markers;
+  }
+
+  /// Position effective du véhicule sur la carte :
+  /// Lorsque le backend renvoie le tracé routier restant (_hasBackendRemainingPoints),
+  /// la tête du tracé (basePts.first) correspond exactement à la projection du véhicule
+  /// sur le réseau routier réel. Si le GPS brut est à proximité (< 80m),
+  /// le marqueur se cale directement sur cette tête de route, évitant ainsi que la
+  /// voiture flotte sur les trottoirs/bâtiments tout en restant parfaitement alignée.
+  LatLng _getEffectiveCarMarkerPosition() {
+    final basePts = _remainingPoints.length >= 2
+        ? _remainingPoints
+        : _effectiveRoute;
+    if (_hasBackendRemainingPoints && basePts.length >= 2) {
+      final roadHead = basePts.first;
+      if (_haversineMeters(_currentCarPosition, roadHead) < 80.0) {
+        return roadHead;
+      }
+    }
+    return _currentCarPosition;
+  }
+
+  double _getCarMarkerRotation() {
+    final basePts = _remainingPoints.length >= 2
+        ? _remainingPoints
+        : _effectiveRoute;
+
+    if (basePts.length < 2) {
+      return _currentCarHeading;
+    }
+
+    final carPos = _getEffectiveCarMarkerPosition();
+
+    // Prochain point devant le véhicule sur la polyline
+    LatLng nextPoint = basePts[1];
+    if (basePts.length > 2 &&
+        _haversineMeters(carPos, nextPoint) < 1.5) {
+      nextPoint = basePts[2];
+    }
+
+    // Le devant de la voiture est STRICTEMENT face à la polyline
+    return _calculateBearing(carPos, nextPoint);
   }
 
   Set<Polyline> _buildPolylines() {
@@ -1753,14 +1879,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
     if (basePts.length < 2) return {};
 
-    // S'assurer que le tracé part toujours exactement du véhicule (la voiture est en tête de polyline)
-    final distToStart = _haversineMeters(_currentCarPosition, basePts.first);
-    final List<LatLng> activePts;
-    if (distToStart > 0.5 && distToStart < 120.0) {
-      activePts = [_currentCarPosition, ...basePts];
-    } else {
-      activePts = basePts;
-    }
+    // Le tracé actif suit STRICTEMENT l'itinéraire routier officiel renvoyé par le backend.
+    // AUCUN point GPS brut n'est préfixé à vol d'oiseau pour relier artificiellement
+    // la voiture décalée, exactement comme dans l'application chauffeur.
+    final activePts = basePts;
 
     final polylines = <Polyline>{};
 

@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/home/presentation/widgets/seddo_map_picker_pin.dart';
@@ -75,9 +76,27 @@ class _PickupMapLocationPickerPageState
     _placesService = widget.placesService ?? PlacesService();
     _rideService = widget.rideService ?? RideService();
     _currentLocation = widget.initialLocation;
-    _mainAddress = widget.initialMainText ?? 'Rue YF-557, 20';
-    _secondaryAddress = widget.initialSecondaryText ??
-        'Yoff, Almadies, Département de Dakar';
+
+    final initialRaw = widget.initialMainText;
+    final isGenericOrCoords = initialRaw == null ||
+        initialRaw.isEmpty ||
+        initialRaw == 'Position sur la carte' ||
+        initialRaw == 'Position sélectionnée' ||
+        initialRaw == 'Position GPS actuelle' ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(initialRaw);
+
+    if (isGenericOrCoords) {
+      final fallback = PlacesService.getDakarDistrictFallback(
+        _currentLocation.latitude,
+        _currentLocation.longitude,
+      );
+      _mainAddress = fallback.mainText;
+      _secondaryAddress = fallback.secondaryText;
+    } else {
+      _mainAddress = initialRaw;
+      _secondaryAddress = widget.initialSecondaryText ??
+          'Yoff, Almadies, Département de Dakar';
+    }
     _fullAddress = '$_mainAddress, $_secondaryAddress';
 
     _dragHintTimer = Timer(const Duration(seconds: 4), () {
@@ -89,8 +108,9 @@ class _PickupMapLocationPickerPageState
     _loadCarMarker();
     _fetchNearbyDrivers(_currentLocation);
 
-    // Geocodage initial si aucune adresse n'est déjà fournie
-    if (widget.initialMainText == null || widget.initialMainText!.isEmpty) {
+    // Geocodage initial si l'adresse est générique, coordonnées ou absente
+    if (isGenericOrCoords ||
+        !UserLocationStorage.isStreetLevelAddress(_mainAddress)) {
       _fetchAddressForLocation(_currentLocation);
     }
   }
@@ -233,16 +253,26 @@ class _PickupMapLocationPickerPageState
       );
 
       if (mounted) {
+        String main = res.mainText;
+        String sec = res.secondaryText;
+
+        if (main.isEmpty ||
+            main == 'Position sur la carte' ||
+            main == 'Position sélectionnée' ||
+            main == 'Position GPS actuelle' ||
+            RegExp(r'^-?\d+\.\d+').hasMatch(main)) {
+          final fallback = PlacesService.getDakarDistrictFallback(
+            location.latitude,
+            location.longitude,
+          );
+          main = fallback.mainText;
+          sec = fallback.secondaryText;
+        }
+
         setState(() {
-          _mainAddress = res.mainText.isNotEmpty
-              ? res.mainText
-              : 'Position sélectionnée';
-          _secondaryAddress = res.secondaryText.isNotEmpty
-              ? res.secondaryText
-              : 'Dakar, Sénégal';
-          _fullAddress = res.fullAddress.isNotEmpty
-              ? res.fullAddress
-              : '$_mainAddress, $_secondaryAddress';
+          _mainAddress = main;
+          _secondaryAddress = sec.isNotEmpty ? sec : 'Dakar, Sénégal';
+          _fullAddress = '$_mainAddress, $_secondaryAddress';
           _isLoadingAddress = false;
         });
       }

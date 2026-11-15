@@ -128,12 +128,22 @@ class DriverModel {
       licensePlate: json['licensePlate'] as String? ?? 'DK-4582-AB',
       rideType: json['rideType'] == 'confort' ? RideType.confort : RideType.eco,
       currentLocation: LatLng(
-        (json['lat'] as num?)?.toDouble() ?? 14.6937,
-        (json['lng'] as num?)?.toDouble() ?? -17.4647,
+        (json['lat'] is num
+                ? (json['lat'] as num).toDouble()
+                : (json['lat'] is String ? double.tryParse(json['lat']) : null)) ??
+            14.6937,
+        (json['lng'] is num
+                ? (json['lng'] as num).toDouble()
+                : (json['lng'] is String ? double.tryParse(json['lng']) : null)) ??
+            -17.4647,
       ),
       etaMinutes: json['etaMinutes'] as int? ?? 3,
       distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 1.2,
-      heading: (json['heading'] as num?)?.toDouble(),
+      heading: (json['heading'] ?? json['cap'] ?? json['bearing']) is num
+          ? ((json['heading'] ?? json['cap'] ?? json['bearing']) as num).toDouble()
+          : ((json['heading'] ?? json['cap'] ?? json['bearing']) is String
+              ? double.tryParse(json['heading'] ?? json['cap'] ?? json['bearing'])
+              : null),
       approachPolyline: json['approachPolyline'] as String?,
       approachDurationS: (json['approachDurationS'] as num?)?.toInt(),
       approachDistanceM: (json['approachDistanceM'] as num?)?.toInt(),
@@ -212,20 +222,44 @@ class DriverModel {
                     ? json['position'] as Map<String, dynamic>
                     : null)));
 
-    final lat = (posRaw?['lat'] as num?)?.toDouble() ??
-        (posRaw?['latitude'] as num?)?.toDouble() ??
-        (driverRaw['lat'] as num?)?.toDouble() ??
-        (driverRaw['latitude'] as num?)?.toDouble() ??
-        (json['lat'] as num?)?.toDouble() ??
+    double? parseCoord(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v);
+      return null;
+    }
+
+    final lat = parseCoord(posRaw?['lat'] ??
+            posRaw?['latitude'] ??
+            driverRaw['lat'] ??
+            driverRaw['latitude'] ??
+            json['lat'] ??
+            json['latitude'] ??
+            rawJson['lat']) ??
         14.6937;
-    final lng = (posRaw?['lng'] as num?)?.toDouble() ??
-        (posRaw?['longitude'] as num?)?.toDouble() ??
-        (driverRaw['lng'] as num?)?.toDouble() ??
-        (driverRaw['longitude'] as num?)?.toDouble() ??
-        (json['lng'] as num?)?.toDouble() ??
+    final lng = parseCoord(posRaw?['lng'] ??
+            posRaw?['longitude'] ??
+            posRaw?['lon'] ??
+            driverRaw['lng'] ??
+            driverRaw['longitude'] ??
+            json['lng'] ??
+            json['longitude'] ??
+            rawJson['lng']) ??
         -17.4647;
-    final heading = (posRaw?['heading'] as num?)?.toDouble() ??
-        (driverRaw['heading'] as num?)?.toDouble();
+    final heading = parseCoord(posRaw?['heading'] ??
+        posRaw?['cap'] ??
+        posRaw?['bearing'] ??
+        posRaw?['direction'] ??
+        driverRaw['heading'] ??
+        driverRaw['cap'] ??
+        driverRaw['bearing'] ??
+        driverRaw['direction'] ??
+        json['heading'] ??
+        json['cap'] ??
+        json['bearing'] ??
+        rawJson['heading'] ??
+        rawJson['cap'] ??
+        rawJson['bearing']);
 
     // Route & Approach route (phase APPROACH with real street polyline and traffic)
     final routeRaw = json['route'] is Map<String, dynamic>

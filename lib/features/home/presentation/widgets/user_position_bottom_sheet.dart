@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/edit_user_position_page.dart';
 import 'package:seddo/features/home/presentation/pages/pickup_map_location_picker_page.dart';
@@ -66,11 +67,56 @@ class UserPositionBottomSheet extends StatefulWidget {
 
 class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
   final SavedPlacesService _savedPlacesService = SavedPlacesService();
+  late String _displayMainAddress;
+  late String _displaySecondaryAddress;
 
   @override
   void initState() {
     super.initState();
+    _displayMainAddress = widget.mainAddress;
+    _displaySecondaryAddress = widget.secondaryAddress;
+
+    final isGenericOrCoords = _displayMainAddress.isEmpty ||
+        _displayMainAddress == 'Position sur la carte' ||
+        _displayMainAddress == 'Position sélectionnée' ||
+        _displayMainAddress == 'Position GPS actuelle' ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(_displayMainAddress) ||
+        _displaySecondaryAddress.contains(RegExp(r'^-?\d+\.\d+'));
+
+    if (isGenericOrCoords) {
+      final fallback = PlacesService.getDakarDistrictFallback(
+        widget.userLocation.latitude,
+        widget.userLocation.longitude,
+      );
+      _displayMainAddress = fallback.mainText;
+      _displaySecondaryAddress = fallback.secondaryText;
+    }
+
+    _resolvePreciseAddressIfNeeded();
     _checkIfAlreadySaved();
+  }
+
+  Future<void> _resolvePreciseAddressIfNeeded() async {
+    if (!UserLocationStorage.isStreetLevelAddress(_displayMainAddress)) {
+      try {
+        final service = widget.placesService ?? PlacesService();
+        final res = await service.reverseGeocode(
+          widget.userLocation.latitude,
+          widget.userLocation.longitude,
+        );
+        if (mounted &&
+            res.mainText.isNotEmpty &&
+            res.mainText != 'Position sur la carte' &&
+            !RegExp(r'^-?\d+\.\d+').hasMatch(res.mainText)) {
+          setState(() {
+            _displayMainAddress = res.mainText;
+            _displaySecondaryAddress = res.secondaryText.isNotEmpty
+                ? res.secondaryText
+                : 'Dakar, Sénégal';
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _checkIfAlreadySaved() async {
@@ -79,8 +125,8 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
       final already = list.any((p) =>
           (p.latitude - widget.userLocation.latitude).abs() < 0.0005 &&
           (p.longitude - widget.userLocation.longitude).abs() < 0.0005 ||
-          p.name.trim().toLowerCase() == widget.mainAddress.trim().toLowerCase() ||
-          p.address.toLowerCase().contains(widget.mainAddress.toLowerCase()));
+          p.name.trim().toLowerCase() == _displayMainAddress.trim().toLowerCase() ||
+          p.address.toLowerCase().contains(_displayMainAddress.toLowerCase()));
       if (already && mounted) {
         setState(() {});
       }
@@ -92,8 +138,8 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
       SlideRightToLeftRoute(
         page: PickupMapLocationPickerPage(
           initialLocation: widget.userLocation,
-          initialMainText: widget.mainAddress,
-          initialSecondaryText: widget.secondaryAddress,
+          initialMainText: _displayMainAddress,
+          initialSecondaryText: _displaySecondaryAddress,
           placesService: widget.placesService,
         ),
       ),
@@ -109,8 +155,8 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
       SlideRightToLeftRoute(
         page: EditUserPositionPage(
           currentLocation: widget.userLocation,
-          currentMainText: widget.mainAddress,
-          currentSecondaryText: widget.secondaryAddress,
+          currentMainText: _displayMainAddress,
+          currentSecondaryText: _displaySecondaryAddress,
           placesService: widget.placesService,
         ),
       ),
@@ -128,8 +174,8 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
       currentUserLocation: widget.userLocation,
       initialPlace: SavedPlaceModel(
         id: '',
-        name: widget.mainAddress,
-        address: '${widget.mainAddress}, ${widget.secondaryAddress}',
+        name: _displayMainAddress,
+        address: '$_displayMainAddress, $_displaySecondaryAddress',
         iconType: 'star',
         latitude: widget.userLocation.latitude,
         longitude: widget.userLocation.longitude,
@@ -388,7 +434,7 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.mainAddress,
+                            _displayMainAddress,
                             style: GoogleFonts.inter(
                               fontSize: AppConstants.fontXl,
                               fontWeight: FontWeight.w800,
@@ -401,7 +447,7 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
                           ),
                           const SizedBox(height: AppConstants.spacingXs),
                           Text(
-                            widget.secondaryAddress,
+                            _displaySecondaryAddress,
                             style: GoogleFonts.inter(
                               fontSize: AppConstants.fontMd,
                               fontWeight: FontWeight.w500,

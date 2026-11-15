@@ -118,9 +118,13 @@ class ActiveRideNavigationHelper {
       traffic: plannedTraffic,
     );
 
+    final routeRaw = ride['route'] as Map<String, dynamic>?;
     List<LatLng> tripPolyline = [];
-    final plannedPolylineStr =
-        (ride['plannedPolyline'] ?? ride['polyline']) as String?;
+    final plannedPolylineStr = (ride['plannedPolyline'] ??
+        ride['polyline'] ??
+        routeRaw?['polyline'] ??
+        routeRaw?['remainingPolyline'] ??
+        ride['remainingPolyline']) as String?;
     if (plannedPolylineStr != null && plannedPolylineStr.isNotEmpty) {
       tripPolyline = RouteService.decodePolyline(plannedPolylineStr);
     }
@@ -137,7 +141,6 @@ class ActiveRideNavigationHelper {
       );
     }
 
-    final routeRaw = ride['route'] as Map<String, dynamic>?;
     final phase = (routeRaw?['phase'] as String? ?? '').toUpperCase();
     final startedAt = ride['startedAt'];
 

@@ -277,22 +277,38 @@ class RealtimeDriverLocationEvent {
                                     ? dataMap!['location'] as Map<String, dynamic>
                                     : jsonMap)))))));
 
-    final lat = (posObj['lat'] ??
+    double? parseDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v);
+      return null;
+    }
+
+    int? parseInt(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v);
+      return null;
+    }
+
+    final lat = parseDouble(posObj['lat'] ??
             posObj['latitude'] ??
             driverMap?['lat'] ??
             driverMap?['latitude'] ??
+            dataMap?['lat'] ??
+            dataMap?['latitude'] ??
             jsonMap['lat'] ??
-            jsonMap['latitude'] as num?)
-        ?.toDouble() ??
+            jsonMap['latitude']) ??
         0.0;
-    final lng = (posObj['lng'] ??
+    final lng = parseDouble(posObj['lng'] ??
             posObj['longitude'] ??
             posObj['lon'] ??
             driverMap?['lng'] ??
             driverMap?['longitude'] ??
+            dataMap?['lng'] ??
+            dataMap?['longitude'] ??
             jsonMap['lng'] ??
-            jsonMap['longitude'] as num?)
-        ?.toDouble() ??
+            jsonMap['longitude']) ??
         0.0;
     final rawHeading = posObj['heading'] ??
         posObj['cap'] ??
@@ -314,9 +330,9 @@ class RealtimeDriverLocationEvent {
         jsonMap['bearing'] ??
         jsonMap['direction'] ??
         jsonMap['course'];
-    final heading = rawHeading is num ? rawHeading.toDouble() : null;
-    final speed = (posObj['speed'] ?? jsonMap['speed'] as num?)?.toDouble();
-    final accuracy = (posObj['accuracy'] ?? jsonMap['accuracy'] as num?)?.toDouble();
+    final heading = parseDouble(rawHeading);
+    final speed = parseDouble(posObj['speed'] ?? dataMap?['speed'] ?? jsonMap['speed']);
+    final accuracy = parseDouble(posObj['accuracy'] ?? dataMap?['accuracy'] ?? jsonMap['accuracy']);
 
     final rideId = (jsonMap['rideId'] ??
             posObj['rideId'] ??
@@ -325,64 +341,65 @@ class RealtimeDriverLocationEvent {
             jsonMap['tripId'] ??
             jsonMap['id'])
         ?.toString();
-    final driverId = (json['driverId'] ??
+    final driverId = (jsonMap['driverId'] ??
             posObj['driverId'] ??
             driverMap?['id'] ??
-            driverMap?['driverId'])
+            driverMap?['driverId'] ??
+            dataMap?['driverId'])
         ?.toString();
-    final version = (json['version'] ?? posObj['version'] as num?)?.toInt() ?? 0;
+    final version = parseInt(jsonMap['version'] ?? posObj['version'] ?? dataMap?['version']) ?? 0;
 
     DateTime? time;
     final rawTime = posObj['timestamp'] ??
-        json['timestamp'] ??
-        json['time'] ??
-        json['updatedAt'];
+        dataMap?['timestamp'] ??
+        jsonMap['timestamp'] ??
+        jsonMap['time'] ??
+        jsonMap['updatedAt'];
     if (rawTime is String) {
       time = DateTime.tryParse(rawTime);
     } else if (rawTime is int) {
       time = DateTime.fromMillisecondsSinceEpoch(rawTime);
     }
 
-    final remainingM = (json['remainingM'] ??
-            json['remainingDistance'] ??
-            json['remainingDistanceM'] ??
-            posObj['remainingM'] ??
-            dataMap?['remainingM'] ??
-            json['distanceMeters'] ??
-            posObj['distanceMeters'] ??
-            json['distance'] as num?)
-        ?.toDouble();
+    final remainingM = parseDouble(jsonMap['remainingM'] ??
+        jsonMap['remainingDistance'] ??
+        jsonMap['remainingDistanceM'] ??
+        posObj['remainingM'] ??
+        dataMap?['remainingM'] ??
+        jsonMap['distanceMeters'] ??
+        posObj['distanceMeters'] ??
+        jsonMap['distance']);
 
-    final etaS = (json['etaS'] ??
-            json['remainingSeconds'] ??
-            posObj['etaS'] ??
-            dataMap?['etaS'] ??
-            json['durationSeconds'] ??
-            posObj['durationSeconds'] ??
-            json['duration'] as num?)
-        ?.toInt();
+    final etaS = parseInt(jsonMap['etaS'] ??
+        jsonMap['remainingSeconds'] ??
+        posObj['etaS'] ??
+        dataMap?['etaS'] ??
+        jsonMap['durationSeconds'] ??
+        posObj['durationSeconds'] ??
+        jsonMap['duration']);
 
-    final animateMs = (json['animateMs'] ??
-            json['animationMs'] ??
-            json['durationMs'] ??
-            posObj['animateMs'] ??
-            dataMap?['animateMs'] as num?)
-        ?.toInt();
+    final animateMs = parseInt(jsonMap['animateMs'] ??
+        jsonMap['animationMs'] ??
+        jsonMap['durationMs'] ??
+        posObj['animateMs'] ??
+        dataMap?['animateMs']);
 
-    final routeObj = json['route'] is Map
-        ? json['route'] as Map
-        : (posObj['route'] is Map ? posObj['route'] as Map : null);
-    final rawPoly = (json['polyline'] ??
+    final routeObj = jsonMap['route'] is Map
+        ? jsonMap['route'] as Map
+        : (posObj['route'] is Map
+            ? posObj['route'] as Map
+            : (dataMap?['route'] is Map ? dataMap!['route'] as Map : null));
+    final rawPoly = (jsonMap['polyline'] ??
             posObj['polyline'] ??
             dataMap?['polyline'] ??
-            json['remainingPolyline'] ??
+            jsonMap['remainingPolyline'] ??
             posObj['remainingPolyline'] ??
             dataMap?['remainingPolyline'] ??
             routeObj?['polyline'] ??
             routeObj?['remainingPolyline'] ??
-            json['encodedPolyline'] ??
+            jsonMap['encodedPolyline'] ??
             routeObj?['encodedPolyline'] ??
-            (json['route'] is String ? json['route'] : null))
+            (jsonMap['route'] is String ? jsonMap['route'] : null))
         ?.toString();
     List<LatLng> points = [];
     if (rawPoly != null && rawPoly.isNotEmpty) {
@@ -391,28 +408,27 @@ class RealtimeDriverLocationEvent {
       } catch (_) {}
     }
     if (points.isEmpty) {
-      final rawPts = json['points'] ??
+      final rawPts = jsonMap['points'] ??
           posObj['points'] ??
           dataMap?['points'] ??
-          json['remainingPoints'] ??
+          jsonMap['remainingPoints'] ??
           posObj['remainingPoints'] ??
           dataMap?['remainingPoints'] ??
           routeObj?['points'] ??
           routeObj?['coordinates'] ??
-          json['coordinates'] ??
+          jsonMap['coordinates'] ??
           posObj['coordinates'];
       if (rawPts is List) {
         for (final p in rawPts) {
           if (p is Map) {
-            final ptLat = (p['lat'] ?? p['latitude'] as num?)?.toDouble();
-            final ptLng =
-                (p['lng'] ?? p['longitude'] ?? p['lon'] as num?)?.toDouble();
+            final ptLat = parseDouble(p['lat'] ?? p['latitude']);
+            final ptLng = parseDouble(p['lng'] ?? p['longitude'] ?? p['lon']);
             if (ptLat != null && ptLng != null) {
               points.add(LatLng(ptLat, ptLng));
             }
           } else if (p is List && p.length >= 2) {
-            final ptLng = (p[0] as num?)?.toDouble();
-            final ptLat = (p[1] as num?)?.toDouble();
+            final ptLng = parseDouble(p[0]);
+            final ptLat = parseDouble(p[1]);
             if (ptLat != null && ptLng != null) {
               points.add(LatLng(ptLat, ptLng));
             }
@@ -423,7 +439,7 @@ class RealtimeDriverLocationEvent {
 
     List<TrafficSegmentModel> trafficSegments = [];
     final rawTraffic =
-        json['traffic'] ?? posObj['traffic'] ?? dataMap?['traffic'];
+        jsonMap['traffic'] ?? posObj['traffic'] ?? dataMap?['traffic'];
     if (rawTraffic is List) {
       trafficSegments = rawTraffic
           .whereType<Map<String, dynamic>>()
@@ -431,34 +447,31 @@ class RealtimeDriverLocationEvent {
           .toList();
     }
 
-    final phase = (json['phase'] ?? posObj['phase'] ?? dataMap?['phase'])?.toString();
-    final snapped = (posObj['snapped'] ?? json['snapped']) as bool?;
-    final simulated = (posObj['simulated'] ?? json['simulated']) as bool?;
+    final phase = (jsonMap['phase'] ?? posObj['phase'] ?? dataMap?['phase'])?.toString();
+    final snapped = (posObj['snapped'] ?? jsonMap['snapped'] ?? dataMap?['snapped']) as bool?;
+    final simulated = (posObj['simulated'] ?? jsonMap['simulated'] ?? dataMap?['simulated']) as bool?;
 
     final durS = etaS ??
-        (json['durationSeconds'] ??
-            json['duration'] ??
+        parseInt(jsonMap['durationSeconds'] ??
+            jsonMap['duration'] ??
             dataMap?['durationSeconds'] ??
             dataMap?['duration'] ??
             posObj['durationSeconds'] ??
-            posObj['duration'] as num?)
-        ?.toInt();
-    final etaM = (json['etaMinutes'] ??
-            json['eta'] ??
-            dataMap?['etaMinutes'] ??
-            dataMap?['eta'] ??
-            posObj['etaMinutes'] ??
-            posObj['eta'] ??
-            (durS != null && durS > 0 ? (durS / 60.0).ceil() : null) as num?)
-        ?.toInt();
+            posObj['duration']);
+    final etaM = parseInt(jsonMap['etaMinutes'] ??
+        jsonMap['eta'] ??
+        dataMap?['etaMinutes'] ??
+        dataMap?['eta'] ??
+        posObj['etaMinutes'] ??
+        posObj['eta'] ??
+        (durS != null && durS > 0 ? (durS / 60.0).ceil() : null));
     final distM = remainingM ??
-        (json['distanceMeters'] ??
-            json['distance'] ??
+        parseDouble(jsonMap['distanceMeters'] ??
+            jsonMap['distance'] ??
             dataMap?['distanceMeters'] ??
             dataMap?['distance'] ??
             posObj['distanceMeters'] ??
-            posObj['distance'] as num?)
-        ?.toDouble();
+            posObj['distance']);
 
     return RealtimeDriverLocationEvent(
       rideId: rideId,
@@ -480,7 +493,7 @@ class RealtimeDriverLocationEvent {
       simulated: simulated,
       timestamp: time,
       version: version,
-      raw: json,
+      raw: jsonMap,
     );
   }
 }

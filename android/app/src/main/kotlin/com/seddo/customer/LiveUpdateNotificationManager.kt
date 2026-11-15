@@ -105,7 +105,11 @@ object LiveUpdateNotificationManager {
         val statusLabel = data["statusLabel"] as? String ?: "Course en cours"
         val phase = data["phase"] as? String ?: ""
         val etaMinutes = (data["etaMinutes"] as? Number)?.toInt() ?: 0
-        val rawProgress = (data["progress"] as? Number)?.toDouble() ?: 0.05
+        val rawProgress = when (val p = data["progress"]) {
+            is Number -> p.toDouble()
+            is String -> p.toDoubleOrNull() ?: 0.05
+            else -> 0.05
+        }
 
         val destinationText = (data["destinationText"] as? String)?.trim() ?: ""
 
@@ -239,6 +243,12 @@ object LiveUpdateNotificationManager {
             setTextViewText(R.id.notification_plate, plateText)
             setTextViewText(R.id.notification_driver_name, driverName)
             setTextViewText(R.id.notification_car, carText)
+            if (showRouteLine && routeBitmap != null) {
+                setViewVisibility(R.id.notification_route_track, View.VISIBLE)
+                setImageViewBitmap(R.id.notification_route_track, routeBitmap)
+            } else {
+                setViewVisibility(R.id.notification_route_track, View.GONE)
+            }
         }
 
         val customBigView = RemoteViews(context.packageName, R.layout.notification_seddo_live_update_expanded).apply {

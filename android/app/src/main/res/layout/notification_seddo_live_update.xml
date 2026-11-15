@@ -37,11 +37,22 @@
             android:contentDescription="Véhicule" />
     </LinearLayout>
 
-    <!-- Row 2: Status Subtitle (Left) & License Plate Badge (Right) -->
+    <!-- Row 2: Route Track Line (Horizontal Progress Bar) -->
+    <ImageView
+        android:id="@+id/notification_route_track"
+        android:layout_width="match_parent"
+        android:layout_height="22dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:scaleType="fitXY"
+        android:visibility="gone"
+        android:contentDescription="Progression du trajet" />
+
+    <!-- Row 3: Status Subtitle (Left) & License Plate Badge (Right) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_marginTop="1dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
@@ -100,12 +111,6 @@
 
     <ImageView
         android:id="@+id/notification_driver_avatar"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone" />
-
-    <ImageView
-        android:id="@+id/notification_route_track"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="gone" />

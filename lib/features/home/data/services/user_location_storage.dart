@@ -46,10 +46,32 @@ class UserLocationStorage {
         clean == 'Chargement...' ||
         clean == 'Position GPS actuelle' ||
         clean == 'Position sélectionnée' ||
+        clean == 'Position sur la carte' ||
         clean == 'Ma position actuelle') {
       return false;
     }
+
     final lower = clean.toLowerCase();
+
+    // Rejeter explicitement les termes génériques et coordonnées brutes
+    if (lower.contains('position sur la carte') ||
+        lower.contains('position sur carte') ||
+        lower.contains('position sélectionnée') ||
+        lower.contains('position selectionnee') ||
+        lower.contains('position gps') ||
+        lower.contains('mode hors-ligne') ||
+        lower.contains('signal satellite') ||
+        lower.contains('lat:') ||
+        lower.contains('lng:')) {
+      return false;
+    }
+
+    // Rejeter si la chaîne est ou commence par des coordonnées numériques (ex: "14.7123, -17.4567")
+    if (RegExp(r'^-?\d+\.\d+').hasMatch(clean) ||
+        RegExp(r'\d+\.\d+,\s*-?\d+\.\d+').hasMatch(clean)) {
+      return false;
+    }
+
     // Exclure les libellés de commune ou de quartier générique sans rue
     if (lower == 'fann-point e-amitié' ||
         lower == 'fann-point e' ||
@@ -65,6 +87,7 @@ class UserLocationStorage {
         lower == 'dakar, senegal') {
       return false;
     }
+
     // Indicateurs typiques de rue, voie ou numéro
     final streetKeywords = [
       'rue',
@@ -92,8 +115,11 @@ class UserLocationStorage {
     for (final kw in streetKeywords) {
       if (lower.contains(kw)) return true;
     }
-    // Présence d'un chiffre suivi ou précédé d'un nom de lieu (ex: "77 PE 34", "5065 L", "YF-557, 20")
-    if (RegExp(r'\d').hasMatch(clean) && clean.length >= 4) {
+
+    // Présence d'un chiffre avec au moins 2 lettres réelles (ex: "77 PE 34", "5065 L", "YF-557, 20")
+    // pour éviter de qualifier de rue des coordonnées comme "14.7123, -17.4567"
+    final lettersOnly = clean.replaceAll(RegExp(r'[^a-zA-ZÀ-ÿ]'), '');
+    if (lettersOnly.length >= 2 && RegExp(r'\d').hasMatch(clean)) {
       return true;
     }
     return false;
@@ -114,6 +140,9 @@ class UserLocationStorage {
     if (short.isNotEmpty &&
         short != 'Chargement...' &&
         short != 'Position GPS actuelle' &&
+        short != 'Position sur la carte' &&
+        !short.toLowerCase().contains('position sur la carte') &&
+        !RegExp(r'^-?\d+\.\d+').hasMatch(short) &&
         isStreetLevelAddress(short)) {
       _reverseGeocodeMemoryCache[_coordKey(location.latitude, location.longitude)] =
           (short: short, details: details);
@@ -130,7 +159,14 @@ class UserLocationStorage {
       final lat = prefs.getDouble(_keyLat);
       final lng = prefs.getDouble(_keyLng);
 
-      if (short != null && short.isNotEmpty && lat != null && lng != null) {
+      if (short != null &&
+          short.isNotEmpty &&
+          short != 'Position sur la carte' &&
+          short != 'Position GPS actuelle' &&
+          !short.toLowerCase().contains('position sur la carte') &&
+          !RegExp(r'^-?\d+\.\d+').hasMatch(short) &&
+          lat != null &&
+          lng != null) {
         cached = CachedUserLocation(
           addressShort: short,
           addressDetails: details ?? '',
@@ -151,7 +187,11 @@ class UserLocationStorage {
   }) async {
     if (addressShort.isEmpty ||
         addressShort == 'Chargement...' ||
-        addressShort == 'Position GPS actuelle') {
+        addressShort == 'Position GPS actuelle' ||
+        addressShort == 'Position sur la carte' ||
+        addressShort.toLowerCase().contains('position sur la carte') ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(addressShort) ||
+        RegExp(r'\d+\.\d+,\s*-?\d+\.\d+').hasMatch(addressShort)) {
       return;
     }
 

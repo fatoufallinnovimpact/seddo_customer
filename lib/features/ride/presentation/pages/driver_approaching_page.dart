@@ -134,6 +134,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   DateTime _lastDriverLocationTime = DateTime.now();
   int _approachRouteVersion = 0;
   DateTime _lastRouteUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastLiveUpdateSync = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _stalePositionCheckTimer;
   bool _isPositionUpdating = false;
 
@@ -449,9 +450,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       });
     }
 
-    final heading = event.heading != 0.0
-        ? event.heading
-        : _currentCarHeading;
+    final heading = event.heading ?? _currentCarHeading;
 
     // 1. polyline : tracé restant, uniquement si aucun recalcul récent n'a eu lieu
     // et que le paquet n'est pas obsolète (protection anti-clignotement)
@@ -487,6 +486,24 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       setState(() {
         _remainingDistanceM = effectiveRemainingM;
       });
+    } else if (_approachRoutePoints.length >= 2) {
+      final nearestIdx = RideEtaCalculator.nearestIndex(
+        _approachRoutePoints,
+        event.location,
+        _currentApproachIndex,
+      );
+      _currentApproachIndex = nearestIdx;
+      final calcRemM = RideEtaCalculator.remainingMeters(
+        _approachRoutePoints,
+        nearestIdx,
+        event.location,
+      );
+      if (_totalApproachM <= 0 || calcRemM > _totalApproachM) {
+        _totalApproachM = calcRemM.round();
+      }
+      setState(() {
+        _remainingDistanceM = calcRemM;
+      });
     }
 
     final effectiveEtaS = event.etaS;
@@ -497,6 +514,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     } else if (event.etaMinutes != null && event.etaMinutes! > 0) {
       _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
       _syncLiveUpdate(etaMinutes: event.etaMinutes!);
+    } else {
+      _syncLiveUpdate(etaMinutes: _remainingEtaMinutes);
     }
 
     // 3. phase : APPROACH (vers le client) ou TRIP (vers la destination)
@@ -1277,6 +1296,12 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     });
     _updateEtaAndDistance(position);
 
+    final now = DateTime.now();
+    if (now.difference(_lastLiveUpdateSync).inMilliseconds > 2000) {
+      _lastLiveUpdateSync = now;
+      _syncLiveUpdate();
+    }
+
     // Animation de la caméra pour suivre la position du véhicule
     if (_mapController != null) {
       _mapController?.animateCamera(
@@ -1296,15 +1321,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         ? _tripPolylinePoints
         : widget.polylinePoints;
 
+    final initialTripHeading = effectivePolyline.length >= 2
+        ? _calculateBearing(effectivePolyline[0], effectivePolyline[1])
+        : _currentCarHeading;
+
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: ActiveRidePage(
           departure: widget.departure,
           destination: widget.destination,
           rideOption: effectiveTripOption,
-          driver: _currentDriver,
+          driver: _currentDriver.copyWith(
+            currentLocation: _currentCarPosition,
+            heading: initialTripHeading,
+          ),
           polylinePoints: effectivePolyline,
-          autoStartSimulation: true,
+          autoStartSimulation: false,
           rideId: widget.rideId ?? RideService.lastCreatedRideId,
           rideService: _rideService,
           paymentMethod: widget.paymentMethod,
@@ -1620,7 +1652,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           markerId: const MarkerId('approaching_car'),
           position: _currentCarPosition,
           icon: _carMarkerIcon!,
-          rotation: _currentCarHeading,
+          rotation: _getCarMarkerRotation(),
           anchor: const Offset(0.5, 0.5),
           flat: true,
           zIndexInt: 10,
@@ -1673,6 +1705,21 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     return markers;
+  }
+
+  double _getCarMarkerRotation() {
+    if (_approachRoutePoints.length < 2) {
+      return _currentCarHeading;
+    }
+
+    LatLng nextPoint = _approachRoutePoints[1];
+    if (_approachRoutePoints.length > 2 &&
+        RideEtaCalculator.dist(_currentCarPosition, nextPoint) < 1.5) {
+      nextPoint = _approachRoutePoints[2];
+    }
+
+    // Le devant de la voiture est STRICTEMENT face à la polyline
+    return _calculateBearing(_currentCarPosition, nextPoint);
   }
 
   Set<Circle> _buildCircles() {

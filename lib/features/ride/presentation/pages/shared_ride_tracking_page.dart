@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +11,7 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/shared_ride_details_model.dart';
+import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/realtime_service.dart';
@@ -68,6 +70,7 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
   int _routeVersion = 0;
   DateTime _lastRouteUpdateTime = DateTime.fromMillisecondsSinceEpoch(0);
   LatLng? _liveDriverPos;
+  double _driverHeading = 0.0;
   String? _effectiveToken;
   late String _displayShareUrl;
   late List<LatLng> _liveRoutePoints;
@@ -77,10 +80,13 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
-    _liveDriverPos = widget.driver.location;
+    _liveRoutePoints = List<LatLng>.from(widget.polylinePoints);
+    final initialBearing = _liveRoutePoints.length >= 2
+        ? _calculateBearing(_liveRoutePoints[0], _liveRoutePoints[1])
+        : 0.0;
+    _driverHeading = widget.driver.heading ?? initialBearing;
     _displayShareUrl = widget.shareUrl;
     _effectiveToken = widget.token;
-    _liveRoutePoints = List<LatLng>.from(widget.polylinePoints);
     _loadMarkers();
 
     final effectiveRideId = widget.rideId ?? '';
@@ -100,6 +106,12 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
 
           setState(() {
             _liveDriverPos = event.location;
+            if (event.heading != null) {
+              _driverHeading = event.heading!;
+            } else if (_liveRoutePoints.length >= 2) {
+              _driverHeading =
+                  _calculateBearing(event.location, _liveRoutePoints[1]);
+            }
             if (event.remainingPoints.length >= 2 &&
                 !isRecentReroute &&
                 !isOlderVersion) {
@@ -276,11 +288,30 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
           position: carPos,
           icon: _carMarkerIcon!,
           anchor: const Offset(0.5, 0.5),
+          rotation: _getCarMarkerRotation(carPos),
+          flat: true,
         ),
       );
     }
 
     return markers;
+  }
+
+  double _getCarMarkerRotation(LatLng carPos) {
+    final pts = _liveRoutePoints.length >= 2
+        ? _liveRoutePoints
+        : widget.polylinePoints;
+    if (pts.length < 2) {
+      return _driverHeading;
+    }
+
+    LatLng nextPoint = pts[1];
+    if (pts.length > 2 && RideEtaCalculator.dist(carPos, nextPoint) < 1.5) {
+      nextPoint = pts[2];
+    }
+
+    // Le devant de la voiture est STRICTEMENT face à la polyline
+    return _calculateBearing(carPos, nextPoint);
   }
 
   Set<Polyline> _buildPolylines() {
@@ -297,6 +328,21 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
         endCap: Cap.roundCap,
       ),
     };
+  }
+
+  double _calculateBearing(LatLng start, LatLng end) {
+    final lat1 = start.latitude * (math.pi / 180.0);
+    final lon1 = start.longitude * (math.pi / 180.0);
+    final lat2 = end.latitude * (math.pi / 180.0);
+    final lon2 = end.longitude * (math.pi / 180.0);
+    final dLon = lon2 - lon1;
+
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+
+    final radians = math.atan2(y, x);
+    return (radians * (180.0 / math.pi) + 360.0) % 360.0;
   }
 
   @override

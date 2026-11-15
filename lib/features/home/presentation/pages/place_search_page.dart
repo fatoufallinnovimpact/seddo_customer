@@ -122,9 +122,17 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   }
 
   Future<void> _resolveInitialCurrentPosition() async {
-    if (widget.initialPickup != null &&
-        widget.initialPickup != currentPositionText &&
-        UserLocationStorage.isStreetLevelAddress(widget.initialPickup!)) {
+    final init = widget.initialPickup;
+    final isGeneric = init == null ||
+        init.isEmpty ||
+        init == currentPositionText ||
+        init == 'Position sur la carte' ||
+        init == 'Position sélectionnée' ||
+        init == 'Position GPS actuelle' ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(init) ||
+        !UserLocationStorage.isStreetLevelAddress(init);
+
+    if (!isGeneric && _selectedDepartureResult != null) {
       return;
     }
 
@@ -134,12 +142,37 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       );
 
       if (currentPlace != null && mounted) {
+        String mainText = currentPlace.mainText;
+        String secText = currentPlace.secondaryText;
+        if (mainText.isEmpty ||
+            mainText == 'Position sur la carte' ||
+            mainText == 'Position sélectionnée' ||
+            mainText == 'Position GPS actuelle' ||
+            RegExp(r'^-?\d+\.\d+').hasMatch(mainText)) {
+          final fallback = PlacesService.getDakarDistrictFallback(
+            currentPlace.latitude,
+            currentPlace.longitude,
+          );
+          mainText = fallback.mainText;
+          secText = fallback.secondaryText;
+        }
+
         if (_departureController.text.isEmpty ||
             _departureController.text == currentPositionText ||
+            _departureController.text == 'Position sur la carte' ||
+            RegExp(r'^-?\d+\.\d+').hasMatch(_departureController.text) ||
             !UserLocationStorage.isStreetLevelAddress(_departureController.text)) {
           setState(() {
-            _departureController.text = currentPlace.mainText;
-            _selectedDepartureResult = currentPlace;
+            _departureController.text = mainText;
+            _selectedDepartureResult = PlaceSearchResult(
+              id: currentPlace.id,
+              mainText: mainText,
+              secondaryText: secText.isNotEmpty ? secText : 'Dakar, Sénégal',
+              fullAddress: '$mainText, $secText',
+              latitude: currentPlace.latitude,
+              longitude: currentPlace.longitude,
+              category: 'departure',
+            );
           });
         }
       }
@@ -239,12 +272,36 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
       );
 
       if (currentPlace != null && mounted) {
+        String mainText = currentPlace.mainText;
+        String secText = currentPlace.secondaryText;
+        if (mainText.isEmpty ||
+            mainText == 'Position sur la carte' ||
+            mainText == 'Position sélectionnée' ||
+            mainText == 'Position GPS actuelle' ||
+            RegExp(r'^-?\d+\.\d+').hasMatch(mainText)) {
+          final fallback = PlacesService.getDakarDistrictFallback(
+            currentPlace.latitude,
+            currentPlace.longitude,
+          );
+          mainText = fallback.mainText;
+          secText = fallback.secondaryText;
+        }
+
+        final cleanPlace = PlaceSearchResult(
+          id: currentPlace.id,
+          mainText: mainText,
+          secondaryText: secText.isNotEmpty ? secText : 'Dakar, Sénégal',
+          fullAddress: '$mainText, $secText',
+          latitude: currentPlace.latitude,
+          longitude: currentPlace.longitude,
+        );
+
         setState(() {
-          targetController.text = currentPlace.mainText;
+          targetController.text = mainText;
           if (targetFieldIsArrival) {
-            _selectedArrivalResult = currentPlace;
+            _selectedArrivalResult = cleanPlace;
           } else {
-            _selectedDepartureResult = currentPlace;
+            _selectedDepartureResult = cleanPlace;
             _isEditingArrival = true;
             _arrivalFocusNode.requestFocus();
           }
@@ -395,13 +452,16 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     PlaceSearchResult departure = _selectedDepartureResult ??
         PlaceSearchResult(
           id: 'departure_current',
-          mainText: _departureController.text.isNotEmpty
+          mainText: _departureController.text.isNotEmpty &&
+                  _departureController.text != currentPositionText &&
+                  _departureController.text != 'Position sur la carte' &&
+                  !RegExp(r'^-?\d+\.\d+').hasMatch(_departureController.text)
               ? _departureController.text
-              : currentPositionText,
+              : 'Dakar',
           secondaryText: 'Dakar, Sénégal',
           fullAddress: _departureController.text.isNotEmpty
               ? _departureController.text
-              : currentPositionText,
+              : 'Dakar, Sénégal',
           latitude: widget.currentUserLocation?.latitude ?? 14.7167,
           longitude: widget.currentUserLocation?.longitude ?? -17.4677,
         );
@@ -484,6 +544,27 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
           );
         }
       } catch (_) {}
+    }
+
+    if (departure.mainText.isEmpty ||
+        departure.mainText == 'Position sur la carte' ||
+        departure.mainText == 'Position sélectionnée' ||
+        departure.mainText == 'Position GPS actuelle' ||
+        departure.mainText == currentPositionText ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(departure.mainText)) {
+      final fallback = PlacesService.getDakarDistrictFallback(
+        departure.latitude,
+        departure.longitude,
+      );
+      departure = PlaceSearchResult(
+        id: departure.id,
+        mainText: fallback.mainText,
+        secondaryText: fallback.secondaryText,
+        fullAddress: fallback.fullAddress,
+        latitude: departure.latitude,
+        longitude: departure.longitude,
+        category: 'pickup',
+      );
     }
 
     if (!mounted) return;

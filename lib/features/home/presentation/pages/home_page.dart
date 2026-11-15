@@ -351,8 +351,21 @@ class _HomePageContentState extends State<_HomePageContent>
         location.longitude,
       );
       if (mounted) {
-        final short = res.mainText.isNotEmpty ? res.mainText : _currentAddressShort;
-        final details = res.secondaryText.isNotEmpty ? res.secondaryText : _currentAddressDetails;
+        String short = res.mainText;
+        String details = res.secondaryText;
+
+        if (short.isEmpty ||
+            short == 'Position sur la carte' ||
+            short == 'Position GPS actuelle' ||
+            short == 'Position sélectionnée' ||
+            RegExp(r'^-?\d+\.\d+').hasMatch(short)) {
+          final fallback = PlacesService.getDakarDistrictFallback(
+            location.latitude,
+            location.longitude,
+          );
+          short = fallback.mainText;
+          details = fallback.secondaryText;
+        }
 
         setState(() {
           _currentAddressShort = short;
@@ -376,14 +389,21 @@ class _HomePageContentState extends State<_HomePageContent>
         );
       }
     } catch (_) {
-      // En mode hors-ligne : la localisation GPS satellite reste 100% active
+      // En mode hors-ligne : la localisation GPS satellite reste 100% active avec le quartier Dakar réel
       if (mounted) {
+        final fallback = PlacesService.getDakarDistrictFallback(
+          location.latitude,
+          location.longitude,
+        );
         setState(() {
           _currentUserLocation = location;
           if (_currentAddressShort.isEmpty ||
-              _currentAddressShort == 'Chargement...') {
-            _currentAddressShort = 'Position GPS actuelle';
-            _currentAddressDetails = 'Mode hors-ligne (signal satellite)';
+              _currentAddressShort == 'Chargement...' ||
+              _currentAddressShort == 'Position sur la carte' ||
+              _currentAddressShort == 'Position GPS actuelle' ||
+              RegExp(r'^-?\d+\.\d+').hasMatch(_currentAddressShort)) {
+            _currentAddressShort = fallback.mainText;
+            _currentAddressDetails = fallback.secondaryText;
           }
         });
       }
@@ -395,11 +415,28 @@ class _HomePageContentState extends State<_HomePageContent>
     final state = context.read<HomeBloc>().state;
     final loc = _currentUserLocation ?? state.userLocation;
 
+    String mainAddr = _currentAddressShort;
+    String secAddr = _currentAddressDetails;
+
+    if (mainAddr.isEmpty ||
+        mainAddr == 'Chargement...' ||
+        mainAddr == 'Position sur la carte' ||
+        mainAddr == 'Position GPS actuelle' ||
+        mainAddr == 'Position sélectionnée' ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(mainAddr)) {
+      final fallback = PlacesService.getDakarDistrictFallback(
+        loc.latitude,
+        loc.longitude,
+      );
+      mainAddr = fallback.mainText;
+      secAddr = fallback.secondaryText;
+    }
+
     final result = await UserPositionBottomSheet.show(
       context,
       userLocation: loc,
-      mainAddress: _currentAddressShort,
-      secondaryAddress: _currentAddressDetails,
+      mainAddress: mainAddr,
+      secondaryAddress: secAddr,
       placesService: _placesService,
     );
 
@@ -411,12 +448,25 @@ class _HomePageContentState extends State<_HomePageContent>
   /// Applique la nouvelle position sélectionnée depuis la carte plein écran ou la recherche
   void _applyNewUserPosition(PlaceSearchResult place) {
     final newLoc = LatLng(place.latitude, place.longitude);
-    final short = place.mainText.isNotEmpty
+    String short = place.mainText.isNotEmpty
         ? place.mainText
-        : (place.fullAddress.isNotEmpty ? place.fullAddress : 'Position sélectionnée');
-    final details = place.secondaryText.isNotEmpty
+        : (place.fullAddress.isNotEmpty ? place.fullAddress : '');
+    String details = place.secondaryText.isNotEmpty
         ? place.secondaryText
         : 'Dakar, Sénégal';
+
+    if (short.isEmpty ||
+        short == 'Position sur la carte' ||
+        short == 'Position sélectionnée' ||
+        short == 'Position GPS actuelle' ||
+        RegExp(r'^-?\d+\.\d+').hasMatch(short)) {
+      final fallback = PlacesService.getDakarDistrictFallback(
+        place.latitude,
+        place.longitude,
+      );
+      short = fallback.mainText;
+      details = fallback.secondaryText;
+    }
 
     setState(() {
       _currentAddressShort = short;

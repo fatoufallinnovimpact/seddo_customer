@@ -638,13 +638,13 @@ void main() {
       expect(state.currentCarPosition.longitude, closeTo(-17.4305, 0.0001));
       expect(state.currentCarHeading, equals(245.0));
 
-      // 2. Vérifier que la voiture est directement liée à la tête du polyline (sans trou ni décalage)
+      // 2. Vérifier que la polyline suit strictement le tracé routier officiel du backend (sans raccordement artificiel à vol d'oiseau)
       final polylines = (tester.widget(find.byType(GoogleMap)) as GoogleMap).polylines;
       expect(polylines, isNotEmpty);
       final activePoly = polylines.firstWhere((p) => p.polylineId.value.contains('active_route'));
-      // Le premier point du polyline actif part exactement de la position du véhicule
-      expect(activePoly.points.first.latitude, closeTo(14.6705, 0.0001));
-      expect(activePoly.points.first.longitude, closeTo(-17.4305, 0.0001));
+      // Le premier point de la polyline correspond au point routier envoyé par le backend (14.6710, -17.4310) et non au GPS brut hors route (14.6705, -17.4305)
+      expect(activePoly.points.first.latitude, closeTo(14.6710, 0.0001));
+      expect(activePoly.points.first.longitude, closeTo(-17.4310, 0.0001));
     });
   });
 }

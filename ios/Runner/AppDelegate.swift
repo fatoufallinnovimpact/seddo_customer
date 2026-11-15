@@ -61,11 +61,11 @@ import ActivityKit
 
   // MARK: - Flutter Method & Event Channels
   func ensureLiveChannelsConfigured(messenger: FlutterBinaryMessenger) {
-    setupLiveActivityChannels(messenger: messenger)
+    setupLiveActivityChannels(messenger: messenger, force: true)
   }
 
-  private func setupLiveActivityChannels(messenger: FlutterBinaryMessenger) {
-    guard !liveChannelsConfigured else { return }
+  private func setupLiveActivityChannels(messenger: FlutterBinaryMessenger, force: Bool = false) {
+    if liveChannelsConfigured && !force { return }
     liveChannelsConfigured = true
     print("[ActivityKit] 🚀 Enregistrement des canaux Live Activities (sn.innov.seddo/live_updates) réussi !")
 
@@ -201,7 +201,24 @@ import ActivityKit
       updatedAtTimestamp: timestamp
     )
 
-    // Nettoyage préventif des activités existantes pour ne pas saturer le quota iOS
+    // Si une Live Activity existe déjà (par ex. transition approche -> trajet ou reconnexion),
+    // on la met à jour directement pour une synchronisation fluide sans quota ni race condition
+    if let existing = Activity<RideActivityAttributes>.activities.first(where: { $0.attributes.rideId == rideId }) ?? Activity<RideActivityAttributes>.activities.first {
+      self.activeActivityId = existing.id
+      print("[ActivityKit] 🔄 Live Activity déjà active (\(existing.id)), mise à jour directe !")
+      Task {
+        if #available(iOS 16.2, *) {
+          let content = ActivityContent(state: initialContentState, staleDate: nil)
+          await existing.update(content)
+        } else {
+          await existing.update(using: initialContentState)
+        }
+      }
+      result(existing.id)
+      return
+    }
+
+    // Nettoyage préventif des activités orphelines éventuelles
     for existing in Activity<RideActivityAttributes>.activities {
       Task {
         if #available(iOS 16.2, *) {
