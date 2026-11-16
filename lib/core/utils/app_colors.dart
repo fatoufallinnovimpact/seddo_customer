@@ -404,4 +404,29 @@ abstract class AppColors {
   static const Color amberHighlightText = Color(0xFFD97706);
   static const Color modalShadow = Color(0x24000000);
   static const Color softGreySurface = Color(0xFFF1F1F4);
+
+  // Modern Service Cards & OuAllonsNousCard Tokens
+  /// Fond gris clair moderne pour les conteneurs des cartes de service et de recherche
+  static const Color serviceCardBg = Color(0xFFEFF1F4);
+
+  /// Couleur des tirets de route animée
+  static const Color roadDashedGrey = Color(0xFFB5B5B5);
+
+  /// Noir profond moderne pour textes et boutons d'action
+  static const Color nearBlack = Color(0xFF1C1C1C);
+
+  /// Rouge/orange vif pour l'icône de drapeau d'arrivée
+  static const Color flagRedOrange = Color(0xFFFF4825);
+
+  /// Gris clair pour la poignée de glissement (drag handle) des bottom sheets
+  static const Color sheetHandleGrey = Color(0xFFDCDCDC);
+
+  /// Bordure très légère pour conteneurs épurés
+  static const Color lightBorder = Color(0xFFEEEEEE);
+
+  /// Séparateur subtil pour les listes
+  static const Color subtleDivider = Color(0xFFF4F4F4);
+
+  /// Gris sombre pour les icônes de localisation dans les listes de recherche
+  static const Color darkPinGrey = Color(0xFF374151);
 }

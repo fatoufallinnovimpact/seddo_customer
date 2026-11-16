@@ -19,6 +19,7 @@ import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dar
 import 'package:geolocator/geolocator.dart';
 import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 
 /// Écran de recherche et sélection d'adresses (départ et arrivée) :
 /// - Header: Back arrow + "Votre trajet"
@@ -34,6 +35,7 @@ import 'package:seddo/services/network_connectivity_service.dart';
 /// - Suggestions list with location.svg, bold place title and subtitle with distance
 class PlaceSearchPage extends StatefulWidget {
   final PlacesService? placesService;
+  final RideService? rideService;
   final String? initialPickup;
   final String? initialDestination;
   final LatLng? currentUserLocation;
@@ -43,6 +45,7 @@ class PlaceSearchPage extends StatefulWidget {
   const PlaceSearchPage({
     super.key,
     this.placesService,
+    this.rideService,
     this.initialPickup,
     this.initialDestination,
     this.currentUserLocation,
@@ -57,6 +60,8 @@ class PlaceSearchPage extends StatefulWidget {
 
 class _PlaceSearchPageState extends State<PlaceSearchPage> {
   late final PlacesService _placesService;
+  late final RideService _rideService;
+  List<RecentSuggestionModel> _recentDestinations = [];
 
   final TextEditingController _departureController = TextEditingController();
   final TextEditingController _arrivalController = TextEditingController();
@@ -80,6 +85,7 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
   void initState() {
     super.initState();
     _placesService = widget.placesService ?? PlacesService();
+    _rideService = widget.rideService ?? RideService();
 
     _departureController.text =
         widget.initialPickup ?? currentPositionText;
@@ -119,6 +125,107 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
     // Resolve real physical address for current position
     _resolveInitialCurrentPosition();
+
+    // Charger les trajets récents (GET /v1/users/me/suggestions)
+    _loadRecentDestinations();
+  }
+
+  Future<void> _loadRecentDestinations() async {
+    // 1. Initialisation instantanée depuis la mémoire / stockage local
+    final cached = HomeSuggestionsStorage.cachedSuggestions?.recent;
+    if (cached != null && cached.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _recentDestinations = cached.take(4).toList();
+        });
+      }
+    } else {
+      final local = await RecentTripStorage.getRecentTrips();
+      if (local.isNotEmpty && mounted) {
+        setState(() {
+          _recentDestinations = local.take(4).toList();
+        });
+      }
+    }
+
+    // 2. Appel de l'endpoint GET /v1/users/me/suggestions pour récupérer les destinations récentes
+    try {
+      final res = await _rideService.getSuggestions();
+      if (res != null && mounted) {
+        await HomeSuggestionsStorage.saveSuggestions(res);
+        if (res.recent.isNotEmpty) {
+          setState(() {
+            _recentDestinations = res.recent.take(4).toList();
+          });
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback élégant avec des lieux récents connus si aucun historique
+    if (_recentDestinations.isEmpty && mounted) {
+      setState(() {
+        _recentDestinations = [
+          const RecentSuggestionModel(
+            id: 'rec_sea_plaza',
+            label: 'Sea Plaza',
+            address: 'Corniche Ouest, Dakar',
+            lat: 14.6934,
+            lng: -17.4729,
+          ),
+          const RecentSuggestionModel(
+            id: 'rec_plateau',
+            label: "Place de l'Indépendance",
+            address: 'Dakar-Plateau, Dakar',
+            lat: 14.6713,
+            lng: -17.4326,
+          ),
+          const RecentSuggestionModel(
+            id: 'rec_almadies',
+            label: 'Route des Almadies',
+            address: 'Almadies, Dakar',
+            lat: 14.7450,
+            lng: -17.5180,
+          ),
+        ];
+      });
+    }
+  }
+
+  Future<void> _onSelectRecentDestination(RecentSuggestionModel item) async {
+    final displayName = item.label.isNotEmpty && item.label != 'Destination'
+        ? item.label
+        : (item.address.isNotEmpty ? item.address : 'Destination');
+    final displayAddress = item.address.isNotEmpty
+        ? item.address
+        : (item.label.isNotEmpty ? item.label : 'Dakar, Sénégal');
+
+    final placeResult = PlaceSearchResult(
+      id: item.id.isNotEmpty ? item.id : 'recent_${item.lat}_${item.lng}',
+      mainText: displayName,
+      secondaryText: displayAddress,
+      fullAddress: displayAddress,
+      latitude: item.lat,
+      longitude: item.lng,
+      category: 'recent',
+    );
+
+    if (_isEditingArrival) {
+      setState(() {
+        _selectedArrivalResult = placeResult;
+        _arrivalController.text = displayName;
+        _suggestions = [];
+      });
+      FocusScope.of(context).unfocus();
+      await _confirmTrip();
+    } else {
+      setState(() {
+        _selectedDepartureResult = placeResult;
+        _departureController.text = displayName;
+        _isEditingArrival = true;
+        _suggestions = [];
+      });
+      _arrivalFocusNode.requestFocus();
+    }
   }
 
   Future<void> _resolveInitialCurrentPosition() async {
@@ -999,122 +1106,75 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
             // 5. Results List
             Expanded(
-              child: _suggestions.isEmpty && !_isLoading
-                  ? Center(
-                      child: Text(
-                        'search.no_results'.tr(),
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontMd,
-                          color: AppColors.textSecondary,
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [
+                  // Suggestions d'autocomplétion
+                  if (_suggestions.isNotEmpty) ...[
+                    for (int i = 0; i < _suggestions.length; i++)
+                      _buildSuggestionItem(_suggestions[i]),
+                  ] else if (_isLoading) ...[
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40.0),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
                         ),
                       ),
-                    )
-                  : ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      itemCount: _suggestions.length,
-                      itemBuilder: (context, index) {
-                        final item = _suggestions[index];
-                        final title = item.mainText ?? item.description;
-                        final subtitle = _cleanSubtitle(
-                          item.secondaryText ?? item.description,
-                        );
-                        final distance = _getDistanceText(item);
+                    ),
+                  ] else if (_isEditingArrival
+                      ? (_arrivalController.text.trim().isNotEmpty &&
+                          _arrivalController.text != currentPositionText)
+                      : (_departureController.text.trim().isNotEmpty &&
+                          _departureController.text != currentPositionText)) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24.0),
+                      child: Center(
+                        child: Text(
+                          'search.no_results'.tr(),
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontMd,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
 
-                        return Material(
-                          color: AppColors.white,
-                          child: InkWell(
-                            onTap: () => _onSelectSuggestion(item),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppConstants.spacingMd,
-                                vertical: AppConstants.spacingUnitLg,
-                              ),
-                              child: Row(
-                                children: [
-                                  // Circular icon container with location outline
-                                  Container(
-                                    width: AppConstants.circularButtonSize,
-                                    height: AppConstants.circularButtonSize,
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.grayBgLight,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: const Icon(
-                                      Icons.location_on_outlined,
-                                      size: AppConstants.iconSizeMd,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(
-                                    width: AppConstants.spacingUnitXl,
-                                  ),
-
-                                  // Title with query highlighting & Subtitle
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _buildHighlightedTitle(
-                                          title,
-                                          _isEditingArrival
-                                              ? _arrivalController.text
-                                              : _departureController.text,
-                                        ),
-                                        const SizedBox(
-                                          height: AppConstants.spacingXxs,
-                                        ),
-                                        Text(
-                                          subtitle,
-                                          style: GoogleFonts.inter(
-                                            fontSize:
-                                                AppConstants.fontSm + 1.0,
-                                            color: AppColors.textSecondary,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  // Distance Capsule Badge
-                                  if (distance.isNotEmpty) ...[
-                                    const SizedBox(
-                                      width: AppConstants.spacingSm,
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppConstants.spacingUnit,
-                                        vertical: AppConstants.spacingXs,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.grayBgLight,
-                                        borderRadius: BorderRadius.circular(
-                                          AppConstants
-                                              .searchDistancePillRadius,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        distance,
-                                        style: GoogleFonts.inter(
-                                          fontSize: AppConstants.fontSm,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                  // Trajets récents (en bas de la page de recherche)
+                  if (_recentDestinations.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppConstants.spacingMd,
+                        AppConstants.spacingMd,
+                        AppConstants.spacingMd,
+                        AppConstants.spacingXs,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            'search.recent_places'.tr().toUpperCase(),
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.fontSm,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textSecondary,
+                              letterSpacing: AppConstants.searchLetterSpacing,
                             ),
                           ),
-                        );
-                      },
+                        ],
+                      ),
                     ),
+                    for (int i = 0; i < _recentDestinations.length; i++)
+                      _buildRecentDestinationItem(
+                        _recentDestinations[i],
+                        showDivider: i < _recentDestinations.length - 1,
+                      ),
+                  ],
+                ],
+              ),
             ),
           ],
         ),
@@ -1209,6 +1269,224 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
                     fontSize: AppConstants.fontMd - 1.0,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentDestinationItem(
+    RecentSuggestionModel item, {
+    bool showDivider = true,
+  }) {
+    final title = item.label.isNotEmpty && item.label != 'Destination'
+        ? item.label
+        : (item.address.isNotEmpty ? item.address : 'Destination');
+    final subtitle = item.address.isNotEmpty && item.address != title
+        ? item.address
+        : 'Dakar, Sénégal';
+
+    String distance = '';
+    if (widget.currentUserLocation != null && item.lat != 0.0 && item.lng != 0.0) {
+      final dMeters = Geolocator.distanceBetween(
+        widget.currentUserLocation!.latitude,
+        widget.currentUserLocation!.longitude,
+        item.lat,
+        item.lng,
+      );
+      if (dMeters > 0) {
+        if (dMeters < 1000) {
+          distance = '${dMeters.round()} m';
+        } else {
+          distance = '${(dMeters / 1000.0).toStringAsFixed(1)} km';
+        }
+      }
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: AppColors.white,
+          child: InkWell(
+            key: ValueKey('recent_destination_${item.id}'),
+            onTap: () => _onSelectRecentDestination(item),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spacingMd,
+                vertical: AppConstants.spacingUnitLg,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: AppConstants.circularButtonSize,
+                    height: AppConstants.circularButtonSize,
+                    decoration: const BoxDecoration(
+                      color: AppColors.grayBgLight,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.history_rounded,
+                      size: AppConstants.iconSizeMd,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spacingUnitXl),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontBase,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: AppConstants.spacingXxs),
+                        Text(
+                          subtitle,
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.fontSm + 1.0,
+                            color: AppColors.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (distance.isNotEmpty) ...[
+                    const SizedBox(width: AppConstants.spacingSm),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spacingUnit,
+                        vertical: AppConstants.spacingXs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.grayBgLight,
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.searchDistancePillRadius,
+                        ),
+                      ),
+                      child: Text(
+                        distance,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontSm,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (showDivider)
+          const Padding(
+            padding: EdgeInsets.only(left: 68.0, right: AppConstants.spacingMd),
+            child: Divider(
+              height: 1,
+              thickness: 0.6,
+              color: AppColors.grayBorderDivider,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSuggestionItem(PlaceSuggestion item) {
+    final title = item.mainText ?? item.description;
+    final subtitle = _cleanSubtitle(
+      item.secondaryText ?? item.description,
+    );
+    final distance = _getDistanceText(item);
+
+    return Material(
+      color: AppColors.white,
+      child: InkWell(
+        onTap: () => _onSelectSuggestion(item),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingUnitLg,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: AppConstants.circularButtonSize,
+                height: AppConstants.circularButtonSize,
+                decoration: const BoxDecoration(
+                  color: AppColors.grayBgLight,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.location_on_outlined,
+                  size: AppConstants.iconSizeMd,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(
+                width: AppConstants.spacingUnitXl,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHighlightedTitle(
+                      title,
+                      _isEditingArrival
+                          ? _arrivalController.text
+                          : _departureController.text,
+                    ),
+                    const SizedBox(
+                      height: AppConstants.spacingXxs,
+                    ),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.inter(
+                        fontSize: AppConstants.fontSm + 1.0,
+                        color: AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (distance.isNotEmpty) ...[
+                const SizedBox(
+                  width: AppConstants.spacingSm,
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingUnit,
+                    vertical: AppConstants.spacingXs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.grayBgLight,
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.searchDistancePillRadius,
+                    ),
+                  ),
+                  child: Text(
+                    distance,
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontSm,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
               ],

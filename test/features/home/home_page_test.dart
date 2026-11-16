@@ -166,16 +166,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(seconds: 1));
 
-    // Suggestions section header
-    expect(find.text('Suggestions'), findsOneWidget);
+    // Suggestions section header removed
+    expect(find.text('Suggestions'), findsNothing);
 
-    // Two recent trip cards should be visible
-    expect(find.text('Sea Plaza'), findsOneWidget);
-    expect(find.text("Place de l'Indépendance"), findsOneWidget);
-    expect(find.byIcon(Icons.history_rounded), findsNWidgets(2));
+    // Three recent trip cards should be visible
+    expect(find.text('Liberté 6 Extension'), findsOneWidget);
+    expect(find.text('Place 116'), findsOneWidget);
+    expect(find.text('Grand Yoff'), findsOneWidget);
+    expect(find.byIcon(Icons.location_on_rounded), findsAtLeastNWidgets(3));
   });
 
-  testWidgets('HomePage renders Course and Transpo service cards at top and removed TCU banner',
+  testWidgets('HomePage renders Livraison, Transport and Courses 2+1 service cards layout at top',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -185,11 +186,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump(const Duration(seconds: 1));
 
-    // Service Cards (Course & Transport en commun)
-    expect(find.byKey(const ValueKey('home_service_card_course')), findsOneWidget);
+    // Service Cards (Livraison & Transport à gauche, Courses grand card à droite)
+    expect(find.byKey(const ValueKey('home_service_card_livraison')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_service_card_transpo')), findsOneWidget);
-    expect(find.text('Course'), findsOneWidget);
-    expect(find.text('Transport en commun'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home_service_card_course')), findsOneWidget);
+
+    expect(find.text('Livraison'), findsOneWidget);
+    expect(find.text('Transport'), findsOneWidget);
+    expect(find.textContaining('Courses'), findsOneWidget);
+    expect(find.textContaining('à partir de 4 min'), findsOneWidget);
+
+    // Tapping Livraison does not trigger navigation
+    await tester.tap(find.byKey(const ValueKey('home_service_card_livraison')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('home_service_card_livraison')), findsOneWidget);
 
     // TCU Banner is completely removed
     expect(find.byKey(const ValueKey('home_tcu_banner_card')), findsNothing);

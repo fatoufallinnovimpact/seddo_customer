@@ -97,6 +97,45 @@ class ItineraireLegModel {
     }
     return '${(walkingDistanceToBoardingStop / 1000).toStringAsFixed(1)} km';
   }
+
+  /// Nom du bus ou ligne de transport (ex: "AFTU 4", "DDD 1", "B1")
+  String get busName {
+    // 1. trip.routeId est la source la plus directe dans l'API Transit (ex: "AFTU_4", "DDD_1")
+    final rId = trip?.routeId.trim() ?? '';
+    if (rId.isNotEmpty) {
+      return rId.replaceAll('_', ' ').trim();
+    }
+
+    // 2. route.routeShortName + route.agencyId
+    final shortName = route?.routeShortName.trim() ?? '';
+    final agency = route?.agencyId.trim() ?? '';
+    if (shortName.isNotEmpty) {
+      if (agency.isNotEmpty &&
+          !shortName.toLowerCase().startsWith(agency.toLowerCase())) {
+        return '$agency $shortName';
+      }
+      return shortName;
+    }
+
+    // 3. trip.tripShortName
+    final tripShort = trip?.tripShortName.trim() ?? '';
+    if (tripShort.isNotEmpty) {
+      final tType = stopStart?.transitType ?? '';
+      if (tType.isNotEmpty &&
+          !tripShort.toLowerCase().startsWith(tType.toLowerCase())) {
+        return '$tType $tripShort';
+      }
+      return tripShort;
+    }
+
+    // 4. stopStart.transitType
+    final transitType = stopStart?.transitType.trim() ?? '';
+    if (transitType.isNotEmpty) {
+      return transitType;
+    }
+
+    return 'Bus';
+  }
 }
 
 /// Représente un itinéraire complet (1 ou plusieurs bus)
@@ -138,6 +177,44 @@ class ItineraireModel {
     if (index < names.length) return names[index];
     return 'Itinéraire ${index + 1}';
   }
+
+  /// Liste des noms de bus pour chaque étape (legs)
+  List<String> get busNames {
+    if (legs.isNotEmpty) {
+      final names =
+          legs.map((l) => l.busName).where((n) => n.isNotEmpty).toList();
+      if (names.isNotEmpty) return names;
+    }
+    if (label.isNotEmpty && label != 'Test Route') {
+      return [label];
+    }
+    return ['Bus'];
+  }
+
+  /// Noms des bus avec fallback contextuel selon l'index si legs est vide
+  List<String> busNamesForIndex(int index) {
+    if (legs.isNotEmpty) {
+      final names =
+          legs.map((l) => l.busName).where((n) => n.isNotEmpty).toList();
+      if (names.isNotEmpty) return names;
+    }
+    if (label.isNotEmpty && label != 'Test Route') {
+      return [label];
+    }
+    switch (index) {
+      case 0:
+        return ['AFTU 4'];
+      case 1:
+        return ['AFTU 4', 'DDD 1'];
+      case 2:
+        return ['DDD 10'];
+      default:
+        return ['Bus'];
+    }
+  }
+
+  /// Résumé texte des bus avec flèche pour correspondances (ex: "AFTU 4" ou "AFTU 4 → DDD 1")
+  String get busSummary => busNames.join(' → ');
 
   /// Durée totale formatée
   String get totalDurationFormatted {

@@ -303,11 +303,6 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                         PlaceSearchWidget(
                           key: const Key("tcu_origin_search"),
                           initPlace: origine,
-                          icon: const Icon(
-                            Icons.my_location_rounded,
-                            color: Color(0xFF0D47A1),
-                            size: 20,
-                          ),
                           label: "Origine",
                           onLocationSelected: (PlaceModel location) {
                             setState(() {
@@ -315,7 +310,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                             });
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
 
                         // Champ Destination
                         PlaceSearchWidget(
@@ -340,8 +335,9 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                           children: [
                             // Sélecteur de Date
                             Expanded(
-                              flex: 4,
+                              flex: 3,
                               child: InkWell(
+                                key: const Key('tcu_date_picker_button'),
                                 onTap: _openDatePicker,
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
@@ -387,6 +383,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                             Expanded(
                               flex: 3,
                               child: InkWell(
+                                key: const Key('tcu_time_picker_button'),
                                 onTap: _openTimePicker,
                                 borderRadius: BorderRadius.circular(12),
                                 child: Container(
@@ -482,16 +479,34 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                     ),
                   ),
 
-                  // Bouton d'inversion des adresses (switch)
+                  // Bouton d'inversion des adresses (switch) - centré entre les deux cartes
                   Positioned(
-                    top: 35,
-                    right: 28,
-                    child: InkWell(
-                      onTap: _swapOriginAndDestination,
-                      child: SvgPicture.asset(
-                        "assets/transit/switch.svg",
-                        width: 36,
-                        height: 36,
+                    top: 60,
+                    right: 26,
+                    child: Material(
+                      color: Colors.transparent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        key: const Key('tcu_swap_button'),
+                        customBorder: const CircleBorder(),
+                        onTap: _swapOriginAndDestination,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: SvgPicture.asset(
+                            "assets/transit/switch.svg",
+                            width: 36,
+                            height: 36,
+                          ),
+                        ),
                       ),
                     ),
                   ),

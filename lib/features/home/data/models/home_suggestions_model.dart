@@ -63,19 +63,76 @@ class RecentSuggestionModel extends Equatable {
   });
 
   factory RecentSuggestionModel.fromJson(Map<String, dynamic> json) {
-    final labelVal =
-        (json['label'] ?? json['name'] ?? json['address'] ?? 'Destination')
-            as String;
-    final addressVal = (json['address'] ?? json['label'] ?? '') as String;
-    final latNum = (json['lat'] ?? json['latitude'] ?? 0.0) as num;
-    final lngNum = (json['lng'] ?? json['longitude'] ?? 0.0) as num;
+    // 1. Extraire le nom du lieu (label / name / destination / placeName)
+    final rawLabel = json['label'] ??
+        json['name'] ??
+        json['destination'] ??
+        json['placeName'] ??
+        '';
+
+    // 2. Extraire fidèlement l'adresse telle que fournie par le backend
+    // Ne pas copier le label dans l'adresse pour éviter de doubler "Dakar, Sénégal"
+    final rawAddress = json['address'] ??
+        json['destinationAddress'] ??
+        json['fullAddress'] ??
+        '';
+
+    // 3. Extraire latitude et longitude (support num, string, ou nested location)
+    double latVal = 0.0;
+    double lngVal = 0.0;
+
+    if (json['lat'] is num) {
+      latVal = (json['lat'] as num).toDouble();
+    } else if (json['latitude'] is num) {
+      latVal = (json['latitude'] as num).toDouble();
+    } else if (json['destinationLat'] is num) {
+      latVal = (json['destinationLat'] as num).toDouble();
+    } else if (json['location'] is Map) {
+      final loc = json['location'] as Map;
+      latVal = ((loc['lat'] ?? loc['latitude'] ?? 0.0) as num).toDouble();
+      lngVal = ((loc['lng'] ?? loc['longitude'] ?? 0.0) as num).toDouble();
+    }
+
+    if (lngVal == 0.0) {
+      if (json['lng'] is num) {
+        lngVal = (json['lng'] as num).toDouble();
+      } else if (json['longitude'] is num) {
+        lngVal = (json['longitude'] as num).toDouble();
+      } else if (json['destinationLng'] is num) {
+        lngVal = (json['destinationLng'] as num).toDouble();
+      }
+    }
+
+    final labelStr = rawLabel.toString().trim();
+    final addressStr = rawAddress.toString().trim();
+
+    String effectiveLabel = labelStr.isNotEmpty
+        ? labelStr
+        : (addressStr.isNotEmpty ? addressStr : 'Destination');
+    String effectiveAddress = addressStr;
+
+    // Si l'adresse est vide mais que le libellé contient des détails (ex: "Grand Yoff, 2527 Rue DD 98, Dakar")
+    final isDakarSenegal = effectiveLabel.toLowerCase() == 'dakar, sénégal' ||
+        effectiveLabel.toLowerCase() == 'dakar, senegal';
+
+    if (effectiveAddress.isEmpty &&
+        effectiveLabel.contains(',') &&
+        !isDakarSenegal) {
+      final parts = effectiveLabel.split(',');
+      effectiveLabel = parts.first.trim();
+      effectiveAddress = parts.sublist(1).join(',').trim();
+    } else if (effectiveAddress.isEmpty &&
+        !isDakarSenegal &&
+        effectiveLabel.toLowerCase() != 'dakar') {
+      effectiveAddress = 'Dakar, Sénégal';
+    }
 
     return RecentSuggestionModel(
-      id: (json['id'] ?? '').toString(),
-      label: labelVal,
-      address: addressVal,
-      lat: latNum.toDouble(),
-      lng: lngNum.toDouble(),
+      id: (json['id'] ?? json['_id'] ?? '').toString(),
+      label: effectiveLabel,
+      address: effectiveAddress,
+      lat: latVal,
+      lng: lngVal,
     );
   }
 
@@ -90,11 +147,17 @@ class RecentSuggestionModel extends Equatable {
   }
 
   PlaceSearchResult toPlaceSearchResult() {
+    final cleanLabel = label.trim();
+    final cleanAddress = address.trim();
+    final isSame = cleanAddress.isNotEmpty &&
+        cleanLabel.isNotEmpty &&
+        cleanAddress.toLowerCase() == cleanLabel.toLowerCase();
+
     return PlaceSearchResult(
       id: id.isNotEmpty ? id : 'recent_${lat}_$lng',
-      mainText: label.isNotEmpty ? label : address,
-      secondaryText: address,
-      fullAddress: address.isNotEmpty ? address : label,
+      mainText: cleanLabel.isNotEmpty ? cleanLabel : cleanAddress,
+      secondaryText: isSame ? '' : cleanAddress,
+      fullAddress: cleanAddress.isNotEmpty ? cleanAddress : cleanLabel,
       latitude: lat,
       longitude: lng,
       category: 'recent',
@@ -150,12 +213,15 @@ class RecentTripStorage {
   static Future<void> saveLastRecentTrip(PlaceSearchResult place) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final effectiveAddress = place.fullAddress.isNotEmpty
+          ? place.fullAddress
+          : (place.secondaryText.trim().toLowerCase() != place.mainText.trim().toLowerCase()
+              ? place.secondaryText
+              : '');
       final data = {
         'id': place.id,
         'label': place.mainText,
-        'address': place.fullAddress.isNotEmpty
-            ? place.fullAddress
-            : (place.secondaryText.isNotEmpty ? place.secondaryText : place.mainText),
+        'address': effectiveAddress,
         'lat': place.latitude,
         'lng': place.longitude,
       };

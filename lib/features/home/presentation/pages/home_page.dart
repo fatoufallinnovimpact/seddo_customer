@@ -15,8 +15,10 @@ import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/home/domain/bloc/home_event.dart';
 import 'package:seddo/features/home/domain/bloc/home_state.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
-import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
+import 'package:seddo/features/home/presentation/widgets/destination_search_bottom_sheet.dart';
+import 'package:seddo/features/home/presentation/widgets/ou_allons_nous_card.dart';
 import 'package:seddo/features/home/presentation/widgets/user_position_bottom_sheet.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/utils/active_ride_navigation_helper.dart';
@@ -24,12 +26,10 @@ import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dar
 import 'package:seddo/services/network_connectivity_service.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
-import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/realtime_service.dart';
-import 'package:seddo/features/home/presentation/widgets/home_promo_banners_widget.dart';
 
 /// Main Home Screen of Seddo:
 /// - Top Bar: SEDDO logo on left + real user street address beneath it (tapping opens "VOTRE POSITION" modal),
@@ -652,38 +652,37 @@ class _HomePageContentState extends State<_HomePageContent>
   }
 
   Future<void> _openDestinationSearch() async {
-    await _checkActiveRide();
-    if (!mounted) return;
+    // Si une course est déjà active en cache local, afficher le rappel
     if (_activeRideData != null) {
       _showActiveRideReminderDialog(context);
       return;
     }
-
-    final isOnline = await NetworkConnectivityService.isConnected;
-    if (!mounted) return;
-    if (!isOnline) {
-      await OfflineModalSheet.show(
-        context,
-        currentPosition: _currentUserLocation,
-        currentAddress: '$_currentAddressShort, $_currentAddressDetails',
-        onRetry: () => _openDestinationSearch(),
-      );
-      return;
-    }
+    // Rafraîchir l'état de la course en arrière-plan sans bloquer l'ouverture
+    unawaited(_checkActiveRide());
 
     final homeBloc = context.read<HomeBloc>();
-    final PlaceSearchResult? selectedPlace =
-        await Navigator.of(context).push<PlaceSearchResult>(
-      SlideRightToLeftRoute(
-        page: PlaceSearchPage(
-          currentUserLocation: _currentUserLocation ?? homeBloc.state.userLocation,
-          initialPickup: _currentAddressShort,
-        ),
-      ),
+    final DestinationSearchSheetResult? searchResult =
+        await DestinationSearchBottomSheet.show(
+      context,
+      currentUserLocation: _currentUserLocation ?? homeBloc.state.userLocation,
+      initialPickup: _currentAddressShort,
+      currentAddressDetails: _currentAddressDetails,
     );
 
-    if (selectedPlace != null && mounted) {
+    if (searchResult != null && mounted) {
+      final selectedPlace = searchResult.destination;
+      final departureResult = searchResult.departure;
+
+      if (departureResult.mainText.isNotEmpty &&
+          departureResult.mainText != _currentAddressShort) {
+        setState(() {
+          _currentAddressShort = departureResult.mainText;
+          _currentAddressDetails = departureResult.secondaryText;
+        });
+      }
+
       await RecentTripStorage.saveLastRecentTrip(selectedPlace);
+      if (!mounted) return;
       homeBloc.add(
         HomeSelectDestinationEvent(
           destinationLocation: LatLng(
@@ -693,57 +692,15 @@ class _HomePageContentState extends State<_HomePageContent>
           destinationAddress: selectedPlace.fullAddress,
         ),
       );
-    }
 
-    if (mounted) {
-      _fetchSuggestions();
-      _checkActiveRide();
-    }
-  }
-
-  /// Ouvre la recherche pré-remplie vers l'Aéroport Blaise Diagne (AIBD)
-  Future<void> _openAeroportReservation() async {
-    await _checkActiveRide();
-    if (!mounted) return;
-    if (_activeRideData != null) {
-      _showActiveRideReminderDialog(context);
-      return;
-    }
-
-    final isOnline = await NetworkConnectivityService.isConnected;
-    if (!mounted) return;
-    if (!isOnline) {
-      await OfflineModalSheet.show(
-        context,
-        currentPosition: _currentUserLocation,
-        currentAddress: '$_currentAddressShort, $_currentAddressDetails',
-        onRetry: () => _openAeroportReservation(),
-      );
-      return;
-    }
-
-    final homeBloc = context.read<HomeBloc>();
-    final PlaceSearchResult? selectedPlace =
-        await Navigator.of(context).push<PlaceSearchResult>(
-      SlideRightToLeftRoute(
-        page: PlaceSearchPage(
-          currentUserLocation:
-              _currentUserLocation ?? homeBloc.state.userLocation,
-          initialPickup: _currentAddressShort,
-          initialDestination: 'Aéroport Blaise Diagne (AIBD)',
-        ),
-      ),
-    );
-
-    if (selectedPlace != null && mounted) {
-      await RecentTripStorage.saveLastRecentTrip(selectedPlace);
-      homeBloc.add(
-        HomeSelectDestinationEvent(
-          destinationLocation: LatLng(
-            selectedPlace.latitude,
-            selectedPlace.longitude,
+      await Navigator.of(context).push(
+        SlideRightToLeftRoute(
+          page: RideBookingPage(
+            departure: departureResult,
+            destination: selectedPlace,
+            placesService: PlacesService(),
+            showHowToFindYouInitially: true,
           ),
-          destinationAddress: selectedPlace.fullAddress,
         ),
       );
     }
@@ -791,17 +748,17 @@ class _HomePageContentState extends State<_HomePageContent>
 
     await Navigator.of(context).push(
       SlideRightToLeftRoute(
-        page: PlaceSearchPage(
-          initialDepartureResult: departureResult,
-          initialDestinationResult: place,
-          initialPickup: _currentAddressShort,
-          initialDestination: place.mainText,
-          currentUserLocation: pickupLocation,
+        page: RideBookingPage(
+          departure: departureResult,
+          destination: place,
+          placesService: PlacesService(),
+          showHowToFindYouInitially: true,
         ),
       ),
     );
 
     if (mounted) {
+      _fetchSuggestions();
       _checkActiveRide();
     }
   }
@@ -978,22 +935,15 @@ class _HomePageContentState extends State<_HomePageContent>
                     const SizedBox(height: 22),
                   ],
 
-                  // 2. Services : Course (voiture) & Transpo (bus AFTU)
+                  // 2. Services : Livraison & Transport à gauche, Courses à droite
                   _buildServiceCards(context),
                   const SizedBox(height: 24),
 
                   // 3. Search card aérée : "Où allez-vous ?"
                   _buildSearchBar(context),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
 
-                  // 4. Bannières automatiques promotionnelles (Seddo en direct, Parrainage, Aéroport, Fidélité)
-                  HomePromoBannersWidget(
-                    onOpenSeddoDirect: _openDestinationSearch,
-                    onOpenAeroport: _openAeroportReservation,
-                  ),
-                  const SizedBox(height: 26),
-
-                  // 5. Suggestions section : trajets récents listés par ligne aérée
+                  // 4. Suggestions section : trajets récents listés par ligne aérée
                   _buildSuggestionsSection(context),
                 ],
               ),
@@ -1004,7 +954,7 @@ class _HomePageContentState extends State<_HomePageContent>
     );
   }
 
-  // Top Bar aérée : SEDDO Logo + Position de la rue en dessous (cliquables) + Burger Menu
+  // Top Bar aérée : SEDDO Logo + Position de la rue juste en dessous (cliquables) + Burger Menu
   Widget _buildTopBar(BuildContext context) {
     return Container(
       color: AppColors.white,
@@ -1018,7 +968,7 @@ class _HomePageContentState extends State<_HomePageContent>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Logo SEDDO + Vraie position cliquable (ouvre le modal Votre position)
+          // Logo SEDDO + Position actuelle juste en dessous (ouvre le modal Votre position)
           GestureDetector(
             key: const ValueKey('seddo_logo_and_location_header'),
             behavior: HitTestBehavior.opaque,
@@ -1027,7 +977,7 @@ class _HomePageContentState extends State<_HomePageContent>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo SEDDO (style affirmé inspiré de Yango aux couleurs Seddo)
+                // Logo SEDDO
                 Text(
                   'SEDDO',
                   style: GoogleFonts.inter(
@@ -1038,9 +988,9 @@ class _HomePageContentState extends State<_HomePageContent>
                     letterSpacing: AppConstants.titleLetterSpacing,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
 
-                // Vraie localisation de la personne : "Rue YF-557, 20 ›"
+                // Ma position actuelle juste en bas du logo SEDDO
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1122,45 +1072,13 @@ class _HomePageContentState extends State<_HomePageContent>
     );
   }
 
-  // Barre de recherche aérée "Où allez-vous ?"
+  // Barre de recherche "Où allons-nous ?" avec voiture animée carr.png et route défilante
   Widget _buildSearchBar(BuildContext context) {
-    return GestureDetector(
-      onTap: _openDestinationSearch,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 16,
-        ),
-        decoration: BoxDecoration(
-          color: AppColors.slateLightBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: AppColors.neutralInputBorder,
-            width: 1.0,
-          ),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.search_rounded,
-              size: 24,
-              color: AppColors.textPrimary,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                'home.where_to'.tr(),
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
+      child: OuAllonsNousCard(
+        label: 'home.where_to'.tr(),
+        onTap: _openDestinationSearch,
       ),
     );
   }
@@ -1181,39 +1099,40 @@ class _HomePageContentState extends State<_HomePageContent>
       }
     }
 
-    // Assurer au moins 2 trajets récents (Dakar)
+    // Assurer au moins 2 trajets récents de référence (Dakar)
     final defaultRecents = [
       const RecentSuggestionModel(
-        id: 'rec_sea_plaza',
-        label: 'Sea Plaza',
-        address: 'Corniche Ouest, Dakar',
-        lat: 14.6934,
-        lng: -17.4729,
+        id: 'rec_liberte_6',
+        label: 'Liberté 6 Extension',
+        address: 'Rue LIB 42, Dakar',
+        lat: 14.7214,
+        lng: -17.4619,
       ),
       const RecentSuggestionModel(
-        id: 'rec_plateau',
-        label: "Place de l'Indépendance",
-        address: 'Dakar-Plateau, Dakar',
-        lat: 14.6713,
-        lng: -17.4326,
+        id: 'rec_8_ave_place_116',
+        label: 'Place 116',
+        address: '8 Avenue Place 116, Dakar',
+        lat: 14.6980,
+        lng: -17.4520,
       ),
       const RecentSuggestionModel(
-        id: 'rec_almadies',
-        label: 'Route des Almadies',
-        address: 'Almadies, Dakar',
-        lat: 14.7450,
-        lng: -17.5180,
+        id: 'rec_2527_rue_dd_98',
+        label: 'Grand Yoff',
+        address: '2527 Rue DD 98, Dakar',
+        lat: 14.7350,
+        lng: -17.4480,
       ),
     ];
 
     for (final def in defaultRecents) {
-      if (recents.length >= 2) break;
-      if (!recents.any((r) => r.label == def.label || r.address == def.address)) {
+      if (recents.length >= 3) break;
+      final defKey = def.label.trim().toLowerCase();
+      if (!recents.any((r) => r.label.trim().toLowerCase() == defKey)) {
         recents.add(def);
       }
     }
 
-    final displayRecents = recents.take(2).toList();
+    final displayRecents = recents.take(3).toList();
     final placesList = _suggestions?.places ?? [];
     final SavedPlaceModel? savedItem =
         placesList.isNotEmpty ? placesList.first : null;
@@ -1223,45 +1142,7 @@ class _HomePageContentState extends State<_HomePageContent>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  'home.suggestions'.tr(),
-                  style: GoogleFonts.inter(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (savedItem != null)
-                GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      SlideRightToLeftRoute(
-                        page: const SavedPlacesPage(),
-                      ),
-                    );
-                  },
-                  child: Text(
-                    'home.see_all'.tr(),
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontSm,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // Trajets récents listés avec espacement généreux et séparateur léger
+          // Trajets récents listés avec espacement généreux et séparateur léger (3 trajets)
           for (int i = 0; i < displayRecents.length; i++) ...[
             _buildRecentTripCard(
               context: context,
@@ -1274,7 +1155,7 @@ class _HomePageContentState extends State<_HomePageContent>
                 child: Divider(
                   height: 12,
                   thickness: 0.8,
-                  color: AppColors.slateLightBg,
+                  color: AppColors.serviceCardBg,
                 ),
               ),
           ],
@@ -1296,14 +1177,21 @@ class _HomePageContentState extends State<_HomePageContent>
     required RecentSuggestionModel item,
     required int index,
   }) {
+    final hierarchy = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
+      item.label,
+      item.address,
+    );
+    final title = hierarchy.title;
+    final subtitle = hierarchy.subtitle;
+
     return InkWell(
       key: ValueKey('recent_suggestion_${item.id}_$index'),
       borderRadius: BorderRadius.circular(AppConstants.radiusSm),
       onTap: () {
         final place = PlaceSearchResult(
           id: 'recent_${item.id}',
-          mainText: item.label,
-          secondaryText: item.address,
+          mainText: title,
+          secondaryText: subtitle,
           fullAddress: item.address.isNotEmpty ? item.address : item.label,
           latitude: item.lat,
           longitude: item.lng,
@@ -1322,12 +1210,12 @@ class _HomePageContentState extends State<_HomePageContent>
               width: 42,
               height: 42,
               decoration: const BoxDecoration(
-                color: AppColors.slateLightBg,
+                color: AppColors.serviceCardBg,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.history_rounded,
-                color: AppColors.neutralIconGrey,
+                Icons.location_on_rounded,
+                color: AppColors.darkPinGrey,
                 size: 22,
               ),
             ),
@@ -1337,20 +1225,20 @@ class _HomePageContentState extends State<_HomePageContent>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.label,
+                    title,
                     style: GoogleFonts.inter(
                       fontSize: AppConstants.fontMd,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: AppColors.nearBlack,
                       letterSpacing: AppConstants.userPositionLetterSpacingSnug,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (item.address.isNotEmpty) ...[
+                  if (subtitle.isNotEmpty) ...[
                     const SizedBox(height: AppConstants.spacingXxs),
                     Text(
-                      item.address,
+                      subtitle,
                       style: GoogleFonts.inter(
                         fontSize: AppConstants.fontSm,
                         fontWeight: FontWeight.w400,
@@ -1398,12 +1286,12 @@ class _HomePageContentState extends State<_HomePageContent>
               width: 42,
               height: 42,
               decoration: const BoxDecoration(
-                color: AppColors.peachContainer,
+                color: AppColors.serviceCardBg,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 _iconForPlaceKind(item.kind),
-                color: AppColors.primary,
+                color: AppColors.neutralIconGrey,
                 size: 22,
               ),
             ),
@@ -1445,104 +1333,180 @@ class _HomePageContentState extends State<_HomePageContent>
     );
   }
 
-  // Nouveaux boutons de service en haut : Course (voiture) et Transpo (bus AFTU)
+  // Nouveaux boutons de service en haut : Livraison & Transport (colonne gauche) et Courses (grand card à droite)
   Widget _buildServiceCards(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppConstants.spacingTwenty),
-      child: Row(
-        children: [
-          // 1. Service Course
-          Expanded(
-            child: _buildServiceItem(
-              context: context,
-              key: const ValueKey('home_service_card_course'),
-              title: 'Course',
-              imagePath: 'assets/images/seddo_car.png',
-              imageHeight: 62,
-              onTap: _openDestinationSearch,
-            ),
-          ),
-          const SizedBox(width: 16),
-          // 2. Service Transpo
-          Expanded(
-            child: _buildServiceItem(
-              context: context,
-              key: const ValueKey('home_service_card_transpo'),
-              title: 'Transport en commun',
-              imagePath: 'assets/transit/aftu.png',
-              imageHeight: 66,
-              onTap: () {
-                final homeBloc = context.read<HomeBloc>();
-                Navigator.of(context).push(
-                  SlideRightToLeftRoute(
-                    page: PublicTransportPage(
-                      initialOrigin: _currentAddressShort,
-                      initialOriginLocation: _currentUserLocation ?? homeBloc.state.userLocation,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. Colonne de gauche : 2 cartes carrées empilées (Livraison en haut, Transport en bas)
+            // Format équilibré et compact avec la carte Course
+            Expanded(
+              flex: 44,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Carte Livraison (sans redirection) : la moto dépasse en haut dans la partie blanche
+                  Expanded(
+                    child: _buildSmallServiceCard(
+                      context: context,
+                      key: const ValueKey('home_service_card_livraison'),
+                      title: 'Livraison',
+                      imagePath: 'assets/images/livraison.png',
+                      fallbackIcon: Icons.two_wheeler_rounded,
+                      isDeliveryMoto: true,
+                      onTap: () {
+                        // Pas de redirection pour livraison selon la demande utilisateur
+                      },
                     ),
                   ),
-                );
-              },
+                  const SizedBox(height: 10),
+                  // Carte Transport (redirection vers Transport en commun) : le bus sort un peu vers la droite
+                  Expanded(
+                    child: _buildSmallServiceCard(
+                      context: context,
+                      key: const ValueKey('home_service_card_transpo'),
+                      title: 'Transport',
+                      imagePath: 'assets/images/bus-removebg.png',
+                      fallbackIcon: Icons.directions_bus_rounded,
+                      isTransportBus: true,
+                      onTap: () {
+                        final homeBloc = context.read<HomeBloc>();
+                        Navigator.of(context).push(
+                          SlideRightToLeftRoute(
+                            page: PublicTransportPage(
+                              initialOrigin: _currentAddressShort,
+                              initialOriginLocation: _currentUserLocation ?? homeBloc.state.userLocation,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            // 2. Colonne de droite : Grand card Courses (hauteur égale à la somme livraison + transport)
+            // Format réduit harmonieux, la voiture vient du côté droit avec son avant dynamique en 3D
+            Expanded(
+              flex: 56,
+              child: _buildLargeCourseCard(
+                context: context,
+                key: const ValueKey('home_service_card_course'),
+                imagePath: 'assets/images/course_car.png',
+                onTap: _openDestinationSearch,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildServiceItem({
+  Widget _buildSmallServiceCard({
     required BuildContext context,
     required Key key,
     required String title,
     required String imagePath,
+    required IconData fallbackIcon,
     required VoidCallback onTap,
-    double imageHeight = 60,
+    bool isDeliveryMoto = false,
+    bool isTransportBus = false,
   }) {
     return Material(
       color: AppColors.transparent,
       child: InkWell(
         key: key,
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        splashColor: AppColors.primary.withValues(alpha: 0.08),
-        highlightColor: AppColors.primary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(16),
+        splashColor: AppColors.transparent,
+        highlightColor: AppColors.transparent,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              height: 104,
+            SizedBox(
+              height: 70,
               width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppColors.neutralInputBg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.neutralInputBorder,
-                  width: AppConstants.strokeWidthBorder,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadowFaintBlack,
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  // Conteneur capsule gris unique sans bordure (format réduit)
+                  Container(
+                    width: double.infinity,
+                    height: 58,
+                    margin: const EdgeInsets.only(top: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.serviceCardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: AppColors.shadowFaintBlack,
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
                   ),
+                  if (isDeliveryMoto)
+                    // Moto de livraison : proportionnée et dépasse un peu en haut
+                    Positioned(
+                      top: -8,
+                      bottom: 4,
+                      child: Image.asset(
+                        imagePath,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          fallbackIcon,
+                          size: 28,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    )
+                  else if (isTransportBus)
+                    // Bus : proportionné et aligné verticalement sur le bord droit de la carte (comme le conteneur de livraison)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 12,
+                      bottom: 4,
+                      child: Image.asset(
+                        imagePath,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.centerRight,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          fallbackIcon,
+                          size: 28,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    )
+                  else
+                    Positioned.fill(
+                      top: 10,
+                      child: Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Image.asset(
+                          imagePath,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                            fallbackIcon,
+                            size: 28,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              alignment: Alignment.center,
-              child: Image.asset(
-                imagePath,
-                height: imageHeight,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.directions_car_rounded,
-                  size: 38,
-                  color: AppColors.primary,
-                ),
-              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 5),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 2),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
@@ -1550,7 +1514,7 @@ class _HomePageContentState extends State<_HomePageContent>
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   style: GoogleFonts.inter(
-                    fontSize: 14.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: AppColors.slateDark,
                     letterSpacing: -0.2,
@@ -1559,6 +1523,116 @@ class _HomePageContentState extends State<_HomePageContent>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLargeCourseCard({
+    required BuildContext context,
+    required Key key,
+    required String imagePath,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        key: key,
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        splashColor: AppColors.transparent,
+        highlightColor: AppColors.transparent,
+        child: ClipRect(
+          clipper: const _CourseCardRightClipper(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    // Conteneur capsule gris unique sans bordure (aligné au sommet sur le card de livraison à top: 10)
+                    Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(0, 10, 0, 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.serviceCardBg,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: AppColors.shadowFaintBlack,
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Voiture Course 3D (assets/images/course_car.png) :
+                    // Agrandie et remontée pour se positionner visuellement
+                    // à la hauteur de l'intervalle entre Livraison et Transport
+                    Positioned(
+                      left: 12,
+                      right: -22,
+                      top: 8,
+                      bottom: 24,
+                      child: Image.asset(
+                        imagePath,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.bottomLeft,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          Icons.directions_car_rounded,
+                          size: 48,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Courses',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.slateDark,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        TextSpan(
+                          text: ' • ',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        TextSpan(
+                          text: 'à partir de 4 min',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1577,6 +1651,20 @@ class _HomePageContentState extends State<_HomePageContent>
     }
     return Icons.star_rounded;
   }
+}
+
+/// Clipper qui coupe strictement le côté droit (x > size.width) pour ne pas déborder hors écran,
+/// tout en laissant le bas et la gauche complètement ouverts pour l'effet 3D en relief.
+class _CourseCardRightClipper extends CustomClipper<Rect> {
+  const _CourseCardRightClipper();
+
+  @override
+  Rect getClip(Size size) {
+    return Rect.fromLTWH(-50, -20, size.width + 50, size.height + 70);
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Rect> oldClipper) => false;
 }
 
 

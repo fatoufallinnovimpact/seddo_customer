@@ -268,49 +268,42 @@ class PlacesService {
           }
         }
 
-        // Construire le quartier et la ville pour le sous-titre
-        final district = bestNeighborhood ?? bestSublocality;
-        final city = bestLocality ?? bestAdminArea;
-        String secondary = '';
-        if (district != null && city != null && !city.contains(district)) {
-          secondary = '$district, $city';
-        } else if (district != null) {
-          secondary = district;
-        } else if (city != null) {
-          secondary = city;
-        }
-        if (bestCountry != null &&
-            bestCountry != 'Sénégal' &&
-            bestCountry != 'Senegal' &&
-            !secondary.contains(bestCountry)) {
-          secondary = secondary.isNotEmpty ? '$secondary, $bestCountry' : bestCountry;
-        }
+        // 1. Détection et affinage du quartier pour Dakar (ex: convertir "Fann-Point E-Amitié" en "Point E")
+        final rawDistrict = bestNeighborhood ?? bestSublocality;
+        final district = rawDistrict != null && rawDistrict.isNotEmpty
+            ? refineDakarDistrict(
+                rawDistrict,
+                route: bestRoute,
+                lat: lat,
+                lng: lng,
+              )
+            : null;
 
-        // 1er choix : Nom de rue exacte (ex: "77 Rue 4" ou "Rue PE 34" ou "Avenue Cheikh Anta Diop")
+        final city = bestLocality ?? bestAdminArea ?? 'Dakar';
+
+        // 2. Préparer le libellé de rue pour le sous-titre (ex: "Rue LIB 42" ou "Rue PE 24")
+        String? streetDetail;
         if (bestRoute != null && bestRoute.isNotEmpty) {
-          String main = bestStreetNumber != null
+          final rawStreet = bestStreetNumber != null
               ? '$bestStreetNumber $bestRoute'
               : (bestPremise != null ? '$bestPremise, $bestRoute' : bestRoute);
-
-          final cleanMain = _cleanAddress(main);
-          final cleanSec = _cleanAddress(secondary);
-          final full = cleanSec.isNotEmpty ? '$cleanMain, $cleanSec' : cleanMain;
-
-          return PlaceSearchResult(
-            id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
-            mainText: cleanMain,
-            secondaryText: cleanSec,
-            fullAddress: full,
-            latitude: lat,
-            longitude: lng,
-          );
+          streetDetail = _cleanAddress(rawStreet);
         }
 
-        // 2e choix : Établissement ou lieu nommé (ex: "Hôpital Fann")
+        // Cas 1 : Lieu ou établissement connu dans Google Maps (ex: "Sea Plaza", "Hôtel Radisson Blu", "Pharmacie...")
+        // -> C'est le GRAND TITRE !
+        // -> Et le sous-titre contient la rue (ou quartier) + ville
         if (bestEstablishment != null && bestEstablishment.isNotEmpty) {
           final cleanMain = _cleanAddress(bestEstablishment);
-          final cleanSec = _cleanAddress(secondary);
-          final full = cleanSec.isNotEmpty ? '$cleanMain, $cleanSec' : cleanMain;
+          String cleanSec = '';
+          if (streetDetail != null && streetDetail.isNotEmpty) {
+            cleanSec = '$streetDetail, $city';
+          } else if (district != null && district.isNotEmpty && district != cleanMain) {
+            cleanSec = '$district, $city';
+          } else {
+            cleanSec = '$city, Sénégal';
+          }
+          final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
             id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
@@ -322,17 +315,18 @@ class PlacesService {
           );
         }
 
-        // 3e choix : Quartier ou localité si la voie est sans nom ou non renseignée (ex: "Penten")
+        // Cas 2 : Quartier / lieu connu (ex: "Point E", "Liberté 6 Extension", "Almadies", "Grand Yoff")
+        // -> Le quartier / lieu est le GRAND TITRE !
+        // -> Les rues ("Rue LIB 42", "Rue PE 24") se trouvent dans le SOUS-TITRE !
         if (district != null && district.isNotEmpty) {
           final cleanMain = _cleanAddress(district);
-          final cleanSec = _cleanAddress(
-            city != null && city != district
-                ? (bestCountry != null && !city.contains(bestCountry)
-                    ? '$city, $bestCountry'
-                    : city)
-                : (bestCountry ?? ''),
-          );
-          final full = cleanSec.isNotEmpty ? '$cleanMain, $cleanSec' : cleanMain;
+          String cleanSec = '';
+          if (streetDetail != null && streetDetail.isNotEmpty) {
+            cleanSec = '$streetDetail, $city';
+          } else {
+            cleanSec = '$city, Sénégal';
+          }
+          final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
             id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
@@ -344,7 +338,23 @@ class PlacesService {
           );
         }
 
-        // 4e choix : Première adresse formatée propre sans Plus Code ni "Route sans nom"
+        // Cas 3 : Si aucun quartier ni établissement n'est détecté, la rue sert de titre
+        if (streetDetail != null && streetDetail.isNotEmpty) {
+          final cleanMain = streetDetail;
+          final cleanSec = '$city, Sénégal';
+          final full = '$cleanMain, $cleanSec';
+
+          return PlaceSearchResult(
+            id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+            mainText: cleanMain,
+            secondaryText: cleanSec,
+            fullAddress: full,
+            latitude: lat,
+            longitude: lng,
+          );
+        }
+
+        // Cas 4 : Première adresse formatée propre sans Plus Code ni "Route sans nom"
         for (final item in results) {
           final rawFormatted = item['formatted_address'] as String? ?? '';
           final cleaned = _cleanAddress(rawFormatted);
@@ -354,7 +364,7 @@ class PlacesService {
               firstPart.toLowerCase().contains('unnamed road');
 
           if (firstPart.isNotEmpty && !_isPlusCode(firstPart) && !isUnnamed) {
-            final sec = parts.length > 1 ? parts.sublist(1).join(', ') : secondary;
+            final sec = parts.length > 1 ? parts.sublist(1).join(', ') : '$city, Sénégal';
             return PlaceSearchResult(
               id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
               mainText: firstPart,
@@ -507,13 +517,18 @@ class PlacesService {
     }
     // 5. Liberté (Liberté 1 à 6, Sicap)
     else if (lat >= 14.710 && lat <= 14.735 && lng >= -17.465 && lng <= -17.445) {
-      district = 'Liberté 6 / Sicap';
-      secondary = 'Dakar, Sénégal';
+      district = 'Liberté 6 Extension';
+      secondary = 'Rue LIB, Dakar';
     }
-    // 6. Fann, Point E & Amitié
+    // 6. Point E, Fann & Amitié
     else if (lat >= 14.685 && lat <= 14.708 && lng >= -17.475 && lng <= -17.450) {
-      district = 'Point E / Fann';
-      secondary = 'Dakar, Sénégal';
+      if (lat >= 14.688 && lng >= -17.465) {
+        district = 'Point E';
+        secondary = 'Rue PE, Dakar';
+      } else {
+        district = 'Fann';
+        secondary = 'Fann Hock, Dakar';
+      }
     }
     // 7. Médina, Fass, Colobane & Gueule Tapée
     else if (lat >= 14.675 && lat <= 14.698 && lng >= -17.460 && lng <= -17.435) {
@@ -572,6 +587,81 @@ class PlacesService {
       latitude: lat,
       longitude: lng,
     );
+  }
+
+  /// Raffine les communes administratives composées de Dakar en véritables quartiers usuels
+  /// (ex: transforme "Fann-Point E-Amitié" en "Point E" ou "Fann", "Mermoz-Sacré-Cœur" en "Sacré-Cœur", etc.)
+  static String refineDakarDistrict(
+    String rawDistrict, {
+    String? route,
+    double? lat,
+    double? lng,
+  }) {
+    var clean = rawDistrict.trim();
+    if (clean.isEmpty) return 'Dakar';
+
+    final lower = clean.toLowerCase();
+    final lowerRoute = (route ?? '').toLowerCase();
+
+    // 1. Détection Fann - Point E - Amitié
+    if (lower.contains('fann') &&
+        (lower.contains('point e') ||
+            lower.contains('point-e') ||
+            lower.contains('amitié') ||
+            lower.contains('amitie'))) {
+      if (lowerRoute.contains('pe') ||
+          lowerRoute.contains('point e') ||
+          lowerRoute.contains('point-e')) {
+        return 'Point E';
+      }
+      if (lowerRoute.contains('fn') || lowerRoute.contains('fann')) {
+        return 'Fann';
+      }
+      if (lowerRoute.contains('am') ||
+          lowerRoute.contains('amitié') ||
+          lowerRoute.contains('amitie')) {
+        return 'Amitié';
+      }
+      if (lat != null && lng != null) {
+        // Coordonnées géographiques de Point E
+        if (lat >= 14.688 && lat <= 14.700 && lng >= -17.465 && lng <= -17.452) {
+          return 'Point E';
+        }
+        if (lat < 14.688 && lng >= -17.475 && lng <= -17.455) {
+          return 'Fann';
+        }
+      }
+      return 'Point E';
+    }
+
+    // 2. Mermoz - Sacré-Cœur
+    if (lower.contains('mermoz') &&
+        (lower.contains('sacré') || lower.contains('sacre'))) {
+      if (lowerRoute.contains('sc') || lowerRoute.contains('sacr')) {
+        return 'Sacré-Cœur';
+      }
+      if (lowerRoute.contains('mz') || lowerRoute.contains('mermoz')) {
+        return 'Mermoz';
+      }
+      if (lng != null && lng > -17.472) {
+        return 'Sacré-Cœur';
+      }
+      return 'Mermoz';
+    }
+
+    // 3. Sicap - Liberté
+    if (lower.contains('sicap') &&
+        (lower.contains('liberté') || lower.contains('liberte'))) {
+      if (lowerRoute.contains('lib')) {
+        return 'Liberté 6 Extension';
+      }
+      return 'Liberté';
+    }
+
+    // Retirer les Plus Codes si présents
+    clean = clean.replaceAll(RegExp(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,}\s*'), '').trim();
+
+    return clean.isNotEmpty ? clean : 'Dakar';
   }
 
   static bool _isPlusCode(String input) {

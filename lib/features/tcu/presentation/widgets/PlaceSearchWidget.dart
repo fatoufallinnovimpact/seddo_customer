@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/utils/app_colors.dart';
 import '../../data/models/transit/PlaceModel.dart';
 import '../../data/services/transit_place_search_service.dart';
 
 class PlaceSearchWidget extends StatefulWidget {
   final Function(PlaceModel) onLocationSelected;
   final String label;
-  final Icon icon;
+  final Widget? icon;
   final PlaceModel? initPlace;
   final FocusNode? focusNode;
   final String? apiKey;
@@ -18,7 +19,7 @@ class PlaceSearchWidget extends StatefulWidget {
     super.key,
     required this.onLocationSelected,
     required this.label,
-    required this.icon,
+    this.icon,
     this.initPlace,
     this.focusNode,
     this.apiKey,
@@ -178,32 +179,34 @@ class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
               fontWeight: FontWeight.w400,
               color: Colors.grey.shade400,
             ),
-            prefixIcon: InkWell(
-              borderRadius: BorderRadius.circular(100),
-              onTap: isOrigin ? _useCurrentLocation : null,
-              child: Tooltip(
-                message: isOrigin ? 'Utiliser ma position actuelle' : widget.label,
-                child: positionLoader
-                    ? const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF0D47A1),
-                          ),
+            prefixIcon: positionLoader
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFF0D47A1),
+                      ),
+                    ),
+                  )
+                : (widget.icon != null
+                    ? InkWell(
+                        borderRadius: BorderRadius.circular(100),
+                        onTap: isOrigin ? _useCurrentLocation : null,
+                        child: Tooltip(
+                          message: isOrigin ? 'Utiliser ma position actuelle' : widget.label,
+                          child: widget.icon,
                         ),
                       )
-                    : widget.icon,
-              ),
-            ),
+                    : null),
             suffixIcon: _controller.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(
-                      Icons.cancel_rounded,
+                      Icons.close_rounded,
                       size: 20,
-                      color: Color(0xFF757575),
+                      color: AppColors.neutralIconGrey,
                     ),
                     splashRadius: 18,
                     tooltip: 'Effacer',

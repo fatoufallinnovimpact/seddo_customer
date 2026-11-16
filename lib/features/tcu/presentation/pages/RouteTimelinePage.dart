@@ -107,8 +107,8 @@ class _RouteTimelineContent extends StatelessWidget {
         final content = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Onglets itinéraires (si plus d'un)
-            if (state.itineraires.length > 1) ...[
+            // Onglets itinéraires (Plus rapide, Alternative, Panoramique avec noms de bus & correspondances)
+            if (state.itineraires.isNotEmpty) ...[
               const SizedBox(height: 8),
               _ItineraireTabBar(
                 itineraires: state.itineraires,
@@ -335,12 +335,15 @@ class _NoTransitFound extends StatelessWidget {
 // ONGLETS ITINÉRAIRES
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ItineraireTabBar extends StatelessWidget {
+typedef _ItineraireTabBar = ItineraireTabBar;
+
+class ItineraireTabBar extends StatelessWidget {
   final List<ItineraireModel> itineraires;
   final int selectedIndex;
   final void Function(int) onTap;
 
-  const _ItineraireTabBar({
+  const ItineraireTabBar({
+    super.key,
     required this.itineraires,
     required this.selectedIndex,
     required this.onTap,
@@ -353,65 +356,98 @@ class _ItineraireTabBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
         child: Row(
           children: List.generate(itineraires.length, (i) {
             final itineraire = itineraires[i];
             final isSelected = i == selectedIndex;
             final name = ItineraireModel.nameForIndex(i, itineraire.isDirect);
+            final busNames = itineraire.busNamesForIndex(i);
+
             return Padding(
-              padding: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.only(right: 10),
               child: GestureDetector(
+                key: Key(i == 0
+                    ? 'tcu_filter_fastest'
+                    : (i == 1
+                        ? 'tcu_filter_alternative'
+                        : 'tcu_filter_panoramic')),
                 onTap: () => onTap(i),
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 250),
+                  duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(
                     vertical: 10,
                     horizontal: 16,
                   ),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
+                    borderRadius: BorderRadius.circular(22),
                     color: isSelected
                         ? transitSecondaryColor
-                        : Colors.grey.shade100,
+                        : const Color(0xFFF3F4F6),
+                    border: Border.all(
+                      color: isSelected
+                          ? transitSecondaryColor
+                          : Colors.grey.shade300,
+                      width: 1.2,
+                    ),
                     boxShadow: isSelected
                         ? [
                             BoxShadow(
-                              color: transitSecondaryColor.withValues(alpha: 0.3),
+                              color: transitSecondaryColor.withValues(alpha: 0.28),
                               blurRadius: 8,
-                              offset: const Offset(0, 2),
+                              offset: const Offset(0, 3),
                             ),
                           ]
-                            : [],
+                        : null,
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name,
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.black87,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                      if (itineraire.totalTrafficDurationSeconds > 0)
-                        Text(
-                          itineraire.totalDurationFormatted,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Colors.white70
-                                : Colors.grey.shade600,
-                            fontSize: 11,
-                          ),
-                        ),
-                    ],
-                  ),
+                  child: _buildBusBadges(busNames, isSelected),
                 ),
               ),
             );
           }),
         ),
       ),
+    );
+  }
+
+  /// Affiche uniquement le nom du bus ou des bus reliés par une flèche
+  Widget _buildBusBadges(List<String> busNames, bool isSelected) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        for (int b = 0; b < busNames.length; b++) ...[
+          if (b > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(
+                Icons.arrow_forward_rounded,
+                size: 14,
+                color: isSelected ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.directions_bus_rounded,
+                size: 15,
+                color: isSelected ? Colors.white : const Color(0xFF0D47A1),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                busNames[b],
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
