@@ -59,14 +59,19 @@ void main() {
       // 3. Bottom Sheet title "Choisissez une course"
       expect(find.text('Choisissez une course'), findsOneWidget);
 
-      // 4. Both ride options are present: Seddo Eco and Seddo Confort
+      // 4. Both ride options are present: Seddo Eco and Seddo Confort (with Climatisé badge)
       expect(find.text('Seddo Eco'), findsOneWidget);
       expect(find.text('Seddo Confort'), findsOneWidget);
+      expect(find.byKey(const Key('ride_confort_ac_badge')), findsOneWidget);
+      expect(find.text('Climatisé'), findsOneWidget);
 
-      // 5. Initial selection is Seddo Eco
-      expect(find.text('Commander Seddo Eco'), findsOneWidget);
+      // 5. Order button simply says "Commander" and payment icon button is on its left
+      expect(find.text('Commander'), findsOneWidget);
+      expect(find.byKey(const Key('ride_payment_method_selector_button')), findsOneWidget);
+      expect(find.byKey(const Key('ride_order_button')), findsOneWidget);
 
-      // 6. Orange Money payment tile removed from modal sheet
+      // 6. Payment method bar card is removed from modal sheet
+      expect(find.text('Moyen présélectionné · Toucher pour changer'), findsNothing);
       expect(find.text('Prix fixe, payé à la commande'), findsNothing);
       expect(find.text('OM'), findsNothing);
 
@@ -74,39 +79,33 @@ void main() {
       await tester.tap(find.text('Seddo Confort'));
       await tester.pumpAndSettle();
 
-      // Button updates to Commander Seddo Confort
-      expect(find.text('Commander Seddo Confort'), findsOneWidget);
+      // Button text remains "Commander"
+      expect(find.text('Commander'), findsOneWidget);
 
-      // 8. Tap on Commander Seddo Confort to confirm
-      await tester.tap(find.text('Commander Seddo Confort'));
+      // 8. Tap on payment icon on the left of Commander button to open PaymentMethodModal
+      await tester.tap(find.byKey(const Key('ride_payment_method_selector_button')));
       await tester.pumpAndSettle();
 
-      // Modal 1 : Mode de paiement
-      expect(find.text('Mode de paiement'), findsOneWidget);
-      expect(find.text('Wave'), findsOneWidget);
+      expect(find.text('Méthode de paiement'), findsOneWidget);
       expect(find.text('Orange Money'), findsOneWidget);
-      expect(find.text('Paiement en espèces'), findsOneWidget);
+      expect(find.text('Wave'), findsOneWidget);
+      expect(find.text('Espèces'), findsOneWidget);
 
-      // Tap on Paiement en espèces
-      await tester.tap(find.text('Paiement en espèces'));
+      // Select Espèces and tap Terminer
+      await tester.tap(find.text('Espèces'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Terminer'));
       await tester.pumpAndSettle();
 
-      // Tap Confirmer et payer
-      await tester.tap(find.text('Confirmer et payer'));
-      await tester.pumpAndSettle();
-
-      // Modal 2 : Confirmation du paiement en espèces
-      expect(find.text('Confirmer le paiement'), findsOneWidget);
-      expect(find.text('Valider'), findsOneWidget);
-
-      // 9. Tap Valider to confirm payment
-      await tester.tap(find.text('Valider'));
+      // 9. Tap on Commander to confirm
+      await tester.tap(find.byKey(const Key('ride_order_button')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify DriverSearchPage is displayed with search title
+      // Verify DriverSearchPage is displayed with search title and Confort vehicle image
       expect(find.byType(DriverSearchPage), findsOneWidget);
       expect(find.textContaining('Recherche d\'un chauffeur'), findsOneWidget);
+      expect(find.byKey(const Key('driver_search_confort_vehicle_image')), findsOneWidget);
 
       // 10. Wait for auto-match timer (5 seconds)
       await tester.pump(const Duration(seconds: 5));
@@ -115,13 +114,10 @@ void main() {
 
       // Verify DriverApproachingPage is displayed matching the reference design
       expect(find.byType(DriverApproachingPage), findsOneWidget);
-      expect(find.textContaining('Votre chauffeur arrive dans'), findsWidgets);
       expect(find.textContaining('Moussa'), findsWidgets);
-      expect(find.text('Code de départ'), findsOneWidget);
-      expect(find.text('Envoyer un message...'), findsOneWidget);
 
-      // 11. Tap message placeholder to open chat
-      await tester.tap(find.text('Envoyer un message...'));
+      // 11. Tap Discussion button to open chat
+      await tester.tap(find.byKey(const ValueKey('approaching_btn_discussion')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

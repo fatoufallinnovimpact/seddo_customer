@@ -185,7 +185,9 @@ class _PickupMapLocationPickerPageState
 
   Set<Marker> _buildNearbyMarkers() {
     final markers = <Marker>{};
-    final cars = _nearbyDrivers?.allCars ?? [];
+    final cars = NearbyCarModel.separateOverlappingCars(
+      _nearbyDrivers?.allCars ?? [],
+    );
 
     for (int i = 0; i < cars.length; i++) {
       final car = cars[i];

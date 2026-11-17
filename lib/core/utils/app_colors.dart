@@ -429,4 +429,25 @@ abstract class AppColors {
 
   /// Gris sombre pour les icônes de localisation dans les listes de recherche
   static const Color darkPinGrey = Color(0xFF374151);
+
+  // Account & Drawer Menu Pastels (Matching Account & Settings Mockups)
+  static const Color accountScaffoldBg = Color(0xFFF6F7F9);
+  static const Color accountStatBoxBg = Color(0xFFF3F4F6);
+  static const Color accountIconGreenBg = Color(0xFFE8F8F0);
+  static const Color accountIconGreen = Color(0xFF10B981);
+  static const Color accountIconBlueBg = Color(0xFFE5F4FF);
+  static const Color accountIconBlue = Color(0xFF0284C7);
+  static const Color accountIconAmberBg = Color(0xFFFFF4E5);
+  static const Color accountIconAmber = Color(0xFFD97706);
+  static const Color accountIconPurpleBg = Color(0xFFF3E8FF);
+  static const Color accountIconPurple = Color(0xFF7E22CE);
+  static const Color accountIconRedBg = Color(0xFFFFECEC);
+  static const Color accountIconRed = Color(0xFFE53935);
+  static const Color accountChevronGrey = Color(0xFF9CA3AF);
+
+  // Ride Booking Vehicle Card Tokens
+  static const Color rideCardSelectedTint = Color(0xFFFFE5D3);
+  static const Color rideCardUnselectedTint = Color(0xFFF1F2F4);
+  static const Color rideCardAcBadgeBg = Color(0xFFE5F4FF);
+  static const Color rideCardAcBadgeText = Color(0xFF0284C7);
 }

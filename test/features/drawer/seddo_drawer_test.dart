@@ -32,6 +32,9 @@ class MockDrawerTestAssetLoader extends AssetLoader {
         'support': isWo ? 'Ndimbal' : 'Support',
       },
       'drawer': {
+        'account_title': isWo ? 'Sama compte' : 'Mon compte',
+        'trips_label': isWo ? 'Tooki yi' : 'Courses',
+        'rating_label': isWo ? 'Natt' : 'Évaluation',
         'activity': isWo ? 'Yëngu-yëngu' : 'Activité',
         'activity_sub':
             isWo ? 'Tukki yi ak feyukaay yi' : 'Courses et remboursements',
@@ -402,9 +405,64 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.byKey(const Key('drawer_user_rating')), findsNothing);
+    expect(find.byKey(const Key('drawer_user_rating_zero')), findsOneWidget);
+    expect(find.byKey(const Key('drawer_trips_stat_card')), findsOneWidget);
+    expect(find.byKey(const Key('drawer_rating_stat_card')), findsOneWidget);
+    expect(find.text('Mon compte'), findsOneWidget);
     expect(find.text('Nouveau'), findsNothing);
     expect(find.byKey(const Key('drawer_user_name_button')), findsOneWidget);
     expect(find.text('Fatou Fall'), findsOneWidget);
     expect(find.text('+221 77 100 43 13'), findsOneWidget);
+  });
+
+  testWidgets(
+      'Tapping Notifications in SeddoDrawerWidget opens NotificationsModal and updates API preferences',
+      (tester) async {
+    const testUser = UserModel(
+      id: 'usr_notif_test',
+      phone: '77 100 43 13',
+      firstName: 'Fatou',
+      lastName: 'Fall',
+      notifyPush: true,
+      notifySms: false,
+    );
+    AuthRepository().setCurrentUser(testUser);
+
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      AuthRepository().setCurrentUser(null);
+    });
+
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Tap on Notifications item in drawer
+    await tester.tap(find.text('Notifications'));
+    await tester.pumpAndSettle();
+
+    // Verify NotificationsModal appears with Push & SMS switches
+    expect(find.text('Préférences de notification'), findsOneWidget);
+    expect(find.text('Notifications push'), findsOneWidget);
+    expect(find.text('SMS de secours'), findsOneWidget);
+
+    final pushSwitch = find.byKey(const Key('notifications_modal_push_switch'));
+    final smsSwitch = find.byKey(const Key('notifications_modal_sms_switch'));
+    expect(pushSwitch, findsOneWidget);
+    expect(smsSwitch, findsOneWidget);
+
+    expect(tester.widget<Switch>(pushSwitch).value, isTrue);
+    expect(tester.widget<Switch>(smsSwitch).value, isFalse);
+
+    // Toggle SMS switch ON -> calls updateProfile on AuthRepository
+    await tester.tap(smsSwitch);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Switch>(smsSwitch).value, isTrue);
+    expect(AuthRepository().currentUser?.notifySms, isTrue);
   });
 }

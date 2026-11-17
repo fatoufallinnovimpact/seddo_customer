@@ -74,6 +74,7 @@
     "eco_sub": "Économique",
     "confort": "Confort",
     "confort_sub": "Plus d'espace",
+    "confort_ac_badge": "Climatisé",
     "airport": "Aéroport",
     "airport_sub": "Transfert",
     "tcu": "TCU",
@@ -85,6 +86,9 @@
     "drivers_around": "{} chauffeurs autour · {} min"
   },
   "drawer": {
+    "account_title": "Mon compte",
+    "trips_label": "Courses",
+    "rating_label": "Évaluation",
     "activity": "Activité",
     "activity_sub": "Courses et remboursements",
     "tcu": "TCU",

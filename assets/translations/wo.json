@@ -74,6 +74,7 @@
     "eco_sub": "Kom-kom",
     "confort": "Confort",
     "confort_sub": "Yaa yaatu",
+    "confort_ac_badge": "Climatisé",
     "airport": "Aéroport",
     "airport_sub": "Yóbbu",
     "tcu": "TCU",
@@ -85,6 +86,9 @@
     "drivers_around": "{} chauffeur ñu ngi ci wet gi · {} min"
   },
   "drawer": {
+    "account_title": "Sama compte",
+    "trips_label": "Tooki yi",
+    "rating_label": "Natt",
     "activity": "Yëngu-yëngu",
     "activity_sub": "Tukki yi ak feyukaay yi",
     "tcu": "TCU",

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:equatable/equatable.dart';
 
 /// Represents a single car position returned by GET /v1/drivers/nearby.
@@ -13,6 +14,94 @@ class NearbyCarModel extends Equatable {
     required this.lng,
     this.heading = 0.0,
   });
+
+  NearbyCarModel copyWith({
+    String? id,
+    double? lat,
+    double? lng,
+    double? heading,
+  }) {
+    return NearbyCarModel(
+      id: id ?? this.id,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      heading: heading ?? this.heading,
+    );
+  }
+
+  /// Deduplicates cars by ID and separates any cars whose coordinates are
+  /// too close together so that car markers never overlap on the map.
+  static List<NearbyCarModel> separateOverlappingCars(
+    List<NearbyCarModel> rawCars, {
+    double minSeparationDegrees = 0.00055,
+  }) {
+    if (rawCars.length <= 1) return rawCars;
+
+    // 1. Deduplicate by driver/car ID when an explicit ID is provided
+    final List<NearbyCarModel> uniqueCars = [];
+    final Set<String> seenExplicitIds = <String>{};
+
+    for (final car in rawCars) {
+      if (car.lat == 0.0 && car.lng == 0.0) continue;
+      final isCoordBasedId =
+          car.id.isEmpty || car.id == 'unknown' || car.id.startsWith('car_');
+      if (!isCoordBasedId) {
+        if (seenExplicitIds.contains(car.id)) {
+          continue;
+        }
+        seenExplicitIds.add(car.id);
+      }
+      uniqueCars.add(car);
+    }
+
+    if (uniqueCars.length <= 1) return uniqueCars;
+
+    // 2. Ensure minimum visual separation between every pair of cars on the map
+    final List<NearbyCarModel> placed = [];
+    final double minDistSq = minSeparationDegrees * minSeparationDegrees;
+
+    for (int i = 0; i < uniqueCars.length; i++) {
+      final current = uniqueCars[i];
+      double candidateLat = current.lat;
+      double candidateLng = current.lng;
+      double candidateHeading = current.heading;
+
+      int attempt = 0;
+      while (attempt < 16) {
+        bool overlaps = false;
+        for (final other in placed) {
+          final dLat = candidateLat - other.lat;
+          final dLng = candidateLng - other.lng;
+          if ((dLat * dLat + dLng * dLng) < minDistSq) {
+            overlaps = true;
+            break;
+          }
+        }
+        if (!overlaps) break;
+
+        attempt++;
+        final int ring = ((attempt - 1) ~/ 6) + 1;
+        final double angle =
+            (i * 1.0471975512) + (attempt * 2.399963229728653); // Golden angle
+        final double radius = minSeparationDegrees * 1.15 * ring;
+        candidateLat = current.lat + radius * math.cos(angle);
+        candidateLng = current.lng + radius * math.sin(angle);
+        if (candidateHeading == 0.0) {
+          candidateHeading = (angle * 180.0 / math.pi) % 360.0;
+        }
+      }
+
+      placed.add(
+        current.copyWith(
+          lat: candidateLat,
+          lng: candidateLng,
+          heading: candidateHeading,
+        ),
+      );
+    }
+
+    return placed;
+  }
 
   factory NearbyCarModel.fromJson(dynamic json) {
     if (json is Map<String, dynamic>) {
@@ -133,9 +222,14 @@ class NearbyDriversResponseModel extends Equatable {
           ? confortCategory!.etaMinutes
           : null;
 
-  List<NearbyCarModel> get ecoCars => ecoCategory?.cars ?? [];
-  List<NearbyCarModel> get confortCars => confortCategory?.cars ?? [];
-  List<NearbyCarModel> get allCars => [...ecoCars, ...confortCars];
+  List<NearbyCarModel> get ecoCars =>
+      NearbyCarModel.separateOverlappingCars(ecoCategory?.cars ?? []);
+  List<NearbyCarModel> get confortCars =>
+      NearbyCarModel.separateOverlappingCars(confortCategory?.cars ?? []);
+  List<NearbyCarModel> get allCars => NearbyCarModel.separateOverlappingCars([
+        ...(ecoCategory?.cars ?? []),
+        ...(confortCategory?.cars ?? []),
+      ]);
   int get totalCount => ecoCount + confortCount;
 
   factory NearbyDriversResponseModel.fromJson(Map<String, dynamic> json) {

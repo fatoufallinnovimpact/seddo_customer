@@ -13,6 +13,7 @@ class UserModel extends Equatable {
   final bool needsProfile;
   final double? rating;
   final int? ratingCount;
+  final int? tripsCount;
   final String? photoUrl;
   final bool notifyPush;
   final bool notifySms;
@@ -28,6 +29,7 @@ class UserModel extends Equatable {
     this.needsProfile = false,
     this.rating,
     this.ratingCount,
+    this.tripsCount,
     this.photoUrl,
     this.notifyPush = true,
     this.notifySms = false,
@@ -142,6 +144,17 @@ class UserModel extends Equatable {
         ? rawRatingCount.toInt()
         : (rawRatingCount != null ? int.tryParse(rawRatingCount.toString()) : null);
 
+    final rawTripsCount = map['tripsCount'] ??
+        map['trips_count'] ??
+        map['ridesCount'] ??
+        map['rides_count'] ??
+        map['totalRides'] ??
+        map['total_rides'] ??
+        map['trips'];
+    final int? parsedTripsCount = rawTripsCount is num
+        ? rawTripsCount.toInt()
+        : (rawTripsCount != null ? int.tryParse(rawTripsCount.toString()) : null);
+
     // Support firstName, first_name, prenom
     String? first = (map['firstName'] ?? map['first_name'] ?? map['prenom']) as String?;
     // Support lastName, last_name, nom
@@ -206,6 +219,7 @@ class UserModel extends Equatable {
       needsProfile: needsProfile,
       rating: parsedRating,
       ratingCount: parsedRatingCount,
+      tripsCount: parsedTripsCount,
       photoUrl: photoUrl,
       notifyPush: notifyPush,
       notifySms: notifySms,
@@ -224,6 +238,7 @@ class UserModel extends Equatable {
       'needsProfile': needsProfile,
       'rating': rating,
       'ratingCount': ratingCount,
+      'tripsCount': tripsCount,
       'photoUrl': photoUrl,
       'notifyPush': notifyPush,
       'notifySms': notifySms,
@@ -241,6 +256,7 @@ class UserModel extends Equatable {
     bool? needsProfile,
     double? rating,
     int? ratingCount,
+    int? tripsCount,
     String? photoUrl,
     bool? notifyPush,
     bool? notifySms,
@@ -256,6 +272,7 @@ class UserModel extends Equatable {
       needsProfile: needsProfile ?? this.needsProfile,
       rating: rating ?? this.rating,
       ratingCount: ratingCount ?? this.ratingCount,
+      tripsCount: tripsCount ?? this.tripsCount,
       photoUrl: photoUrl ?? this.photoUrl,
       notifyPush: notifyPush ?? this.notifyPush,
       notifySms: notifySms ?? this.notifySms,
@@ -274,6 +291,7 @@ class UserModel extends Equatable {
         needsProfile,
         rating,
         ratingCount,
+        tripsCount,
         photoUrl,
         notifyPush,
         notifySms,

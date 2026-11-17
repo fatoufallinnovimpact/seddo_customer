@@ -127,33 +127,21 @@ void main() {
             : initialUser.phone);
     expect(find.text(expectedPhone), findsOneWidget);
 
-    // 4. Notifications section (Push is ON, SMS is OFF)
-    final pushSwitchFinder = find.byKey(const Key('edit_profile_push_switch'));
-    final smsSwitchFinder = find.byKey(const Key('edit_profile_sms_switch'));
-    expect(pushSwitchFinder, findsOneWidget);
-    expect(smsSwitchFinder, findsOneWidget);
-
-    final Switch pushSwitch = tester.widget<Switch>(pushSwitchFinder);
-    final Switch smsSwitch = tester.widget<Switch>(smsSwitchFinder);
-    expect(pushSwitch.value, isTrue);
-    expect(smsSwitch.value, isFalse);
+    // 4. Notifications section MUST NOT exist on this page (moved to NotificationsModal in drawer)
+    expect(find.text('Préférences de notification'), findsNothing);
+    expect(find.byKey(const Key('edit_profile_push_switch')), findsNothing);
+    expect(find.byKey(const Key('edit_profile_sms_switch')), findsNothing);
 
     // 5. Language selector MUST NOT exist on this page (already handled in drawer)
     expect(find.text('Langue'), findsNothing);
     expect(find.text('Wolof'), findsNothing);
 
-    // 6. Toggle SMS Switch ON
-    await tester.tap(smsSwitchFinder);
-    await tester.pumpAndSettle();
-    final Switch updatedSmsSwitch = tester.widget<Switch>(smsSwitchFinder);
-    expect(updatedSmsSwitch.value, isTrue);
-
-    // 7. Update Name
+    // 6. Update Name
     await tester.enterText(firstNameFinder, 'Aminata');
     await tester.enterText(lastNameFinder, 'Diop');
     await tester.pumpAndSettle();
 
-    // 8. Save changes
+    // 7. Save changes
     final saveButton = find.byKey(const Key('edit_profile_save_button'));
     expect(saveButton, findsOneWidget);
     await tester.tap(saveButton);
@@ -164,7 +152,7 @@ void main() {
     final updatedUser = AuthRepository().currentUser;
     expect(updatedUser?.firstName, 'Aminata');
     expect(updatedUser?.lastName, 'Diop');
-    expect(updatedUser?.notifySms, isTrue);
+    expect(updatedUser?.notifySms, isFalse);
     expect(updatedUser?.notifyPush, isTrue);
   });
 

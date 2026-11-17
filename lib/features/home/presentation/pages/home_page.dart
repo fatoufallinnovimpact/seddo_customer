@@ -1040,11 +1040,15 @@ class _HomePageContentState extends State<_HomePageContent>
             ),
           ),
 
-          // Menu burger à droite (ouvre le drawer sans GlobalKey)
+          // Menu burger à droite (ouvre la page Mon compte en plein écran)
           Builder(
             builder: (scaffoldContext) => _buildTopCircleButton(
               icon: Icons.menu_rounded,
-              onTap: () => Scaffold.of(scaffoldContext).openEndDrawer(),
+              onTap: () => Navigator.of(scaffoldContext).push(
+                SlideRightToLeftRoute(
+                  page: const SeddoDrawerWidget(),
+                ),
+              ),
             ),
           ),
         ],

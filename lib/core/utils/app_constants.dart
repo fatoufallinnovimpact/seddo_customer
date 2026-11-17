@@ -184,5 +184,45 @@ abstract class AppConstants {
   static const String assetWaveLogo = 'assets/images/images.png';
   static const String assetOrangeMoneyLogo = 'assets/images/unnamed.png';
   static const String assetCashLogo = 'assets/images/cfa.jpg';
+
+  // Account / Full-Screen Drawer Design Tokens
+  static const double accountAvatarSize = 58.0;
+  static const double accountMenuIconCircleSize = 36.0;
+  static const double accountMenuIconSize = 18.0;
+  static const double accountStatBoxRadius = 14.0;
+  static const double accountCardRadius = 22.0;
+  static const double accountSectionCardRadius = 20.0;
+  static const double accountCardShadowBlur = 18.0;
+  static const double accountCardShadowOffsetY = 4.0;
+  static const double accountSectionShadowBlur = 12.0;
+  static const double accountDividerIndent = 64.0;
+  static const double accountTitleFontSize = 24.0;
+  static const double accountStatNumberFontSize = 19.0;
+  static const double accountStatStarSize = 18.0;
+
+  // Ride Booking Sheet & Vehicle Card Tokens
+  static const double rideCardHeight = 142.0;
+  static const double rideCardBoxTopInset = 18.0;
+  static const double rideCardRadius = 18.0;
+  static const double rideCardTopTintHeight = 46.0;
+  static const double rideCardTopTintWidth = 112.0;
+  static const double rideCardTopTintBottomRightRadius = 18.0;
+  static const double rideCardCarTopOffset = -22.0;
+  static const double rideCardCarLeftOffset = 2.0;
+  static const double rideCardCarRightOffset = 2.0;
+  static const double rideCardCarHeight = 104.0;
+  static const double rideCardBottomPaddingTop = 44.0;
+  static const double rideCardBottomPaddingH = 12.0;
+  static const double rideCardBottomPaddingBottom = 8.0;
+  static const double rideCardTitleFontSize = 14.0;
+  static const double rideCardPriceFontSize = 17.0;
+  static const double rideCardMetaFontSize = 11.5;
+  static const double rideCardPersonIconSize = 13.5;
+  static const double rideCardAcIconSize = 12.0;
+  static const double rideCardAcFontSize = 10.5;
+  static const double rideCardAcBadgeRadius = 6.0;
+  static const double ridePaymentQuickBtnSize = 48.0;
+  static const double ridePaymentQuickIconSize = 36.0;
+  static const double rideOrderBtnRadius = 16.0;
 }
 

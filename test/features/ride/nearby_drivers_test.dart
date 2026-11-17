@@ -101,5 +101,47 @@ void main() {
       expect(result.confortCount, 2);
       expect(result.allCars.length, 3);
     });
+
+    test('Separates overlapping cars and deduplicates same driver ID across categories', () {
+      const overlappingResponse = {
+        'radiusM': 3000,
+        'categories': [
+          {
+            'category': 'ECO',
+            'count': 3,
+            'etaS': 180,
+            'cars': [
+              {'lat': 14.6937, 'lng': -17.4647, 'heading': 0.0, 'id': 'driver_1'},
+              {'lat': 14.6937, 'lng': -17.4647, 'heading': 0.0, 'id': 'driver_2'},
+              {'lat': 14.6937001, 'lng': -17.4647001, 'heading': 0.0, 'id': 'driver_3'},
+            ]
+          },
+          {
+            'category': 'CONFORT',
+            'count': 1,
+            'etaS': 240,
+            'cars': [
+              {'lat': 14.6937, 'lng': -17.4647, 'heading': 0.0, 'id': 'driver_1'},
+            ]
+          }
+        ]
+      };
+
+      final model = NearbyDriversResponseModel.fromJson(overlappingResponse);
+      final cars = model.allCars;
+
+      // driver_1 was in both ECO and CONFORT, so deduplicated to 3 unique cars
+      expect(cars.length, 3);
+
+      // Verify no two cars have identical or overlapping coordinates
+      for (int i = 0; i < cars.length; i++) {
+        for (int j = i + 1; j < cars.length; j++) {
+          final dLat = cars[i].lat - cars[j].lat;
+          final dLng = cars[i].lng - cars[j].lng;
+          final distSq = dLat * dLat + dLng * dLng;
+          expect(distSq, greaterThanOrEqualTo(0.00055 * 0.00055));
+        }
+      }
+    });
   });
 }

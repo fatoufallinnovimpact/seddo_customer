@@ -34,8 +34,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   late UserModel _user;
   String? _accessToken;
-  bool _notifyPush = true;
-  bool _notifySms = false;
   bool _isSaving = false;
   bool _isUploadingPhoto = false;
   File? _localPickedPhoto;
@@ -50,8 +48,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     _firstNameController = TextEditingController(text: _user.firstName ?? '');
     _lastNameController = TextEditingController(text: _user.lastName ?? '');
-    _notifyPush = _user.notifyPush;
-    _notifySms = _user.notifySms;
 
     _loadTokenAndLatestProfile();
   }
@@ -74,8 +70,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
         if (_lastNameController.text.trim().isEmpty && latest.lastName != null) {
           _lastNameController.text = latest.lastName!;
         }
-        _notifyPush = latest.notifyPush;
-        _notifySms = latest.notifySms;
       });
     }
   }
@@ -248,8 +242,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       final updated = await _authRepo.updateProfile(
         firstName: first,
         lastName: last,
-        notifyPush: _notifyPush,
-        notifySms: _notifySms,
       );
 
       if (mounted) {
@@ -355,37 +347,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-
-            // 3. Notification Preferences Section
-            _buildSectionCard(
-              title: 'Préférences de notification',
-              icon: Icons.notifications_active_rounded,
-              child: Column(
-                children: [
-                  _buildSwitchTile(
-                    key: const Key('edit_profile_push_switch'),
-                    title: 'Notifications push',
-                    subtitle: 'Alertes en direct lors des courses et messages',
-                    value: _notifyPush,
-                    onChanged: (val) => setState(() => _notifyPush = val),
-                    icon: Icons.notifications_none_rounded,
-                  ),
-                  const Divider(height: 20, thickness: 0.8, color: Color(0xFFECEEF2)),
-                  _buildSwitchTile(
-                    key: const Key('edit_profile_sms_switch'),
-                    title: 'SMS de secours',
-                    subtitle: 'Recevoir un SMS en cas de perte de connexion réseau',
-                    value: _notifySms,
-                    onChanged: (val) => setState(() => _notifySms = val),
-                    icon: Icons.sms_outlined,
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 32),
 
-            // 4. Save Button
+            // 3. Save Button
             SizedBox(
               width: double.infinity,
               height: 54,
@@ -664,65 +628,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ),
           ),
           const Icon(Icons.lock_outline_rounded, color: Color(0xFF9CA3AF), size: 16),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required Key key,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-    required IconData icon,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceGrey,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 20, color: AppColors.textPrimary),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Switch.adaptive(
-            key: key,
-            value: value,
-            activeThumbColor: AppColors.primary,
-            activeTrackColor: AppColors.primary.withValues(alpha: 0.35),
-            onChanged: onChanged,
-          ),
         ],
       ),
     );

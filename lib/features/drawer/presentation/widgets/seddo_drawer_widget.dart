@@ -1,39 +1,45 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/api_endpoints.dart';
 import 'package:seddo/core/utils/app_colors.dart';
-import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/activity/presentation/pages/activity_page.dart';
-import 'package:seddo/features/drawer/presentation/widgets/language_modal.dart';
-import 'package:seddo/features/drawer/presentation/widgets/logout_modal.dart';
-import 'package:seddo/features/help/presentation/pages/help_page.dart';
-import 'package:seddo/features/privacy/presentation/pages/privacy_page.dart';
-import 'package:seddo/features/safety/presentation/pages/safety_page.dart';
 import 'package:seddo/features/auth/data/models/user_model.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
-import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
-import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
-import 'package:seddo/features/profile/presentation/pages/edit_profile_page.dart';
+import 'package:seddo/features/drawer/domain/bloc/drawer_account_bloc.dart';
+import 'package:seddo/features/drawer/domain/bloc/drawer_account_event.dart';
+import 'package:seddo/features/drawer/domain/bloc/drawer_account_state.dart';
+import 'package:seddo/features/drawer/presentation/widgets/language_modal.dart';
+import 'package:seddo/features/drawer/presentation/widgets/logout_modal.dart';
+import 'package:seddo/features/drawer/presentation/widgets/notifications_modal.dart';
+import 'package:seddo/features/help/presentation/pages/help_page.dart';
+import 'package:seddo/features/home/domain/bloc/home_bloc.dart';
 import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 import 'package:seddo/features/payment/presentation/widgets/payment_method_modal.dart';
+import 'package:seddo/features/privacy/presentation/pages/privacy_page.dart';
+import 'package:seddo/features/profile/presentation/pages/edit_profile_page.dart';
+import 'package:seddo/features/safety/presentation/pages/safety_page.dart';
+import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
+import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 
-/// Lateral navigation drawer matching the design mockup:
-/// - User profile: Real avatar photo or initials, real user name, rating from GET /v1/users/me and phone number
-/// - Menu list items:
-///   - Activité (refresh-ccw-clock-svgrepo-com.svg / Courses et remboursements)
-///   - TCU (bus-svgrepo-com.svg / Bus, BRT et TER)
-///   - Lieux enregistrés (star-svgrepo-com.svg / Maison, Travail, Aéroport)
-///   - Sécurité (security-svgrepo-com.svg / Contacts d’urgence, partage de trajet)
-///   - Notifications (notification-svgrepo-com.svg / Push et SMS)
-///   - Langue (language-svgrepo-com.svg / Français ou Wolof)
-/// - Bottom section:
-///   - Row with Aide (question-svgrepo-com.svg) & Confidentialité et données (lock icon)
-///   - Red Se déconnecter button (logout-line-svgrepo-com.svg)
+/// Full-screen Account / Menu View ("Mon compte") matching the user's design mockups:
+/// - Opens full-screen occupying the entire phone screen width & height
+/// - Header at the top with "Mon compte"
+/// - White borderless profile card with subtle shadow:
+///   * Circular avatar with real user profile photo or initials
+///   * Real user name and phone number
+///   * Tapping the name or the avatar circle navigates to EditProfilePage
+///   * Below in the same white card: two borderless grey cards:
+///     1. Number of trips (real API value, 0 if 0)
+///     2. Star rating returned by the API (if 0 or null, displays 0 with star)
+/// - Below: Grouped white borderless cards with subtle shadow and pastel circular icons
+///   for all existing menu items (Activité, TCU, Lieux enregistrés, Méthode de paiement,
+///   Sécurité, Notifications, Langue, Aide, Confidentialité et données) and Se déconnecter.
 class SeddoDrawerWidget extends StatefulWidget {
   const SeddoDrawerWidget({super.key});
 
@@ -42,56 +48,51 @@ class SeddoDrawerWidget extends StatefulWidget {
 }
 
 class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
+  late final DrawerAccountBloc _accountBloc;
   final AuthRepository _authRepo = AuthRepository();
-  UserModel? _currentUser;
-  String? _accessToken;
 
   @override
   void initState() {
     super.initState();
-    _currentUser = _authRepo.currentUser;
-    _loadUser();
+    _accountBloc = DrawerAccountBloc(authRepository: _authRepo)
+      ..add(const DrawerAccountLoadRequested());
   }
 
-  Future<void> _loadUser() async {
-    final token = await _authRepo.getAccessToken();
-    if (mounted && token != null) {
-      setState(() {
-        _accessToken = token;
-      });
-    }
+  @override
+  void dispose() {
+    _accountBloc.close();
+    super.dispose();
+  }
 
-    final cached = await _authRepo.getCachedUser();
-    if (mounted && cached != null) {
-      setState(() {
-        _currentUser = cached;
-      });
+  bool _isInDrawer(BuildContext context) {
+    final scaffoldState = Scaffold.maybeOf(context);
+    if (scaffoldState != null &&
+        (scaffoldState.isDrawerOpen || scaffoldState.isEndDrawerOpen)) {
+      return true;
     }
+    return context.findAncestorWidgetOfExactType<DrawerController>() != null;
+  }
 
-    final remote = await _authRepo.fetchUserProfile();
-    if (mounted && remote != null) {
-      setState(() {
-        _currentUser = remote;
-      });
+  void _closeMenuIfNeeded(BuildContext context) {
+    if (_isInDrawer(context)) {
+      Navigator.of(context).pop();
     }
   }
 
-  Future<void> _openEditProfile(BuildContext context) async {
-    Navigator.of(context).pop();
-    final updated = await Navigator.of(context).push<UserModel?>(
+  Future<void> _openEditProfile(BuildContext context, UserModel? user) async {
+    final navigator = Navigator.of(context);
+    if (_isInDrawer(context)) {
+      navigator.pop();
+    }
+    final updated = await navigator.push<UserModel?>(
       SlideRightToLeftRoute(
         page: EditProfilePage(
-          currentUser: _currentUser ?? _authRepo.currentUser,
+          currentUser: user ?? _authRepo.currentUser,
         ),
       ),
     );
     if (mounted) {
-      if (updated != null) {
-        setState(() {
-          _currentUser = updated;
-        });
-      }
-      _loadUser();
+      _accountBloc.add(DrawerAccountUserUpdated(updatedUser: updated));
     }
   }
 
@@ -99,67 +100,78 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
   Widget build(BuildContext context) {
     final _ = context.locale;
     final screenWidth = MediaQuery.of(context).size.width;
-    final drawerWidth = (screenWidth * 0.84).clamp(300.0, 360.0);
-    final user = _currentUser ?? _authRepo.currentUser;
 
-    return Drawer(
-      width: drawerWidth,
-      backgroundColor: AppColors.white,
-      elevation: 16,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(30),
-          bottomLeft: Radius.circular(30),
+    return BlocProvider<DrawerAccountBloc>.value(
+      value: _accountBloc,
+      child: Drawer(
+        width: screenWidth,
+        backgroundColor: AppColors.accountScaffoldBg,
+        elevation: AppConstants.elevationNone,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.zero,
         ),
-      ),
-      child: SafeArea(
-        child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minHeight: constraints.maxHeight),
-                    child: IntrinsicHeight(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 1. User Profile Header
-                            _buildProfileHeader(context, user),
-                            const SizedBox(height: 20),
+        child: SafeArea(
+          child: BlocBuilder<DrawerAccountBloc, DrawerAccountState>(
+            builder: (context, state) {
+              final user = state.user ?? _authRepo.currentUser;
 
-                        // 2. Navigation List Items
-                        _buildMenuItem(
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(
+                  AppConstants.spacingTwenty,
+                  AppConstants.spacingUnitLg,
+                  AppConstants.spacingTwenty,
+                  AppConstants.spacingXl,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Top Header ("Mon compte")
+                    _buildTopHeader(context),
+                    const SizedBox(height: AppConstants.spacingUnitLg),
+
+                    // 2. White Profile & Stats Card (borderless, with shadow)
+                    _buildProfileCard(context, user, state),
+                    const SizedBox(height: AppConstants.spacingUnitXl),
+
+                    // 3. First Grouped Card: Trajets & Paiement
+                    _buildGroupedMenuCard(
+                      children: [
+                        _buildStyledMenuItem(
                           context: context,
                           iconPath:
                               'assets/icons/refresh-ccw-clock-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconGreenBg,
+                          iconColor: AppColors.accountIconGreen,
                           title: 'drawer.activity'.tr(),
                           subtitle: 'drawer.activity_sub'.tr(),
                           onTap: () {
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            final navigator = Navigator.of(context);
+                            _closeMenuIfNeeded(context);
+                            navigator.push(
                               SlideRightToLeftRoute(
                                 page: const ActivityPage(),
                               ),
                             );
                           },
                         ),
-                        const SizedBox(height: 6),
-
-                        _buildMenuItem(
+                        _buildItemDivider(),
+                        _buildStyledMenuItem(
                           context: context,
                           iconPath: 'assets/icons/bus-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconBlueBg,
+                          iconColor: AppColors.accountIconBlue,
                           title: 'drawer.tcu'.tr(),
                           subtitle: 'drawer.tcu_sub'.tr(),
                           onTap: () {
                             LatLng? userLoc;
                             try {
-                              userLoc = context.read<HomeBloc>().state.userLocation;
+                              userLoc =
+                                  context.read<HomeBloc>().state.userLocation;
                             } catch (_) {}
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            final navigator = Navigator.of(context);
+                            _closeMenuIfNeeded(context);
+                            navigator.push(
                               SlideRightToLeftRoute(
                                 page: PublicTransportPage(
                                   initialOriginLocation: userLoc,
@@ -168,20 +180,23 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                             );
                           },
                         ),
-                        const SizedBox(height: 6),
-
-                        _buildMenuItem(
+                        _buildItemDivider(),
+                        _buildStyledMenuItem(
                           context: context,
                           iconPath: 'assets/icons/star-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconAmberBg,
+                          iconColor: AppColors.accountIconAmber,
                           title: 'drawer.saved_places'.tr(),
                           subtitle: 'drawer.saved_places_sub'.tr(),
                           onTap: () {
                             LatLng? userLoc;
                             try {
-                              userLoc = context.read<HomeBloc>().state.userLocation;
+                              userLoc =
+                                  context.read<HomeBloc>().state.userLocation;
                             } catch (_) {}
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            final navigator = Navigator.of(context);
+                            _closeMenuIfNeeded(context);
+                            navigator.push(
                               SlideRightToLeftRoute(
                                 page: SavedPlacesPage(
                                   currentUserLocation: userLoc,
@@ -190,57 +205,69 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                             );
                           },
                         ),
-                        const SizedBox(height: 6),
-
-                        // Méthode de paiement
+                        _buildItemDivider(),
                         ValueListenableBuilder<String>(
                           valueListenable:
                               PaymentMethodsService().selectedCodeNotifier,
                           builder: (context, selectedCode, _) {
-                            return _buildMenuItem(
+                            return _buildStyledMenuItem(
                               context: context,
                               iconPath: 'assets/icons/wallet-svgrepo-com.svg',
+                              iconBgColor: AppColors.accountIconPurpleBg,
+                              iconColor: AppColors.accountIconPurple,
                               title: 'drawer.payment_methods_title'.tr(),
                               subtitle: PaymentMethodsService.getLabelForCode(
-                                  selectedCode),
+                                selectedCode,
+                              ),
                               onTap: () {
                                 PaymentMethodModal.show(context);
                               },
                             );
                           },
                         ),
-                        const SizedBox(height: 6),
+                      ],
+                    ),
+                    const SizedBox(height: AppConstants.spacingUnitLg),
 
-                        _buildMenuItem(
+                    // 4. Second Grouped Card: Préférences & Sécurité
+                    _buildGroupedMenuCard(
+                      children: [
+                        _buildStyledMenuItem(
                           context: context,
                           iconPath: 'assets/icons/security-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconGreenBg,
+                          iconColor: AppColors.accountIconGreen,
                           title: 'drawer.safety'.tr(),
                           subtitle: 'drawer.safety_sub'.tr(),
                           onTap: () {
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            final navigator = Navigator.of(context);
+                            _closeMenuIfNeeded(context);
+                            navigator.push(
                               SlideRightToLeftRoute(
                                 page: const SafetyPage(),
                               ),
                             );
                           },
                         ),
-                        const SizedBox(height: 6),
-
-                        _buildMenuItem(
+                        _buildItemDivider(),
+                        _buildStyledMenuItem(
                           context: context,
-                          iconPath: 'assets/icons/notification-svgrepo-com.svg',
+                          iconPath:
+                              'assets/icons/notification-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconAmberBg,
+                          iconColor: AppColors.accountIconAmber,
                           title: 'drawer.notifications'.tr(),
                           subtitle: 'drawer.notifications_sub'.tr(),
                           onTap: () {
-                            _openEditProfile(context);
+                            _openNotificationsModal(context, user);
                           },
                         ),
-                        const SizedBox(height: 6),
-
-                        _buildMenuItem(
+                        _buildItemDivider(),
+                        _buildStyledMenuItem(
                           context: context,
                           iconPath: 'assets/icons/language-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconBlueBg,
+                          iconColor: AppColors.accountIconBlue,
                           title: 'drawer.language'.tr(),
                           subtitle: context.locale.languageCode == 'wo'
                               ? 'common.wolof'.tr()
@@ -249,66 +276,133 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                             _openLanguageSheet(context);
                           },
                         ),
-                        const SizedBox(height: 6),
+                      ],
+                    ),
+                    const SizedBox(height: AppConstants.spacingUnitLg),
 
-                        // 7. Aide (in the list right below Langue)
-                        _buildMenuItem(
+                    // 5. Third Grouped Card: Assistance & Confidentialité
+                    _buildGroupedMenuCard(
+                      children: [
+                        _buildStyledMenuItem(
                           context: context,
                           iconPath: 'assets/icons/question-svgrepo-com.svg',
+                          iconBgColor: AppColors.accountIconPurpleBg,
+                          iconColor: AppColors.accountIconPurple,
                           title: 'drawer.help'.tr(),
                           subtitle: 'drawer.help_sub'.tr(),
                           onTap: () {
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            final navigator = Navigator.of(context);
+                            _closeMenuIfNeeded(context);
+                            navigator.push(
                               SlideRightToLeftRoute(
                                 page: const HelpPage(),
                               ),
                             );
                           },
                         ),
-                        const SizedBox(height: 6),
-
-                        // 8. Confidentialité et données (in the list right below Aide)
-                        _buildMenuItem(
+                        _buildItemDivider(),
+                        _buildStyledMenuItem(
                           context: context,
                           iconWidget: const Icon(
                             Icons.lock_outline_rounded,
-                            size: 22,
-                            color: AppColors.textPrimary,
+                            size: AppConstants.accountMenuIconSize,
+                            color: AppColors.accountIconRed,
                           ),
+                          iconBgColor: AppColors.accountIconRedBg,
+                          iconColor: AppColors.accountIconRed,
                           title: 'drawer.privacy'.tr(),
                           subtitle: 'drawer.privacy_sub'.tr(),
                           onTap: () {
-                            Navigator.of(context).pop();
-                            Navigator.of(context).push(
+                            final navigator = Navigator.of(context);
+                            _closeMenuIfNeeded(context);
+                            navigator.push(
                               SlideRightToLeftRoute(
                                 page: const PrivacyPage(),
                               ),
                             );
                           },
                         ),
-
-                        // Spacer pushes logout button towards the bottom
-                        const Spacer(),
-                        const SizedBox(height: 18),
-
-                        // Logout Button (Red with SVG, surélevé du bas)
-                        _buildLogoutButton(context),
-                        const SizedBox(height: 36),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: AppConstants.spacingUnitLg),
+
+                    // 6. Logout Card at the bottom
+                    _buildGroupedMenuCard(
+                      children: [
+                        _buildLogoutButton(context),
+                      ],
+                    ),
+                  ],
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
-  // Profile Header: Displays real user initials/photo, name, rating from GET /v1/users/me, and phone
-  Widget _buildProfileHeader(BuildContext context, UserModel? user) {
+  Widget _buildTopHeader(BuildContext context) {
+    final canPop = Navigator.of(context).canPop() || _isInDrawer(context);
+    final rawTitle = 'drawer.account_title'.tr();
+    final titleText =
+        rawTitle == 'drawer.account_title' ? 'Mon compte' : rawTitle;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            titleText,
+            style: GoogleFonts.inter(
+              fontSize: AppConstants.accountTitleFontSize,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+              letterSpacing: -0.5,
+            ),
+          ),
+        ),
+        if (canPop)
+          Material(
+            color: AppColors.white,
+            shape: const CircleBorder(),
+            elevation: AppConstants.elevationNone,
+            child: InkWell(
+              key: const Key('drawer_close_button'),
+              customBorder: const CircleBorder(),
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Container(
+                width: AppConstants.circularIconContainerSize,
+                height: AppConstants.circularIconContainerSize,
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.shadowSubtleBlack,
+                      blurRadius: AppConstants.spacingUnit,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: AppConstants.iconSizeLg,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildProfileCard(
+    BuildContext context,
+    UserModel? user,
+    DrawerAccountState state,
+  ) {
     final String first = (user?.firstName ?? '').trim();
     final String last = (user?.lastName ?? '').trim();
     final String displayName = (first.isNotEmpty && last.isNotEmpty)
@@ -323,134 +417,230 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                     ? user.formattedNationalPhone
                     : 'Utilisateur';
 
-    final initials = (user != null && user.initials.isNotEmpty && user.initials != 'SD')
-        ? user.initials
-        : (first.isNotEmpty)
-            ? first.substring(0, first.length >= 2 ? 2 : 1).toUpperCase()
-            : 'SD';
+    final initials =
+        (user != null && user.initials.isNotEmpty && user.initials != 'SD')
+            ? user.initials
+            : (first.isNotEmpty)
+                ? first.substring(0, first.length >= 2 ? 2 : 1).toUpperCase()
+                : 'SD';
 
-    final displayPhone =
-        (user != null && user.formattedDisplayPhone.isNotEmpty)
-            ? user.formattedDisplayPhone
-            : (user != null && user.formattedNationalPhone.isNotEmpty)
-                ? (user.formattedNationalPhone.startsWith('+221')
-                    ? user.formattedNationalPhone
-                    : '+221 ${user.formattedNationalPhone}')
-                : '';
+    final displayPhone = (user != null && user.formattedDisplayPhone.isNotEmpty)
+        ? user.formattedDisplayPhone
+        : (user != null && user.formattedNationalPhone.isNotEmpty)
+            ? (user.formattedNationalPhone.startsWith('+221')
+                ? user.formattedNationalPhone
+                : '+221 ${user.formattedNationalPhone}')
+            : '';
 
     final bool hasRating =
         user != null && user.rating != null && user.rating! > 0;
-    final displayRating = hasRating
+    final String displayRating = hasRating
         ? user.rating!.toStringAsFixed(1).replaceAll('.', ',')
-        : '';
+        : '0';
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        GestureDetector(
-          key: const Key('drawer_avatar_button'),
-          onTap: () => _openEditProfile(context),
-          child: Container(
-            width: 58,
-            height: 58,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.25),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            alignment: Alignment.center,
-            child: _buildAvatarImage(user, initials),
+    final int tripsValue = user?.tripsCount ?? state.tripsCount;
+
+    final rawTripsLabel = 'drawer.trips_label'.tr();
+    final tripsLabel =
+        rawTripsLabel == 'drawer.trips_label' ? 'Courses' : rawTripsLabel;
+
+    final rawRatingLabel = 'drawer.rating_label'.tr();
+    final ratingLabel =
+        rawRatingLabel == 'drawer.rating_label' ? 'Évaluation' : rawRatingLabel;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppConstants.spacingMd),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(AppConstants.accountCardRadius),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.shadowSubtleBlack,
+            blurRadius: AppConstants.accountCardShadowBlur,
+            offset: Offset(0, AppConstants.accountCardShadowOffsetY),
           ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top part: Avatar circle + User name & phone number
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              InkWell(
-                key: const Key('drawer_user_name_button'),
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _openEditProfile(context),
-                child: Text(
-                  displayName,
-                  style: GoogleFonts.inter(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                    letterSpacing: 0.1,
-                    wordSpacing: 3.0,
+              GestureDetector(
+                key: const Key('drawer_avatar_button'),
+                onTap: () => _openEditProfile(context, user),
+                child: Container(
+                  width: AppConstants.accountAvatarSize,
+                  height: AppConstants.accountAvatarSize,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.25),
+                        blurRadius: AppConstants.spacingSm,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  clipBehavior: Clip.antiAlias,
+                  alignment: Alignment.center,
+                  child: _buildAvatarImage(user, initials, state.accessToken),
                 ),
               ),
-              const SizedBox(height: 3),
-              if (hasRating)
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
+              const SizedBox(width: AppConstants.spacingUnitXl),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      key: const Key('drawer_user_name_button'),
+                      borderRadius:
+                          BorderRadius.circular(AppConstants.radiusSm),
+                      onTap: () => _openEditProfile(context, user),
+                      child: Text(
+                        displayName,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontXl,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (displayPhone.isNotEmpty) ...[
+                      const SizedBox(height: AppConstants.spacingXxs),
+                      Text(
+                        displayPhone,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontMd,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppConstants.spacingMd),
+
+          // Bottom part inside the same white card: Two borderless grey cards
+          Row(
+            children: [
+              // 1st grey card: Trips count
+              Expanded(
+                child: Container(
+                  key: const Key('drawer_trips_stat_card'),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppConstants.spacingUnit,
+                    horizontal: AppConstants.spacingUnitLg,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accountStatBoxBg,
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.accountStatBoxRadius,
+                    ),
+                  ),
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.star_rounded,
-                        size: 18,
-                        color: AppColors.amberWarning,
-                      ),
-                      const SizedBox(width: 3),
                       Text(
-                        displayRating,
-                        key: const Key('drawer_user_rating'),
+                        '$tripsValue',
+                        key: const Key('drawer_user_trips_count'),
                         style: GoogleFonts.inter(
-                          fontSize: 13.5,
+                          fontSize: AppConstants.accountStatNumberFontSize,
                           fontWeight: FontWeight.w800,
                           color: AppColors.textPrimary,
                         ),
                       ),
+                      const SizedBox(height: AppConstants.spacingXxs),
                       Text(
-                        ' · ',
+                        tripsLabel,
                         style: GoogleFonts.inter(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      Text(
-                        displayPhone,
-                        style: GoogleFonts.inter(
-                          fontSize: 13.5,
+                          fontSize: AppConstants.fontSm,
                           fontWeight: FontWeight.w500,
                           color: AppColors.textSecondary,
                         ),
                       ),
                     ],
                   ),
-                )
-              else
-                Text(
-                  displayPhone,
-                  style: GoogleFonts.inter(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spacingUnitLg),
+
+              // 2nd grey card: API star rating (or 0 if 0/null)
+              Expanded(
+                child: Container(
+                  key: const Key('drawer_rating_stat_card'),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppConstants.spacingUnit,
+                    horizontal: AppConstants.spacingUnitLg,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accountStatBoxBg,
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.accountStatBoxRadius,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            displayRating,
+                            key: hasRating
+                                ? const Key('drawer_user_rating')
+                                : const Key('drawer_user_rating_zero'),
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.accountStatNumberFontSize,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: AppConstants.spacingXxs),
+                          const Icon(
+                            Icons.star_rounded,
+                            size: AppConstants.accountStatStarSize,
+                            color: AppColors.textPrimary,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppConstants.spacingXxs),
+                      Text(
+                        ratingLabel,
+                        style: GoogleFonts.inter(
+                          fontSize: AppConstants.fontSm,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildAvatarImage(UserModel? user, String initials) {
+  Widget _buildAvatarImage(
+    UserModel? user,
+    String initials,
+    String? accessToken,
+  ) {
     final photoUrl = user?.photoUrl;
     if (photoUrl != null && photoUrl.isNotEmpty) {
       final fullUrl = photoUrl.startsWith('http')
@@ -460,12 +650,12 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
               : '${ApiEndpoints.baseUrl}/$photoUrl');
       return Image.network(
         fullUrl,
-        headers: _accessToken != null
-            ? {'Authorization': 'Bearer $_accessToken'}
+        headers: accessToken != null
+            ? {'Authorization': 'Bearer $accessToken'}
             : null,
         fit: BoxFit.cover,
-        width: 58,
-        height: 58,
+        width: AppConstants.accountAvatarSize,
+        height: AppConstants.accountAvatarSize,
         errorBuilder: (context, error, stackTrace) =>
             _buildInitialsText(initials),
       );
@@ -478,7 +668,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     return Text(
       initials,
       style: GoogleFonts.inter(
-        fontSize: 22,
+        fontSize: AppConstants.iconSizeLg,
         fontWeight: FontWeight.w900,
         color: AppColors.white,
         letterSpacing: 0.5,
@@ -486,11 +676,45 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     );
   }
 
-  // Menu item with vector SVG icon or iconWidget, bold title and subtitle
-  Widget _buildMenuItem({
+  Widget _buildGroupedMenuCard({required List<Widget> children}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius:
+            BorderRadius.circular(AppConstants.accountSectionCardRadius),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.shadowSubtleBlack,
+            blurRadius: AppConstants.accountSectionShadowBlur,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: children,
+      ),
+    );
+  }
+
+  Widget _buildItemDivider() {
+    return const Divider(
+      height: AppConstants.spacingTiny,
+      thickness: AppConstants.spacingTiny,
+      indent: AppConstants.accountDividerIndent,
+      endIndent: AppConstants.spacingMd,
+      color: AppColors.subtleDivider,
+    );
+  }
+
+  Widget _buildStyledMenuItem({
     required BuildContext context,
     String? iconPath,
     Widget? iconWidget,
+    required Color iconBgColor,
+    required Color iconColor,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
@@ -499,52 +723,56 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
       color: AppColors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        splashColor: AppColors.primary.withValues(alpha: 0.08),
-        highlightColor: AppColors.primary.withValues(alpha: 0.04),
-        child: Container(
-          width: double.infinity,
-          color: Colors.transparent,
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        splashColor: AppColors.primary.withValues(alpha: 0.06),
+        highlightColor: AppColors.primary.withValues(alpha: 0.03),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingNine,
+          ),
           child: Row(
-              children: [
-              SizedBox(
-                width: 26,
-                height: 26,
-                child: Center(
-                  child: iconWidget ??
-                      (iconPath != null
-                          ? SvgPicture.asset(
-                              iconPath,
-                              width: 22,
-                              height: 22,
-                              colorFilter: const ColorFilter.mode(
-                                AppColors.textPrimary,
-                                BlendMode.srcIn,
-                              ),
-                            )
-                          : const SizedBox.shrink()),
+            children: [
+              Container(
+                width: AppConstants.accountMenuIconCircleSize,
+                height: AppConstants.accountMenuIconCircleSize,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  shape: BoxShape.circle,
                 ),
+                alignment: Alignment.center,
+                child: iconWidget ??
+                    (iconPath != null
+                        ? SvgPicture.asset(
+                            iconPath,
+                            width: AppConstants.accountMenuIconSize,
+                            height: AppConstants.accountMenuIconSize,
+                            colorFilter: ColorFilter.mode(
+                              iconColor,
+                              BlendMode.srcIn,
+                            ),
+                          )
+                        : const SizedBox.shrink()),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppConstants.spacingUnitLg),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       title,
                       style: GoogleFonts.inter(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
+                        fontSize: AppConstants.fontBase,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.textPrimary,
                         letterSpacing: -0.2,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: AppConstants.spacingTiny),
                     Text(
                       subtitle,
                       style: GoogleFonts.inter(
-                        fontSize: 12.5,
+                        fontSize: AppConstants.fontSm,
                         fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary,
                       ),
@@ -553,6 +781,12 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                   ],
                 ),
               ),
+              const SizedBox(width: AppConstants.spacingSm),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: AppConstants.iconSizeMd,
+                color: AppColors.accountChevronGrey,
+              ),
             ],
           ),
         ),
@@ -560,35 +794,52 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     );
   }
 
-  // Logout button at the very bottom
   Widget _buildLogoutButton(BuildContext context) {
     return Material(
       color: AppColors.transparent,
       child: InkWell(
         onTap: () => _confirmLogout(context),
-        borderRadius: BorderRadius.circular(10),
-        splashColor: AppColors.sirenRed.withValues(alpha: 0.1),
+        splashColor: AppColors.sirenRed.withValues(alpha: 0.08),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spacingMd,
+            vertical: AppConstants.spacingNine,
+          ),
           child: Row(
             children: [
-              SvgPicture.asset(
-                'assets/icons/logout-line-svgrepo-com.svg',
-                width: 22,
-                height: 22,
-                colorFilter: const ColorFilter.mode(
-                  AppColors.sirenRed,
-                  BlendMode.srcIn,
+              Container(
+                width: AppConstants.accountMenuIconCircleSize,
+                height: AppConstants.accountMenuIconCircleSize,
+                decoration: const BoxDecoration(
+                  color: AppColors.accountIconRedBg,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: SvgPicture.asset(
+                  'assets/icons/logout-line-svgrepo-com.svg',
+                  width: AppConstants.accountMenuIconSize,
+                  height: AppConstants.accountMenuIconSize,
+                  colorFilter: const ColorFilter.mode(
+                    AppColors.sirenRed,
+                    BlendMode.srcIn,
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Text(
-                'drawer.logout'.tr(),
-                style: GoogleFonts.inter(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.sirenRed,
+              const SizedBox(width: AppConstants.spacingUnitLg),
+              Expanded(
+                child: Text(
+                  'drawer.logout'.tr(),
+                  style: GoogleFonts.inter(
+                    fontSize: AppConstants.fontBase,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.sirenRed,
+                  ),
                 ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: AppConstants.iconSizeMd,
+                color: AppColors.sirenRed,
               ),
             ],
           ),
@@ -597,18 +848,22 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     );
   }
 
-
-
-
-
+  Future<void> _openNotificationsModal(
+    BuildContext context,
+    UserModel? user,
+  ) async {
+    final updated = await NotificationsModal.show(
+      context,
+      currentUser: user ?? _authRepo.currentUser,
+    );
+    if (mounted) {
+      _accountBloc.add(DrawerAccountUserUpdated(updatedUser: updated));
+    }
+  }
 
   void _openLanguageSheet(BuildContext context) {
     LanguageModal.show(context);
   }
-
-
-
-
 
   void _confirmLogout(BuildContext context) {
     LogoutModal.show(context);

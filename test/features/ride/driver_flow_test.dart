@@ -6,6 +6,7 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
+import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
 import 'package:dio/dio.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
@@ -236,6 +237,40 @@ void main() {
       expect(find.textContaining('remboursés'), findsNothing);
       expect(find.text('Sur votre Orange Money'), findsNothing);
       expect(find.text('Sur votre Wave'), findsNothing);
+    });
+
+    testWidgets(
+        'DriverSearchPage opens NoDriverFoundSheet only once even if onNoDriverAvailable is triggered multiple times',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: DriverSearchPage(
+            departure: departure,
+            destination: destination,
+            rideOption: ecoOption,
+            autoMatchDriver: false,
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      final dynamic state = tester.state(find.byType(DriverSearchPage));
+      // Trigger onNoDriverAvailable multiple times (simulating repeated polling + WebSocket)
+      state.onNoDriverAvailable();
+      state.onNoDriverAvailable();
+      state.onNoDriverAvailable();
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Only one NoDriverFoundSheet is opened
+      expect(find.byType(NoDriverFoundSheet), findsOneWidget);
+      expect(find.text('Aucun chauffeur disponible'), findsOneWidget);
     });
 
     testWidgets('RideCancelledPage renders refund info and reorder redirects',

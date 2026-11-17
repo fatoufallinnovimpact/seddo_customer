@@ -25,8 +25,6 @@ import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart'
 import 'package:seddo/features/ride/presentation/widgets/orange_money_payment_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
-import 'package:seddo/features/ride/presentation/widgets/ride_option_card_widget.dart';
-import 'package:seddo/features/ride/presentation/widgets/select_payment_method_sheet.dart';
 import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 import 'package:seddo/features/payment/presentation/widgets/payment_method_modal.dart';
 import 'package:seddo/services/map_style_service.dart';
@@ -614,12 +612,13 @@ class _RideBookingPageState extends State<RideBookingPage>
       );
     }
 
-    // 3. Real nearby cars from GET /v1/drivers/nearby
+    // 3. Real nearby cars from GET /v1/drivers/nearby (with anti-overlap separation)
     if (_nearbyCars.isNotEmpty) {
+      final separatedCars = NearbyCarModel.separateOverlappingCars(_nearbyCars);
       final carIcon = _carMarkerIcon ??
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
-      for (int i = 0; i < _nearbyCars.length; i++) {
-        final car = _nearbyCars[i];
+      for (int i = 0; i < separatedCars.length; i++) {
+        final car = separatedCars[i];
         if (car.lat == 0.0 && car.lng == 0.0) continue;
         markers.add(
           Marker(
@@ -837,124 +836,219 @@ class _RideBookingPageState extends State<RideBookingPage>
     final isSelected =
         _selectedRideType == (isEco ? RideType.eco : RideType.confort);
 
+    final rawAcLabel = 'home.confort_ac_badge'.tr();
+    final acLabel =
+        rawAcLabel == 'home.confort_ac_badge' ? 'Climatisé' : rawAcLabel;
+
     return Expanded(
       child: GestureDetector(
+        key: Key(isEco ? 'ride_card_eco' : 'ride_card_confort'),
         behavior: HitTestBehavior.opaque,
         onTap: () {
           setState(() {
             _selectedRideType = isEco ? RideType.eco : RideType.confort;
           });
         },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeInOut,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-          decoration: BoxDecoration(
-            color: AppColors.serviceCardBg,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.22),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                    const BoxShadow(
-                      color: Color(0x0C000000),
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ]
-                : const [
-                    BoxShadow(
-                      color: AppColors.shadowFaintBlack,
-                      blurRadius: 4,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
-          ),
+        child: SizedBox(
+          height: AppConstants.rideCardHeight,
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              if (isSelected)
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
+              // 1. Carte principale épurée (hauteur réduite, sans forme grise en bas de la voiture)
+              Positioned.fill(
+                top: AppConstants.rideCardBoxTopInset,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.ecoCardSelectedBackground
+                        : AppColors.white,
+                    borderRadius: BorderRadius.circular(
+                      AppConstants.rideCardRadius,
                     ),
-                    child: const Icon(
-                      Icons.check_rounded,
-                      size: 12,
-                      color: AppColors.white,
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.grayBorderDivider,
+                      width: isSelected
+                          ? AppConstants.strokeWidthSelected
+                          : AppConstants.spacingTiny,
+                    ),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.14),
+                              blurRadius: AppConstants.spacingUnit,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
+                        : const [
+                            BoxShadow(
+                              color: AppColors.shadowFaintBlack,
+                              blurRadius: AppConstants.spacingXs,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppConstants.rideCardBottomPaddingH,
+                      AppConstants.rideCardBottomPaddingTop,
+                      AppConstants.rideCardBottomPaddingH,
+                      AppConstants.rideCardBottomPaddingBottom,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ligne 1 : Titre entier ("Seddo Eco" / "Seddo Confort") sans être coupé par le prix
+                        Text(
+                          option.title,
+                          style: GoogleFonts.inter(
+                            fontSize: AppConstants.rideCardTitleFontSize,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: -0.3,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: AppConstants.spacingTiny),
+
+                        // Ligne 2 : Prix descendu en dessous du titre et mis en exergue
+                        if (_isLoadingRoute)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: AppConstants.spacingXxs,
+                            ),
+                            child: SizedBox(
+                              width: AppConstants.iconSizeSm,
+                              height: AppConstants.iconSizeSm,
+                              child: CircularProgressIndicator(
+                                strokeWidth: AppConstants.spacingXxs,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          )
+                        else
+                          Text(
+                            option.formattedPrice,
+                            style: GoogleFonts.inter(
+                              fontSize: AppConstants.rideCardPriceFontSize,
+                              fontWeight: FontWeight.w900,
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.textPrimary,
+                              letterSpacing: -0.4,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        const SizedBox(height: AppConstants.spacingXs),
+
+                        // Ligne 3 : Durée d'approche + capacité + indicateur de climatisation pour Seddo Confort
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                option.pickupDuration,
+                                style: GoogleFonts.inter(
+                                  fontSize: AppConstants.rideCardMetaFontSize,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: AppConstants.spacingS),
+                              const Icon(
+                                Icons.person_rounded,
+                                size: AppConstants.rideCardPersonIconSize,
+                                color: AppColors.textSecondary,
+                              ),
+                              const SizedBox(width: AppConstants.spacingXxs),
+                              Text(
+                                '${option.capacity}',
+                                style: GoogleFonts.inter(
+                                  fontSize: AppConstants.rideCardMetaFontSize,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              if (!isEco) ...[
+                                const SizedBox(width: AppConstants.spacingS),
+                                Container(
+                                  key: const Key('ride_confort_ac_badge'),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppConstants.spacingFive,
+                                    vertical: AppConstants.spacingTiny,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.rideCardAcBadgeBg,
+                                    borderRadius: BorderRadius.circular(
+                                      AppConstants.rideCardAcBadgeRadius,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.ac_unit_rounded,
+                                        size: AppConstants.rideCardAcIconSize,
+                                        color: AppColors.rideCardAcBadgeText,
+                                      ),
+                                      const SizedBox(
+                                        width: AppConstants.spacingXxs,
+                                      ),
+                                      Text(
+                                        acLabel,
+                                        style: GoogleFonts.inter(
+                                          fontSize:
+                                              AppConstants.rideCardAcFontSize,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.rideCardAcBadgeText,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Illustration du véhicule agrandie
-                  SizedBox(
-                    height: 70,
-                    child: Center(
+              ),
+
+              // 2. Illustration du véhicule encore plus agrandie
+              Positioned(
+                top: AppConstants.rideCardCarTopOffset,
+                left: AppConstants.rideCardCarLeftOffset,
+                right: AppConstants.rideCardCarRightOffset,
+                child: IgnorePointer(
+                  child: SizedBox(
+                    height: AppConstants.rideCardCarHeight,
+                    child: Align(
+                      alignment: Alignment.center,
                       child: isEco
                           ? SvgPicture.asset(
                               'assets/icons/vectoreco.svg',
-                              height: 64,
+                              height: AppConstants.rideCardCarHeight,
                               fit: BoxFit.contain,
                             )
                           : Image.asset(
                               'assets/images/vectorclass.png',
-                              height: 64,
+                              height: AppConstants.rideCardCarHeight,
                               fit: BoxFit.contain,
                             ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-
-                  // Titre de l'option
-                  Text(
-                    option.title,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                      letterSpacing: -0.2,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 2),
-
-                  // Prix estimé
-                  if (_isLoadingRoute)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 4),
-                      child: SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    )
-                  else
-                    Text(
-                      option.formattedPrice,
-                      style: GoogleFonts.inter(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: isSelected ? AppColors.primary : AppColors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
+                ),
               ),
             ],
           ),
@@ -1035,135 +1129,85 @@ class _RideBookingPageState extends State<RideBookingPage>
     );
   }
 
-  Widget _buildPaymentMethodBar() {
-    return ValueListenableBuilder<String>(
-      valueListenable: PaymentMethodsService().selectedCodeNotifier,
-      builder: (context, code, _) {
-        final label = PaymentMethodsService.getLabelForCode(code);
-        final assetPath = PaymentMethodsService.getAssetForCode(code);
-        final isCash = code.toUpperCase().trim() == 'CASH';
-
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => PaymentMethodModal.show(context),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.serviceCardBg,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                // Logo du mode de paiement
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: const Color(0xFFE2E8F0),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: Padding(
-                      padding: isCash ? const EdgeInsets.all(4.0) : EdgeInsets.zero,
-                      child: Image.asset(
-                        assetPath,
-                        width: 36,
-                        height: 36,
-                        fit: isCash ? BoxFit.contain : BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-
-                // Libellé et description
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        style: GoogleFonts.inter(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                          letterSpacing: -0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        'Moyen présélectionné · Toucher pour changer',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Flèche droite pour changer le mode de paiement via le modal
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 22,
-                  color: AppColors.textPrimary,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildOrderButton(RideOptionModel selectedOption) {
+  Widget _buildPaymentAndOrderRow() {
     final isLoading = _isLoadingRoute || _isOrderingRide;
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(26),
-          ),
-        ),
-        onPressed: (_isLoadingRoute || _isOfflinePriceError || _isOrderingRide)
-            ? null
-            : _onOrderRide,
-        child: isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                  color: AppColors.white,
-                  strokeWidth: 2.5,
-                ),
-              )
-            : Text(
-                _isOfflinePriceError
-                    ? 'Connexion Internet requise'
-                    : '${'ride.order'.tr()} ${selectedOption.title}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.white,
-                  letterSpacing: -0.2,
+
+    return Row(
+      children: [
+        // Icône du mode de paiement à gauche du bouton Commander (cliquable pour changer via l'endpoint)
+        ValueListenableBuilder<String>(
+          valueListenable: PaymentMethodsService().selectedCodeNotifier,
+          builder: (context, code, _) {
+            final assetPath = PaymentMethodsService.getAssetForCode(code);
+            final isCash = code.toUpperCase().trim() == 'CASH';
+
+            return GestureDetector(
+              key: const Key('ride_payment_method_selector_button'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => PaymentMethodModal.show(context),
+              child: Container(
+                width: AppConstants.ridePaymentQuickBtnSize,
+                height: AppConstants.ridePaymentQuickBtnSize,
+                alignment: Alignment.center,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                  child: Image.asset(
+                    assetPath,
+                    width: AppConstants.ridePaymentQuickIconSize,
+                    height: AppConstants.ridePaymentQuickIconSize,
+                    fit: isCash ? BoxFit.contain : BoxFit.cover,
+                  ),
                 ),
               ),
-      ),
+            );
+          },
+        ),
+        const SizedBox(width: AppConstants.spacingUnitLg),
+
+        // Bouton Commander (affiche simplement "Commander")
+        Expanded(
+          child: SizedBox(
+            height: AppConstants.buttonHeight,
+            child: ElevatedButton(
+              key: const Key('ride_order_button'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.white,
+                elevation: AppConstants.elevationNone,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(
+                    AppConstants.rideOrderBtnRadius,
+                  ),
+                ),
+              ),
+              onPressed:
+                  (_isLoadingRoute || _isOfflinePriceError || _isOrderingRide)
+                      ? null
+                      : _onOrderRide,
+              child: isLoading
+                  ? const SizedBox(
+                      width: AppConstants.iconSizeLg,
+                      height: AppConstants.iconSizeLg,
+                      child: CircularProgressIndicator(
+                        color: AppColors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : Text(
+                      _isOfflinePriceError
+                          ? 'Connexion Internet requise'
+                          : 'ride.order'.tr(),
+                      style: GoogleFonts.inter(
+                        fontSize: AppConstants.fontLg,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.white,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1175,8 +1219,6 @@ class _RideBookingPageState extends State<RideBookingPage>
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final maxDragOffset =
         math.max(0.0, _bottomSheetHeight - (systemBottom + 92.0));
-    final selectedOption =
-        _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _measureBottomSheet());
 
@@ -1505,15 +1547,10 @@ class _RideBookingPageState extends State<RideBookingPage>
                     // Indication pour le chauffeur ("Comment vous trouver ?")
                     _buildDriverLandmarkTile(),
 
-                    const SizedBox(height: 10),
-
-                    // Barre de moyen de paiement présélectionné avec flèche vers le modal de changement
-                    _buildPaymentMethodBar(),
-
                     const SizedBox(height: 14),
 
-                    // Bouton Commander (lance directement sans modal intermédiaire)
-                    _buildOrderButton(selectedOption),
+                    // Mode de paiement à gauche + Bouton Commander à droite
+                    _buildPaymentAndOrderRow(),
                 ],
               ),
             ),

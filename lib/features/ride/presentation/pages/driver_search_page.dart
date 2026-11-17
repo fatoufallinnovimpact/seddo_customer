@@ -102,6 +102,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   String _paymentStatus = 'PENDING';
   String _currentRideStatus = 'PAYMENT_PENDING';
   bool _isTransitioningToApproaching = false;
+  bool _hasHandledNoDriver = false;
 
   bool get _isPaymentConfirmed {
     if (widget.paymentMethod == PaymentMethodType.cash) return true;
@@ -413,13 +414,19 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
       // Filet de sécurité actif : polling toutes les 3s pour ne jamais rater l'acceptation du chauffeur
       _rideStatusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-        if (mounted && !_isTransitioningToApproaching) {
+        if (mounted &&
+            !_isTransitioningToApproaching &&
+            !_hasHandledNoDriver) {
           _checkRideStatus(effectiveRideId);
         }
       });
 
       _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
-        if (!mounted || _isTransitioningToApproaching) return;
+        if (!mounted ||
+            _isTransitioningToApproaching ||
+            _hasHandledNoDriver) {
+          return;
+        }
         final matchesRide = event.rideId.isEmpty ||
             event.rideId == effectiveRideId ||
             event.rideId.endsWith(effectiveRideId) ||
@@ -490,7 +497,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed &&
+        !_isTransitioningToApproaching &&
+        !_hasHandledNoDriver) {
       // Au retour d'une application externe (Wave / navigateur), interroger l'API pour vérifier si le paiement a réellement abouti
       final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
       if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
@@ -571,6 +580,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   /// Vérifie le statut de la course via GET /v1/rides/{id}
   Future<void> _checkRideStatus(String rideId) async {
+    if (_hasHandledNoDriver || _isTransitioningToApproaching) return;
     try {
       final data = await _rideService.getRideDetails(rideId);
       if (data != null && mounted) {
@@ -639,7 +649,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             updatedTripPolyline,
           );
         } else if (status.startsWith('CANCELLED') || status == 'NO_DRIVER') {
-          onNoDriverAvailable();
+          if (!_hasHandledNoDriver) {
+            onNoDriverAvailable();
+          }
+          return;
         }
 
         final payment = (data['ride'] is Map<String, dynamic>
@@ -834,7 +847,24 @@ class _DriverSearchPageState extends State<DriverSearchPage>
   /// Prêt pour l'API : appelé lorsque le backend signale qu'aucun chauffeur n'est disponible
   @visibleForTesting
   Future<void> onNoDriverAvailable() async {
+    if (_hasHandledNoDriver || !mounted) return;
+    _hasHandledNoDriver = true;
+
     _autoMatchTimer?.cancel();
+    _rideStatusPollTimer?.cancel();
+    _nearbyPollTimer?.cancel();
+    _realtimeStatusSub?.cancel();
+    _realtimePaymentSub?.cancel();
+    _realtimeNearbySub?.cancel();
+    _realtimeDriverLocationSub?.cancel();
+    _realtimeReconnectSub?.cancel();
+    _radarController.stop();
+
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RealtimeService().leaveRide(effectiveRideId);
+    }
+
     final action = await NoDriverFoundSheet.show(
       context,
       departure: widget.departure,
@@ -843,7 +873,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       paymentMethod: widget.paymentMethod,
     );
 
-    if (!mounted || action == null) return;
+    if (!mounted) return;
 
     if (action == NoDriverFoundAction.retry) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -979,10 +1009,11 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
     // 3. Real nearby cars from GET /v1/drivers/nearby and WebSocket (waiting for driver acceptance)
     if (_nearbyCars.isNotEmpty) {
+      final separatedCars = NearbyCarModel.separateOverlappingCars(_nearbyCars);
       final carIcon = _carMarkerIcon ??
           BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
-      for (int i = 0; i < _nearbyCars.length; i++) {
-        final car = _nearbyCars[i];
+      for (int i = 0; i < separatedCars.length; i++) {
+        final car = separatedCars[i];
         if (car.lat == 0.0 && car.lng == 0.0) continue;
         final markerId = car.id.isNotEmpty && car.id != 'unknown'
             ? 'nearby_car_${car.id}'
@@ -1081,10 +1112,19 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
 
   Widget _buildVehicleImage({required double width, required double height}) {
-    return Image.asset(
-      widget.rideOption.type == RideType.confort
-          ? 'assets/images/seddo_confort_3d.png'
-          : 'assets/images/seddo_eco_3d.png',
+    final isConfort = widget.rideOption.type == RideType.confort;
+    if (isConfort) {
+      return Image.asset(
+        'assets/images/vectorclass.png',
+        key: const Key('driver_search_confort_vehicle_image'),
+        width: width,
+        height: height,
+        fit: BoxFit.contain,
+      );
+    }
+    return SvgPicture.asset(
+      'assets/icons/vectoreco.svg',
+      key: const Key('driver_search_eco_vehicle_image'),
       width: width,
       height: height,
       fit: BoxFit.contain,
@@ -1325,27 +1365,35 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                     Row(
                                       children: [
                                         Expanded(
-                                          child: Text(
-                                            _isPaymentConfirmed
-                                                ? 'ride.searching'.tr()
-                                                : 'En attente du paiement...',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 20,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppColors.textPrimary,
-                                              letterSpacing: -0.4,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              _isPaymentConfirmed
+                                                  ? 'ride.searching'.tr()
+                                                  : 'En attente du paiement...',
+                                              maxLines: 1,
+                                              style: GoogleFonts.inter(
+                                                fontSize: AppConstants.fontXl,
+                                                fontWeight: FontWeight.w900,
+                                                color: AppColors.textPrimary,
+                                                letterSpacing: -0.4,
+                                              ),
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(
+                                            width: AppConstants.spacingSm),
                                         _buildVehicleImage(
-                                            width: 56, height: 38),
-                                        const SizedBox(width: 8),
+                                            width: 68, height: 44),
+                                        const SizedBox(
+                                            width: AppConstants.spacingSm),
                                         _buildChevronButton(
                                             isExpanded: true),
                                       ],
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(
+                                        height: AppConstants.spacingUnitLg),
                                     _buildProgressBar(),
                                   ],
                                 )
@@ -1355,28 +1403,34 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                     Row(
                                       children: [
                                         Expanded(
-                                          child: Text(
-                                            _isPaymentConfirmed
-                                                ? 'ride.searching'.tr()
-                                                : 'En attente du paiement...',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w800,
-                                              color: AppColors.textPrimary,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              _isPaymentConfirmed
+                                                  ? 'ride.searching'.tr()
+                                                  : 'En attente du paiement...',
+                                              maxLines: 1,
+                                              style: GoogleFonts.inter(
+                                                fontSize: AppConstants.fontBase,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.textPrimary,
+                                              ),
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(
+                                            width: AppConstants.spacingSm),
                                         _buildVehicleImage(
-                                            width: 44, height: 28),
-                                        const SizedBox(width: 8),
+                                            width: 52, height: 34),
+                                        const SizedBox(
+                                            width: AppConstants.spacingSm),
                                         _buildChevronButton(
                                             isExpanded: false),
                                       ],
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(
+                                        height: AppConstants.spacingUnit),
                                     _buildProgressBar(),
                                   ],
                                 ),
