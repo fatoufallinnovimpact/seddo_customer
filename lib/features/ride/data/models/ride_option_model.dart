@@ -47,6 +47,9 @@ class RideOptionModel {
     return '$price $currency';
   }
 
+  /// Alias for formattedPrice
+  String get priceFormatted => formattedPrice;
+
   RideOptionModel copyWith({
     RideType? type,
     String? title,

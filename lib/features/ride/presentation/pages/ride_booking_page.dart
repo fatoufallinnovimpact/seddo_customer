@@ -27,6 +27,8 @@ import 'package:seddo/features/ride/presentation/widgets/pickup_landmark_sheet.d
 import 'package:seddo/features/ride/presentation/widgets/ride_map_camera_toggle_button.dart';
 import 'package:seddo/features/ride/presentation/widgets/ride_option_card_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/select_payment_method_sheet.dart';
+import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
+import 'package:seddo/features/payment/presentation/widgets/payment_method_modal.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
 import 'package:seddo/services/places_service.dart';
@@ -91,6 +93,7 @@ class _RideBookingPageState extends State<RideBookingPage>
   late RideOptionModel _confortOption;
   String? _pickupLandmark;
   String _userPhoneDisplay = '77 ••• 45 12';
+  bool _isOrderingRide = false;
 
   late PlaceSearchResult _departure;
 
@@ -118,6 +121,16 @@ class _RideBookingPageState extends State<RideBookingPage>
     _fetchRoute();
     _fetchNearbyDrivers();
     _loadConnectedUserPhone();
+
+    // Initialisation et présélection automatique du mode de paiement depuis l'API
+    PaymentMethodsService().init().then((code) {
+      if (mounted) {
+        setState(() {
+          _selectedPaymentMethod = PaymentMethodType.fromApiValue(code);
+        });
+      }
+    });
+    PaymentMethodsService().selectedCodeNotifier.addListener(_onPaymentMethodCodeChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _measureBottomSheet();
@@ -193,9 +206,19 @@ class _RideBookingPageState extends State<RideBookingPage>
 
   @override
   void dispose() {
+    PaymentMethodsService().selectedCodeNotifier.removeListener(_onPaymentMethodCodeChanged);
     _sheetAnimController.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  void _onPaymentMethodCodeChanged() {
+    if (mounted) {
+      final code = PaymentMethodsService().currentCode;
+      setState(() {
+        _selectedPaymentMethod = PaymentMethodType.fromApiValue(code);
+      });
+    }
   }
 
   void _sanitizeAndResolveDeparture() {
@@ -205,6 +228,9 @@ class _RideBookingPageState extends State<RideBookingPage>
         raw == 'Position sélectionnée' ||
         raw == 'Position GPS actuelle' ||
         raw == 'Ma position actuelle' ||
+        raw.toLowerCase() == 'dakar' ||
+        raw.toLowerCase() == 'dakar, sénégal' ||
+        raw.toLowerCase() == 'dakar, senegal' ||
         RegExp(r'^-?\d+\.\d+').hasMatch(raw);
 
     if (isGenericOrCoords) {
@@ -230,6 +256,9 @@ class _RideBookingPageState extends State<RideBookingPage>
             res.mainText.isNotEmpty &&
             res.mainText != 'Position sur la carte' &&
             res.mainText != 'Position sélectionnée' &&
+            res.mainText.toLowerCase() != 'dakar' &&
+            res.mainText.toLowerCase() != 'dakar, sénégal' &&
+            res.mainText.toLowerCase() != 'dakar, senegal' &&
             !RegExp(r'^-?\d+\.\d+').hasMatch(res.mainText)) {
           setState(() {
             _departure = PlaceSearchResult(
@@ -637,114 +666,505 @@ class _RideBookingPageState extends State<RideBookingPage>
     final selectedOption =
         _selectedRideType == RideType.eco ? _ecoOption : _confortOption;
 
-    // 1. Premier modal : Sélection du Mode de paiement (Wave, OM, Espèces)
-    final chosenMethod = await SelectPaymentMethodSheet.show(
-      context,
-      initialMethod: _selectedPaymentMethod,
-    );
+    final quoteId = selectedOption.quoteId;
+    final isTestEnvironment =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
 
-    if (!mounted || chosenMethod == null) return;
-    setState(() => _selectedPaymentMethod = chosenMethod);
+    if (!isTestEnvironment && (quoteId == null || quoteId.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Calcul du devis en cours, veuillez patienter...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
 
-    // 2. Second modal : Confirmation du paiement connecté à l'API
+    // Le moyen de paiement sélectionné au préalable
+    final chosenMethod = _selectedPaymentMethod;
+
+    // 1. ESPÈCES (CASH) : création et recherche directe sans aucun modal intermédiaire
+    if (chosenMethod == PaymentMethodType.cash) {
+      setState(() => _isOrderingRide = true);
+      try {
+        final rideData = isTestEnvironment
+            ? {'id': 'test_ride_1', 'status': 'SEARCHING'}
+            : await _rideService.createRide(
+                quoteId: quoteId ?? 'test_quote',
+                paymentMethod: 'CASH',
+              );
+        setState(() => _isOrderingRide = false);
+        if (!mounted) return;
+
+        if (rideData != null) {
+          _handleOrderSuccess(selectedOption, rideData, chosenMethod);
+        } else {
+          _fetchRoute();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Impossible de commander la course. Veuillez réessayer.'),
+              backgroundColor: AppColors.errorRed,
+            ),
+          );
+        }
+      } catch (e) {
+        setState(() => _isOrderingRide = false);
+        if (mounted) {
+          _fetchRoute();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur: $e'),
+              backgroundColor: AppColors.errorRed,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    // 2. WAVE ou ORANGE MONEY : ouverture du sheet avec autoValidate: true pour redirection directe
     final result = await OrangeMoneyPaymentSheet.show(
       context,
       rideOption: selectedOption,
       phoneDisplay: _userPhoneDisplay,
       rideService: _rideService,
       paymentMethod: chosenMethod,
+      autoValidate: true,
     );
 
     if (!mounted) return;
 
     if (result == OrangeMoneyPaymentResult.success) {
-      if (mounted) {
-        // Lire la réponse de l'API (plannedPolyline décodé)
-        final lastData = RideService.lastCreatedRideData;
-        List<LatLng> effectivePoints = _polylinePoints;
-        final plannedPoly = lastData?['plannedPolyline'] as String?;
-        if (plannedPoly != null && plannedPoly.isNotEmpty) {
-          final decoded = RouteService.decodePolyline(plannedPoly);
-          if (decoded.length >= 2) {
-            effectivePoints = decoded;
-          }
-        }
-
-        List<TrafficSegmentModel> effectiveTraffic = _traffic.isNotEmpty
-            ? _traffic
-            : selectedOption.traffic;
-        final rawPlannedTraffic = (lastData?['plannedTraffic'] ??
-            lastData?['traffic']) as List<dynamic>?;
-        if (rawPlannedTraffic != null && rawPlannedTraffic.isNotEmpty) {
-          final parsed = rawPlannedTraffic
-              .whereType<Map<String, dynamic>>()
-              .map((item) => TrafficSegmentModel.fromJson(item))
-              .toList();
-          if (parsed.isNotEmpty) {
-            effectiveTraffic = parsed;
-          }
-        }
-
-        final cachedEvent = RealtimeService().lastRideStatusEvent;
-        final status = (lastData?['status'] as String? ?? cachedEvent?.status ?? '').toUpperCase();
-        final hasDriver = lastData?['driver'] != null || cachedEvent?.driver != null;
-        final isAccepted = status == 'ACCEPTED' ||
-            status == 'DRIVER_ACCEPTED' ||
-            status == 'DRIVER_ASSIGNED' ||
-            status == 'ASSIGNED' ||
-            status == 'CONFIRMED' ||
-            status == 'APPROACHING' ||
-            status == 'EN_ROUTE' ||
-            status == 'DRIVER_ARRIVED' ||
-            status == 'IN_PROGRESS' ||
-            hasDriver;
-
-        if (isAccepted && lastData != null) {
-          final driver = cachedEvent?.driver ??
-              DriverModel.fromRideJson(
-                lastData,
-                defaultRideType: selectedOption.type,
-              );
-          final code = cachedEvent?.departureCode ??
-              DriverModel.extractDepartureCode(lastData);
-
-          Navigator.of(context).push(
-            SlideRightToLeftRoute(
-              page: DriverApproachingPage(
-                departure: _departure,
-                destination: widget.destination,
-                rideOption: selectedOption,
-                driver: driver,
-                polylinePoints: effectivePoints,
-                departureCode: code,
-                rideId: RideService.lastCreatedRideId,
-                rideService: widget.rideService,
-                autoStartSimulation: false,
-              ),
-            ),
-          );
-        } else {
-          Navigator.of(context).push(
-            SlideRightToLeftRoute(
-              page: DriverSearchPage(
-                departure: _departure,
-                destination: widget.destination,
-                rideOption: selectedOption,
-                polylinePoints: effectivePoints,
-                traffic: effectiveTraffic,
-                pickupLandmark: _pickupLandmark,
-                rideId: RideService.lastCreatedRideId,
-                paymentMethod: chosenMethod,
-              ),
-            ),
-          );
-        }
-      }
+      final lastData = RideService.lastCreatedRideData ??
+          {'id': RideService.lastCreatedRideId ?? 'created_ride_id', 'status': 'SEARCHING'};
+      _handleOrderSuccess(selectedOption, lastData, chosenMethod);
     } else {
-      // Si la commande n'a pas abouti ou a été fermée/annulée (ex: devis déjà commandé),
-      // rafraîchir immédiatement le devis pour renouveler le quoteId
       _fetchRoute();
     }
+  }
+
+  void _handleOrderSuccess(
+    RideOptionModel selectedOption,
+    Map<String, dynamic> lastData,
+    PaymentMethodType chosenMethod,
+  ) {
+    List<LatLng> effectivePoints = _polylinePoints;
+    final plannedPoly = lastData['plannedPolyline'] as String?;
+    if (plannedPoly != null && plannedPoly.isNotEmpty) {
+      final decoded = RouteService.decodePolyline(plannedPoly);
+      if (decoded.length >= 2) {
+        effectivePoints = decoded;
+      }
+    }
+
+    List<TrafficSegmentModel> effectiveTraffic = _traffic.isNotEmpty
+        ? _traffic
+        : selectedOption.traffic;
+    final rawPlannedTraffic = (lastData['plannedTraffic'] ??
+        lastData['traffic']) as List<dynamic>?;
+    if (rawPlannedTraffic != null && rawPlannedTraffic.isNotEmpty) {
+      final parsed = rawPlannedTraffic
+          .whereType<Map<String, dynamic>>()
+          .map((item) => TrafficSegmentModel.fromJson(item))
+          .toList();
+      if (parsed.isNotEmpty) {
+        effectiveTraffic = parsed;
+      }
+    }
+
+    final cachedEvent = RealtimeService().lastRideStatusEvent;
+    final status = (lastData['status'] as String? ?? cachedEvent?.status ?? '').toUpperCase();
+    final hasDriver = lastData['driver'] != null || cachedEvent?.driver != null;
+    final isAccepted = status == 'ACCEPTED' ||
+        status == 'DRIVER_ACCEPTED' ||
+        status == 'DRIVER_ASSIGNED' ||
+        status == 'ASSIGNED' ||
+        status == 'CONFIRMED' ||
+        status == 'APPROACHING' ||
+        status == 'EN_ROUTE' ||
+        status == 'DRIVER_ARRIVED' ||
+        status == 'IN_PROGRESS' ||
+        hasDriver;
+
+    final effectiveRideId = lastData['id'] as String? ?? RideService.lastCreatedRideId;
+
+    if (isAccepted) {
+      final driver = cachedEvent?.driver ??
+          DriverModel.fromRideJson(
+            lastData,
+            defaultRideType: selectedOption.type,
+          );
+      final code = cachedEvent?.departureCode ??
+          DriverModel.extractDepartureCode(lastData);
+
+      Navigator.of(context).push(
+        SlideRightToLeftRoute(
+          page: DriverApproachingPage(
+            departure: _departure,
+            destination: widget.destination,
+            rideOption: selectedOption,
+            driver: driver,
+            polylinePoints: effectivePoints,
+            departureCode: code,
+            rideId: effectiveRideId,
+            rideService: widget.rideService,
+            autoStartSimulation: false,
+          ),
+        ),
+      );
+    } else {
+      Navigator.of(context).push(
+        SlideRightToLeftRoute(
+          page: DriverSearchPage(
+            departure: _departure,
+            destination: widget.destination,
+            rideOption: selectedOption,
+            polylinePoints: effectivePoints,
+            traffic: effectiveTraffic,
+            pickupLandmark: _pickupLandmark,
+            rideId: effectiveRideId,
+            paymentMethod: chosenMethod,
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildVehicleCard({
+    required bool isEco,
+    required RideOptionModel option,
+  }) {
+    final isSelected =
+        _selectedRideType == (isEco ? RideType.eco : RideType.confort);
+
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          setState(() {
+            _selectedRideType = isEco ? RideType.eco : RideType.confort;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.serviceCardBg,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.22),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                    const BoxShadow(
+                      color: Color(0x0C000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ]
+                : const [
+                    BoxShadow(
+                      color: AppColors.shadowFaintBlack,
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+          ),
+          child: Stack(
+            children: [
+              if (isSelected)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 12,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Illustration du véhicule agrandie
+                  SizedBox(
+                    height: 70,
+                    child: Center(
+                      child: isEco
+                          ? SvgPicture.asset(
+                              'assets/icons/vectoreco.svg',
+                              height: 64,
+                              fit: BoxFit.contain,
+                            )
+                          : Image.asset(
+                              'assets/images/vectorclass.png',
+                              height: 64,
+                              fit: BoxFit.contain,
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Titre de l'option
+                  Text(
+                    option.title,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+
+                  // Prix estimé
+                  if (_isLoadingRoute)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4),
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    )
+                  else
+                    Text(
+                      option.formattedPrice,
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDriverLandmarkTile() {
+    final hasLandmark =
+        _pickupLandmark != null && _pickupLandmark!.trim().isNotEmpty;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openHowToFindYouSheet,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.serviceCardBg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: hasLandmark
+                    ? AppColors.primary.withValues(alpha: 0.15)
+                    : AppColors.white,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.edit_note_rounded,
+                size: 20,
+                color: hasLandmark ? AppColors.primary : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    hasLandmark ? _pickupLandmark! : 'ride.how_to_find_you'.tr(),
+                    style: GoogleFonts.inter(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    hasLandmark
+                        ? 'Indication enregistrée · Toucher pour modifier'
+                        : 'ride.how_to_find_you_sub'.tr(),
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppColors.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentMethodBar() {
+    return ValueListenableBuilder<String>(
+      valueListenable: PaymentMethodsService().selectedCodeNotifier,
+      builder: (context, code, _) {
+        final label = PaymentMethodsService.getLabelForCode(code);
+        final assetPath = PaymentMethodsService.getAssetForCode(code);
+        final isCash = code.toUpperCase().trim() == 'CASH';
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => PaymentMethodModal.show(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.serviceCardBg,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                // Logo du mode de paiement
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFE2E8F0),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: Padding(
+                      padding: isCash ? const EdgeInsets.all(4.0) : EdgeInsets.zero,
+                      child: Image.asset(
+                        assetPath,
+                        width: 36,
+                        height: 36,
+                        fit: isCash ? BoxFit.contain : BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // Libellé et description
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: GoogleFonts.inter(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Moyen présélectionné · Toucher pour changer',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Flèche droite pour changer le mode de paiement via le modal
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: AppColors.textPrimary,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildOrderButton(RideOptionModel selectedOption) {
+    final isLoading = _isLoadingRoute || _isOrderingRide;
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(26),
+          ),
+        ),
+        onPressed: (_isLoadingRoute || _isOfflinePriceError || _isOrderingRide)
+            ? null
+            : _onOrderRide,
+        child: isLoading
+            ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  color: AppColors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
+            : Text(
+                _isOfflinePriceError
+                    ? 'Connexion Internet requise'
+                    : '${'ride.order'.tr()} ${selectedOption.title}',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.white,
+                  letterSpacing: -0.2,
+                ),
+              ),
+      ),
+    );
   }
 
   @override
@@ -1030,281 +1450,70 @@ class _RideBookingPageState extends State<RideBookingPage>
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 14),
 
-                  // 2. Bloc Départ & Arrivée (sans texte Arrêts)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Ligne 1 : Point de départ avec l'icône de silhouette passager
-                        Row(
+                    if (_isOfflinePriceError) ...[
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.errorLightBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.errorRed.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
                           children: [
-                            Container(
-                              width: 26,
-                              height: 26,
-                              alignment: Alignment.center,
-                              child: const Icon(
-                                Icons.hail_rounded,
-                                size: 20,
-                                color: AppColors.markerIconBlack,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
+                            const Icon(Icons.wifi_off_rounded, color: AppColors.errorRed, size: 20),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                _departure.mainText,
+                                'Mode hors-ligne : la connexion Internet est requise pour calculer le tarif exact.',
                                 style: GoogleFonts.inter(
-                                  fontSize: 15,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.errorRed,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _fetchRoute,
+                              child: Text(
+                                'Réessayer',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
-                                  letterSpacing: -0.2,
+                                  color: AppColors.errorRed,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
                         ),
+                      ),
+                    ],
 
-                        const Padding(
-                          padding: EdgeInsets.only(left: 38, top: 8, bottom: 8),
-                          child: Divider(height: 1, color: AppColors.neutralDivider),
-                        ),
-
-                        // Ligne 2 : Point d'arrivée avec l'icône drapeau flag-svgrepo-com.svg
-                        Row(
-                          children: [
-                            Container(
-                              width: 26,
-                              height: 26,
-                              alignment: Alignment.center,
-                              child: SvgPicture.asset(
-                                'assets/icons/flag-svgrepo-com.svg',
-                                width: 18,
-                                height: 18,
-                                colorFilter: const ColorFilter.mode(
-                                  AppColors.markerIconBlack,
-                                  BlendMode.srcIn,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      widget.destination.mainText,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textPrimary,
-                                        letterSpacing: -0.2,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (_durationMinutes > 0)
-                                    Text(
-                                      ' · $_durationMinutes min.',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                    // Les 2 cartes de sélection des véhicules (Seddo Éco & Seddo Confort)
+                    Row(
+                      children: [
+                        _buildVehicleCard(isEco: true, option: _ecoOption),
+                        const SizedBox(width: 12),
+                        _buildVehicleCard(isEco: false, option: _confortOption),
                       ],
                     ),
-                  ),
 
-                  const Padding(
-                    padding: EdgeInsets.only(top: 10, bottom: 12),
-                    child: Divider(height: 1, color: AppColors.grayBorderDivider),
-                  ),
-                  const SizedBox(height: 4),
+                    const SizedBox(height: 12),
 
-                  // Pickup Landmark / "Comment vous trouver ?" Banner
-                  GestureDetector(
-                    onTap: _openHowToFindYouSheet,
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppConstants.spacingUnitLg,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.neutralInputBg,
-                        borderRadius: BorderRadius.circular(AppConstants.radiusDefault),
-                        border: Border.all(
-                          color: _pickupLandmark != null && _pickupLandmark!.isNotEmpty
-                              ? AppColors.primary.withValues(alpha: 0.35)
-                              : AppColors.neutralInputBorder,
-                          width: 1.0,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: AppColors.slateLightBg,
-                              borderRadius: BorderRadius.circular(AppConstants.radiusSm),
-                            ),
-                            alignment: Alignment.center,
-                            child: const Icon(
-                              Icons.location_on_outlined,
-                              color: AppColors.neutralIconGrey,
-                              size: 16,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _pickupLandmark != null && _pickupLandmark!.isNotEmpty
-                                      ? _pickupLandmark!
-                                      : 'ride.how_to_find_you'.tr(),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  _pickupLandmark != null && _pickupLandmark!.isNotEmpty
-                                      ? 'Indication enregistrée · Toucher pour modifier'
-                                      : 'ride.how_to_find_you_sub'.tr(),
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            size: 18,
-                            color: AppColors.textSecondary,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                    // Indication pour le chauffeur ("Comment vous trouver ?")
+                    _buildDriverLandmarkTile(),
 
-                  if (_isOfflinePriceError) ...[
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: AppColors.errorLightBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.errorRed.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.wifi_off_rounded, color: AppColors.errorRed, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Mode hors-ligne : la connexion Internet est requise pour calculer le tarif exact.',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.errorRed,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _fetchRoute,
-                            child: Text(
-                              'Réessayer',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.errorRed,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    const SizedBox(height: 10),
 
-                  // Option 1: Seddo Eco Card (3D Vehicle)
-                  RideOptionCardWidget(
-                    option: _ecoOption,
-                    isSelected: _selectedRideType == RideType.eco,
-                    imagePath: 'assets/images/seddo_eco_3d.png',
-                    isLoading: _isLoadingRoute,
-                    onTap: () => setState(() => _selectedRideType = RideType.eco),
-                  ),
+                    // Barre de moyen de paiement présélectionné avec flèche vers le modal de changement
+                    _buildPaymentMethodBar(),
 
-                  const SizedBox(height: 10),
+                    const SizedBox(height: 14),
 
-                  // Option 2: Seddo Confort Card (3D Vehicle)
-                  RideOptionCardWidget(
-                    option: _confortOption,
-                    isSelected: _selectedRideType == RideType.confort,
-                    imagePath: 'assets/images/seddo_confort_3d.png',
-                    isLoading: _isLoadingRoute,
-                    onTap: () =>
-                        setState(() => _selectedRideType = RideType.confort),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Big Orange Confirmation Button: "Commander Seddo Eco"
-                  SizedBox(
-                    width: double.infinity,
-                    height: AppConstants.buttonHeight,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            AppConstants.radiusLg,
-                          ),
-                        ),
-                      ),
-                      onPressed: (_isLoadingRoute || _isOfflinePriceError) ? null : _onOrderRide,
-                      child: _isLoadingRoute
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                color: AppColors.white,
-                                strokeWidth: 2.5,
-                              ),
-                            )
-                          : Text(
-                              _isOfflinePriceError
-                                  ? 'Connexion Internet requise'
-                                  : '${'ride.order'.tr()} ${selectedOption.title}',
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                    ),
-                  ),
+                    // Bouton Commander (lance directement sans modal intermédiaire)
+                    _buildOrderButton(selectedOption),
                 ],
               ),
             ),

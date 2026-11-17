@@ -66,4 +66,8 @@ abstract class ApiEndpoints {
 
   // App parameters (Google Maps keys for Android, iOS, Web - cache 5 min)
   static String get appParams => '$baseUrl/v1/app/params';
+
+  // Payment methods endpoints (GET /v1/payment-methods, PUT /v1/payment-methods/selected)
+  static String get paymentMethods => '$baseUrl/v1/payment-methods';
+  static String get selectPaymentMethod => '$baseUrl/v1/payment-methods/selected';
 }

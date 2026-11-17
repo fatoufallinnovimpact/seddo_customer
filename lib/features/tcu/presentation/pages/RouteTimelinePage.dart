@@ -361,7 +361,6 @@ class ItineraireTabBar extends StatelessWidget {
           children: List.generate(itineraires.length, (i) {
             final itineraire = itineraires[i];
             final isSelected = i == selectedIndex;
-            final name = ItineraireModel.nameForIndex(i, itineraire.isDirect);
             final busNames = itineraire.busNamesForIndex(i);
 
             return Padding(
@@ -410,28 +409,67 @@ class ItineraireTabBar extends StatelessWidget {
     );
   }
 
-  /// Affiche uniquement le nom du bus ou des bus reliés par une flèche
+  /// Affiche le ou les noms de bus dans la bulle (alignés verticalement sur plusieurs lignes en cas de correspondance)
   Widget _buildBusBadges(List<String> busNames, bool isSelected) {
-    return Row(
+    if (busNames.isEmpty) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.directions_bus_rounded,
+            size: 15,
+            color: isSelected ? Colors.white : const Color(0xFF0D47A1),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Bus',
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.w700,
+              fontSize: 13.5,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (busNames.length == 1) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.directions_bus_rounded,
+            size: 15,
+            color: isSelected ? Colors.white : const Color(0xFF0D47A1),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            busNames.first,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.w700,
+              fontSize: 13.5,
+              letterSpacing: -0.2,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Cas de correspondance : les bus sont écrits à la ligne, alignés verticalement dans la même bulle
+    return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (int b = 0; b < busNames.length; b++) ...[
-          if (b > 0)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Icon(
-                Icons.arrow_forward_rounded,
-                size: 14,
-                color: isSelected ? Colors.white70 : Colors.grey.shade600,
-              ),
-            ),
+          if (b > 0) const SizedBox(height: 4),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.directions_bus_rounded,
-                size: 15,
+                size: 14,
                 color: isSelected ? Colors.white : const Color(0xFF0D47A1),
               ),
               const SizedBox(width: 5),
@@ -440,7 +478,7 @@ class ItineraireTabBar extends StatelessWidget {
                 style: TextStyle(
                   color: isSelected ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w700,
-                  fontSize: 13.5,
+                  fontSize: 12.5,
                   letterSpacing: -0.2,
                 ),
               ),

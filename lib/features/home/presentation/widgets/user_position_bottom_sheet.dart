@@ -80,6 +80,9 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
         _displayMainAddress == 'Position sur la carte' ||
         _displayMainAddress == 'Position sélectionnée' ||
         _displayMainAddress == 'Position GPS actuelle' ||
+        _displayMainAddress.toLowerCase() == 'dakar' ||
+        _displayMainAddress.toLowerCase() == 'dakar, sénégal' ||
+        _displayMainAddress.toLowerCase() == 'dakar, senegal' ||
         RegExp(r'^-?\d+\.\d+').hasMatch(_displayMainAddress) ||
         _displaySecondaryAddress.contains(RegExp(r'^-?\d+\.\d+'));
 
@@ -107,6 +110,9 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
         if (mounted &&
             res.mainText.isNotEmpty &&
             res.mainText != 'Position sur la carte' &&
+            res.mainText.toLowerCase() != 'dakar' &&
+            res.mainText.toLowerCase() != 'dakar, sénégal' &&
+            res.mainText.toLowerCase() != 'dakar, senegal' &&
             !RegExp(r'^-?\d+\.\d+').hasMatch(res.mainText)) {
           setState(() {
             _displayMainAddress = res.mainText;

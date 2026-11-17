@@ -255,6 +255,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             mainText == 'Position sur la carte' ||
             mainText == 'Position sélectionnée' ||
             mainText == 'Position GPS actuelle' ||
+            mainText.toLowerCase() == 'dakar' ||
+            mainText.toLowerCase() == 'dakar, sénégal' ||
+            mainText.toLowerCase() == 'dakar, senegal' ||
             RegExp(r'^-?\d+\.\d+').hasMatch(mainText)) {
           final fallback = PlacesService.getDakarDistrictFallback(
             currentPlace.latitude,
@@ -385,6 +388,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
             mainText == 'Position sur la carte' ||
             mainText == 'Position sélectionnée' ||
             mainText == 'Position GPS actuelle' ||
+            mainText.toLowerCase() == 'dakar' ||
+            mainText.toLowerCase() == 'dakar, sénégal' ||
+            mainText.toLowerCase() == 'dakar, senegal' ||
             RegExp(r'^-?\d+\.\d+').hasMatch(mainText)) {
           final fallback = PlacesService.getDakarDistrictFallback(
             currentPlace.latitude,
@@ -658,6 +664,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
         departure.mainText == 'Position sélectionnée' ||
         departure.mainText == 'Position GPS actuelle' ||
         departure.mainText == currentPositionText ||
+        departure.mainText.toLowerCase() == 'dakar' ||
+        departure.mainText.toLowerCase() == 'dakar, sénégal' ||
+        departure.mainText.toLowerCase() == 'dakar, senegal' ||
         RegExp(r'^-?\d+\.\d+').hasMatch(departure.mainText)) {
       final fallback = PlacesService.getDakarDistrictFallback(
         departure.latitude,

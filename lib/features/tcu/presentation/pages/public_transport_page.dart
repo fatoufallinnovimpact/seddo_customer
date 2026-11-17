@@ -247,7 +247,7 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
             children: [
               SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
                 child: Column(
                   children: [
             // 1. En-tête : Flèche retour + Titre (sans aucun menu en haut à droite)
@@ -312,15 +312,10 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
                         ),
                         const SizedBox(height: 12),
 
-                        // Champ Destination
+                        // Champ Destination (aligné verticalement avec Origine)
                         PlaceSearchWidget(
                           key: const Key("tcu_destination_search"),
                           initPlace: destination,
-                          icon: const Icon(
-                            Icons.location_on_rounded,
-                            color: Color(0xFFF52D56),
-                            size: 22,
-                          ),
                           label: "Destination",
                           onLocationSelected: (PlaceModel location) {
                             setState(() {

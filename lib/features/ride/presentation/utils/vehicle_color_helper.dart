@@ -43,21 +43,16 @@ class VehicleColorHelper {
   static ColorFilter? getColorFilter(String? colorStr) {
     if (colorStr == null || colorStr.trim().isEmpty) return null;
     final clean = colorStr.trim().toLowerCase();
-    // If yellow (default seddo eco color), no filter needed
-    if (clean.contains('jaune') || clean.contains('yellow')) return null;
+    
+    // Blanc / White est la couleur naturelle de carr_cropped.png -> aucun filtre requis
+    if (clean.contains('blanc') ||
+        clean.contains('white') ||
+        clean == '#ffffff' ||
+        clean == 'ffffff') {
+      return null;
+    }
 
     final color = parseColor(colorStr);
-    final r = color.r;
-    final g = color.g;
-    final b = color.b;
-
-    // Rec. 601 Luminance grayscale matrix modulated by target color:
-    // Transparent pixels (A = 0) strictly stay (0, 0, 0, 0).
-    return ColorFilter.matrix(<double>[
-      0.299 * r, 0.587 * r, 0.114 * r, 0.0, 0.0,
-      0.299 * g, 0.587 * g, 0.114 * g, 0.0, 0.0,
-      0.299 * b, 0.587 * b, 0.114 * b, 0.0, 0.0,
-      0.0,       0.0,       0.0,       1.0, 0.0,
-    ]);
+    return ColorFilter.mode(color, BlendMode.modulate);
   }
 }

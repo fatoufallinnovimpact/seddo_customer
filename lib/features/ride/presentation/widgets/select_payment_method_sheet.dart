@@ -121,7 +121,7 @@ class _SelectPaymentMethodSheetState extends State<SelectPaymentMethodSheet> {
             method: PaymentMethodType.cash,
             title: 'payment_sheet.cash_title'.tr(),
             subtitle: 'payment_sheet.cash_sub'.tr(),
-            assetPath: 'assets/images/cfa.jpg',
+            assetPath: 'assets/images/cash_banknotes.png',
           ),
 
           const SizedBox(height: AppConstants.spacingUnitXl),

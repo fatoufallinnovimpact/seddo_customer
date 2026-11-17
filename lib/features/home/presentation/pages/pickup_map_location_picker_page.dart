@@ -83,6 +83,9 @@ class _PickupMapLocationPickerPageState
         initialRaw == 'Position sur la carte' ||
         initialRaw == 'Position sélectionnée' ||
         initialRaw == 'Position GPS actuelle' ||
+        initialRaw.toLowerCase() == 'dakar' ||
+        initialRaw.toLowerCase() == 'dakar, sénégal' ||
+        initialRaw.toLowerCase() == 'dakar, senegal' ||
         RegExp(r'^-?\d+\.\d+').hasMatch(initialRaw);
 
     if (isGenericOrCoords) {
@@ -260,6 +263,9 @@ class _PickupMapLocationPickerPageState
             main == 'Position sur la carte' ||
             main == 'Position sélectionnée' ||
             main == 'Position GPS actuelle' ||
+            main.toLowerCase() == 'dakar' ||
+            main.toLowerCase() == 'dakar, sénégal' ||
+            main.toLowerCase() == 'dakar, senegal' ||
             RegExp(r'^-?\d+\.\d+').hasMatch(main)) {
           final fallback = PlacesService.getDakarDistrictFallback(
             location.latitude,

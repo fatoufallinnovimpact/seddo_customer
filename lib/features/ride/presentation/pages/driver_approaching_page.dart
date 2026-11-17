@@ -2220,11 +2220,8 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                                 VehicleColorHelper.getColorFilter(
                                                     _currentDriver.carColor);
                                             final carImg = Image.asset(
-                                              widget.rideOption.type ==
-                                                      RideType.confort
-                                                  ? 'assets/images/seddo_confort_3d.png'
-                                                  : 'assets/images/seddo_eco_3d.png',
-                                              width: 74,
+                                              'assets/images/carr_cropped.png',
+                                              width: 78,
                                               height: 48,
                                               fit: BoxFit.contain,
                                             );

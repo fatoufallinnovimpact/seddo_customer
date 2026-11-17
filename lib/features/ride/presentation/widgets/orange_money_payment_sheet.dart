@@ -52,7 +52,7 @@ enum PaymentMethodType {
       case PaymentMethodType.orangeMoney:
         return 'assets/images/unnamed.png';
       case PaymentMethodType.cash:
-        return 'assets/images/cfa.jpg';
+        return 'assets/images/cash_banknotes.png';
     }
   }
 
@@ -90,6 +90,7 @@ class OrangeMoneyPaymentSheet extends StatefulWidget {
   final String phoneDisplay;
   final RideService? rideService;
   final PaymentMethodType paymentMethod;
+  final bool autoValidate;
 
   const OrangeMoneyPaymentSheet({
     super.key,
@@ -97,6 +98,7 @@ class OrangeMoneyPaymentSheet extends StatefulWidget {
     this.phoneDisplay = '77 ••• 45 12',
     this.rideService,
     this.paymentMethod = PaymentMethodType.orangeMoney,
+    this.autoValidate = false,
   });
 
   static Future<OrangeMoneyPaymentResult?> show(
@@ -105,6 +107,7 @@ class OrangeMoneyPaymentSheet extends StatefulWidget {
     String? phoneDisplay,
     RideService? rideService,
     PaymentMethodType paymentMethod = PaymentMethodType.orangeMoney,
+    bool autoValidate = false,
   }) {
     final effectivePhone = phoneDisplay ??
         AuthRepository().currentUser?.maskedPhone ??
@@ -120,6 +123,7 @@ class OrangeMoneyPaymentSheet extends StatefulWidget {
         phoneDisplay: effectivePhone,
         rideService: rideService,
         paymentMethod: paymentMethod,
+        autoValidate: autoValidate,
       ),
     );
   }
@@ -160,6 +164,14 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
         }
       }
     });
+
+    if (widget.autoValidate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _onValidate();
+        }
+      });
+    }
   }
 
   @override

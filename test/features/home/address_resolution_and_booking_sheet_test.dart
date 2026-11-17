@@ -19,14 +19,23 @@ void main() {
 
   group('PlacesService & Dakar District Fallbacks', () {
     test('getDakarDistrictFallback returns valid human-readable districts', () {
+      // Fann Hock (User location test: lat ~ 14.680, lng ~ -17.462)
+      final fannHock = PlacesService.getDakarDistrictFallback(14.6801, -17.4628);
+      expect(fannHock.mainText, equals('Fann Hock'));
+      expect(fannHock.mainText, isNot(equals('Dakar')));
+
+      // Fann Résidence
+      final fannRes = PlacesService.getDakarDistrictFallback(14.6900, -17.4700);
+      expect(fannRes.mainText, equals('Fann Résidence'));
+
       // Almadies
       final almadies = PlacesService.getDakarDistrictFallback(14.748, -17.525);
       expect(almadies.mainText, contains('Almadies'));
       expect(almadies.mainText, isNot(contains('Position sur la carte')));
       expect(almadies.mainText, isNot(contains('14.')));
 
-      // Point E / Fann
-      final pointE = PlacesService.getDakarDistrictFallback(14.695, -17.465);
+      // Point E
+      final pointE = PlacesService.getDakarDistrictFallback(14.695, -17.460);
       expect(pointE.mainText, contains('Point E'));
 
       // Plateau
@@ -36,6 +45,39 @@ void main() {
       // Yoff
       final yoff = PlacesService.getDakarDistrictFallback(14.755, -17.465);
       expect(yoff.mainText, contains('Yoff'));
+    });
+
+    test('refineDakarDistrict correctly resolves Fann Hock from compound commune or coordinates', () {
+      expect(
+        PlacesService.refineDakarDistrict(
+          'Fann-Point E-Amitié',
+          lat: 14.6801,
+          lng: -17.4628,
+        ),
+        equals('Fann Hock'),
+      );
+      expect(
+        PlacesService.refineDakarDistrict(
+          'Fann-Point E-Amitié',
+          route: 'Rue FN 57',
+        ),
+        equals('Fann Hock'),
+      );
+      expect(
+        PlacesService.refineDakarDistrict(
+          'Commune de Fann-Point E-Amitié',
+          route: 'FN-61',
+        ),
+        equals('Fann Hock'),
+      );
+      expect(
+        PlacesService.refineDakarDistrict(
+          'Dakar',
+          lat: 14.6801,
+          lng: -17.4628,
+        ),
+        equals('Fann Hock'),
+      );
     });
   });
 

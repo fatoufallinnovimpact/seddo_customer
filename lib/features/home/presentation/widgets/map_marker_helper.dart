@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 
@@ -14,6 +15,8 @@ abstract class MapMarkerHelper {
   static BitmapDescriptor? _ecoCarMarkerIcon;
   static BitmapDescriptor? _confortCarMarkerIcon;
   static BitmapDescriptor? _userHaloMarkerIcon;
+  static BitmapDescriptor? _blackUserMarkerIcon;
+  static BitmapDescriptor? _svgDestinationFlagIcon;
   static final Map<String, BitmapDescriptor> _transitMarkerIcons = {};
 
   /// Clear in-memory cached marker icons to force reload on hot restart or asset updates.
@@ -25,6 +28,8 @@ abstract class MapMarkerHelper {
     _ecoCarMarkerIcon = null;
     _confortCarMarkerIcon = null;
     _userHaloMarkerIcon = null;
+    _blackUserMarkerIcon = null;
+    _svgDestinationFlagIcon = null;
     _transitMarkerIcons.clear();
   }
 
@@ -455,6 +460,208 @@ abstract class MapMarkerHelper {
 
   /// Backward-compatible alias for destination pin marker (replaces previous orange square)
   static Future<BitmapDescriptor> getDestinationSquareMarker() => getDestinationPinMarker();
+
+  /// Marqueur de position utilisateur en NOIR (style aperçu d'accueil / Seddo) :
+  /// Squircle noir élégant (32x32) avec bordure blanche, icône my_location blanche au centre,
+  /// tige verticale noire et ombre douce au sol.
+  /// Ancrage au sol à (0.5, 1.0) pour pointer précisément sur les coordonnées GPS.
+  static Future<BitmapDescriptor> getBlackUserPositionMarker() async {
+    if (_blackUserMarkerIcon != null) return _blackUserMarkerIcon!;
+
+    const double dpr = 3.0;
+    const double logicalWidth = 38.0;
+    const double logicalHeight = 48.0;
+    const double boxSize = 32.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    canvas.scale(dpr, dpr);
+
+    // 1. Ombre au sol douce
+    final shadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawOval(
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
+      shadowPaint,
+    );
+
+    // 2. Tige verticale noire fine
+    final stalkPaint = Paint()
+      ..color = const Color(0xFF141414)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(logicalWidth / 2, boxSize - 2),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
+      stalkPaint,
+    );
+
+    // 3. Squircle NOIR élégant
+    final boxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH((logicalWidth - boxSize) / 2, 0, boxSize, boxSize),
+      const Radius.circular(9),
+    );
+    final boxPaint = Paint()
+      ..color = const Color(0xFF141414)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(boxRect, boxPaint);
+
+    // Bordure blanche pour une définition nette sur la carte
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    canvas.drawRRect(boxRect, borderPaint);
+
+    // 4. Icône Icons.hail_rounded blanche au centre (exactement comme dans l'aperçu de ma position)
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.hail_rounded.codePoint),
+        style: TextStyle(
+          fontSize: 20.0,
+          fontFamily: Icons.hail_rounded.fontFamily,
+          package: Icons.hail_rounded.fontPackage,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset((logicalWidth - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(pixelWidth, pixelHeight);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData == null) {
+      return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+    }
+
+    _blackUserMarkerIcon = BitmapDescriptor.bytes(
+      byteData.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
+    return _blackUserMarkerIcon!;
+  }
+
+  /// Marqueur point d'arrivée avec le drapeau vectoriel officiel (assets/icons/flag-svgrepo-com.svg) :
+  /// Squircle signature orange Seddo avec le drapeau SVG blanc au centre, tige noire et ombre au sol.
+  /// Ancrage au sol à (0.5, 1.0) pointant directement sur l'arrêt de bus.
+  static Future<BitmapDescriptor> getSvgDestinationFlagMarker() async {
+    if (_svgDestinationFlagIcon != null) return _svgDestinationFlagIcon!;
+
+    const double dpr = 3.0;
+    const double logicalWidth = 38.0;
+    const double logicalHeight = 48.0;
+    const double boxSize = 32.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    canvas.scale(dpr, dpr);
+
+    // 1. Ombre au sol douce
+    final shadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawOval(
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
+      shadowPaint,
+    );
+
+    // 2. Tige verticale noire
+    final stalkPaint = Paint()
+      ..color = const Color(0xFF141414)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(logicalWidth / 2, boxSize - 2),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
+      stalkPaint,
+    );
+
+    // 3. Squircle orange Seddo
+    final boxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH((logicalWidth - boxSize) / 2, 0, boxSize, boxSize),
+      const Radius.circular(9),
+    );
+    final boxPaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(boxRect, boxPaint);
+
+    // Bordure blanche nette
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    canvas.drawRRect(boxRect, borderPaint);
+
+    // 4. Rendu vectoriel du SVG flag-svgrepo-com.svg en blanc
+    try {
+      final pictureInfo = await vg.loadPicture(
+        const SvgAssetLoader('assets/icons/flag-svgrepo-com.svg'),
+        null,
+      );
+      const double flagSize = 19.0;
+      canvas.save();
+      canvas.translate(
+        (logicalWidth - flagSize) / 2,
+        (boxSize - flagSize) / 2,
+      );
+      canvas.scale(
+        flagSize / pictureInfo.size.width,
+        flagSize / pictureInfo.size.height,
+      );
+      canvas.saveLayer(
+        Rect.fromLTWH(0, 0, pictureInfo.size.width, pictureInfo.size.height),
+        Paint()
+          ..colorFilter =
+              const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+      );
+      canvas.drawPicture(pictureInfo.picture);
+      canvas.restore();
+      canvas.restore();
+    } catch (_) {
+      // Repli icône standard si environnement headless test
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(Icons.flag_rounded.codePoint),
+          style: TextStyle(
+            fontSize: 19.0,
+            fontFamily: Icons.flag_rounded.fontFamily,
+            package: Icons.flag_rounded.fontPackage,
+            color: Colors.white,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      textPainter.paint(
+        canvas,
+        Offset((logicalWidth - textPainter.width) / 2, (boxSize - textPainter.height) / 2),
+      );
+    }
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(pixelWidth, pixelHeight);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData == null) {
+      return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+    }
+
+    _svgDestinationFlagIcon = BitmapDescriptor.bytes(
+      byteData.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
+    return _svgDestinationFlagIcon!;
+  }
 
   /// Generate user location pin (Orange circle with white navigation arrow inside).
   static Future<BitmapDescriptor> getUserLocationMarker() async {

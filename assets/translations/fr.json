@@ -104,6 +104,7 @@
     "logout_title": "Se déconnecter",
     "logout_message": "Êtes-vous sûr de vouloir vous déconnecter de votre compte Seddo ?",
     "payment": "Paiement",
+    "payment_methods_title": "Méthode de paiement",
     "payment_sub": "Orange Money 77 ••• 45 12",
     "default_mode": "Mode par défaut",
     "activity_sheet_title": "Vos activités",

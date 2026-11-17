@@ -218,13 +218,17 @@ class _DestinationSearchBottomSheetState
     _rideService = widget.rideService ?? RideService();
 
     // 1. Initialiser le point de départ
+    final loc = widget.currentUserLocation ?? const LatLng(14.6937, -17.4440);
     final pickup = widget.initialPickup;
-    final initialDep = (pickup != null && pickup.trim().isNotEmpty)
+    final initialDep = (pickup != null &&
+            pickup.trim().isNotEmpty &&
+            pickup.trim().toLowerCase() != 'dakar' &&
+            pickup.trim().toLowerCase() != 'dakar, sénégal' &&
+            pickup.trim().toLowerCase() != 'dakar, senegal')
         ? pickup.trim()
-        : 'Rue FN-48, 12';
+        : PlacesService.getDakarDistrictFallback(loc.latitude, loc.longitude).mainText;
     _departureController.text = initialDep;
 
-    final loc = widget.currentUserLocation ?? const LatLng(14.6937, -17.4440);
     _selectedDeparture = PlaceSearchResult(
       id: 'pickup_initial',
       mainText: initialDep,
@@ -465,11 +469,15 @@ class _DestinationSearchBottomSheetState
 
   /// Réinitialise le départ sur la position actuelle de l'utilisateur
   void _resetToCurrentLocation() {
-    final pickup = widget.initialPickup;
-    final initialDep = (pickup != null && pickup.trim().isNotEmpty)
-        ? pickup.trim()
-        : 'Ma position actuelle';
     final loc = widget.currentUserLocation ?? const LatLng(14.6937, -17.4440);
+    final pickup = widget.initialPickup;
+    final initialDep = (pickup != null &&
+            pickup.trim().isNotEmpty &&
+            pickup.trim().toLowerCase() != 'dakar' &&
+            pickup.trim().toLowerCase() != 'dakar, sénégal' &&
+            pickup.trim().toLowerCase() != 'dakar, senegal')
+        ? pickup.trim()
+        : PlacesService.getDakarDistrictFallback(loc.latitude, loc.longitude).mainText;
 
     setState(() {
       _departureController.text = initialDep;

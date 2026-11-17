@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/features/tcu/data/models/transit/ItineraireLegModel.dart';
 import 'package:seddo/features/tcu/data/models/transit/PlaceModel.dart';
-import 'package:seddo/features/tcu/data/models/transit/StopTimeResponse.dart';
 import 'package:seddo/features/tcu/data/models/transit/TransitTripModel.dart';
 import 'package:seddo/features/tcu/data/services/public_transport_service.dart';
 import 'package:seddo/features/tcu/presentation/pages/RouteTimelinePage.dart';
@@ -95,7 +94,7 @@ void main() {
     expect(swapCenter > originTop, isTrue);
     expect(swapCenter < destinationBottom, isTrue);
 
-    // Verify Origin field does NOT have the departure prefix icon (my_location_rounded)
+    // Verify Origin and Destination fields are vertically aligned with no left prefix icon
     expect(
       find.descendant(
         of: originFinder,
@@ -103,13 +102,12 @@ void main() {
       ),
       findsNothing,
     );
-    // Destination field has its location icon
     expect(
       find.descendant(
         of: destinationFinder,
         matching: find.byIcon(Icons.location_on_rounded),
       ),
-      findsOneWidget,
+      findsNothing,
     );
 
     // Tap swap
@@ -207,9 +205,14 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // Verify bus names and arrow rendered
+    // Verify bus names rendered
     expect(find.text('AFTU 4'), findsWidgets);
     expect(find.text('DDD 1'), findsWidgets);
-    expect(find.byIcon(Icons.arrow_forward_rounded), findsWidgets);
+
+    // Verify "Plus rapide", "Alternative", and durations are removed
+    expect(find.text('Plus rapide'), findsNothing);
+    expect(find.text('Alternative'), findsNothing);
+    expect(find.text('26 min'), findsNothing);
+    expect(find.text('33 min'), findsNothing);
   });
 }

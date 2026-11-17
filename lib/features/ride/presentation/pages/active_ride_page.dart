@@ -2270,10 +2270,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                         driver: _currentDriver,
                         isPaid: true,
                         isOffline: true,
-                        vehicleImagePath: widget.rideOption.type ==
-                                RideType.confort
-                            ? 'assets/images/seddo_confort_3d.png'
-                            : 'assets/images/seddo_eco_3d.png',
+                        vehicleImagePath: 'assets/images/carr_cropped.png',
                       ),
 
                       const SizedBox(height: 10),
@@ -2402,10 +2399,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       driver: _currentDriver,
                       isPaid: true,
                       isOffline: _isOffline,
-                      vehicleImagePath: widget.rideOption.type ==
-                              RideType.confort
-                          ? 'assets/images/seddo_confort_3d.png'
-                          : 'assets/images/seddo_eco_3d.png',
+                      vehicleImagePath: 'assets/images/carr_cropped.png',
                     ),
 
                     const SizedBox(height: 10),

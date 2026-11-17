@@ -19,6 +19,8 @@ import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 import 'package:seddo/features/profile/presentation/pages/edit_profile_page.dart';
+import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
+import 'package:seddo/features/payment/presentation/widgets/payment_method_modal.dart';
 
 /// Lateral navigation drawer matching the design mockup:
 /// - User profile: Real avatar photo or initials, real user name, rating from GET /v1/users/me and phone number
@@ -185,6 +187,25 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                                   currentUserLocation: userLoc,
                                 ),
                               ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 6),
+
+                        // Méthode de paiement
+                        ValueListenableBuilder<String>(
+                          valueListenable:
+                              PaymentMethodsService().selectedCodeNotifier,
+                          builder: (context, selectedCode, _) {
+                            return _buildMenuItem(
+                              context: context,
+                              iconPath: 'assets/icons/wallet-svgrepo-com.svg',
+                              title: 'drawer.payment_methods_title'.tr(),
+                              subtitle: PaymentMethodsService.getLabelForCode(
+                                  selectedCode),
+                              onTap: () {
+                                PaymentMethodModal.show(context);
+                              },
                             );
                           },
                         ),

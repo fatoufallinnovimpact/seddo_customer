@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:seddo/core/utils/map_config.dart';
+import 'package:seddo/services/places_service.dart';
 import '../models/transit/PlaceModel.dart';
 
 /// Service de recherche et autocomplétion d'adresses pour le module Transit (TCU).
@@ -245,22 +246,42 @@ class TransitPlaceSearchService {
                   bestStreetNumber = itemStreetNum;
                   formatted = itemMap['formatted_address'] as String? ?? formatted;
                   placeId = itemMap['place_id'] as String? ?? placeId;
-                  if (bestStreetNumber != null) break;
                 }
               }
             }
 
+            final rawDistrict = bestNeighborhood ?? bestSublocality;
+            var refinedDistrict = rawDistrict != null
+                ? PlacesService.refineDakarDistrict(
+                    rawDistrict,
+                    route: bestRoute,
+                    lat: lat,
+                    lng: lon,
+                  )
+                : null;
+            if (refinedDistrict == null ||
+                refinedDistrict.toLowerCase() == 'dakar' ||
+                refinedDistrict.toLowerCase() == 'dakar, sénégal' ||
+                refinedDistrict.toLowerCase() == 'dakar, senegal') {
+              final fb = PlacesService.getDakarDistrictFallback(lat, lon).mainText;
+              if (fb.toLowerCase() != 'dakar') {
+                refinedDistrict = fb;
+              }
+            }
+
             String resolvedName = '';
-            if (bestRoute != null && bestRoute.isNotEmpty) {
-              resolvedName = bestStreetNumber != null ? '$bestStreetNumber $bestRoute' : bestRoute;
-            } else if (bestEstablishment != null && bestEstablishment.isNotEmpty) {
+            if (bestEstablishment != null && bestEstablishment.isNotEmpty) {
               resolvedName = bestEstablishment;
-            } else if (bestNeighborhood != null && bestNeighborhood.isNotEmpty) {
-              resolvedName = bestNeighborhood;
-            } else if (bestSublocality != null && bestSublocality.isNotEmpty) {
-              resolvedName = bestSublocality;
-            } else if (formatted.isNotEmpty) {
+            } else if (refinedDistrict != null &&
+                refinedDistrict.isNotEmpty &&
+                refinedDistrict.toLowerCase() != 'dakar') {
+              resolvedName = refinedDistrict;
+            } else if (bestRoute != null && bestRoute.isNotEmpty) {
+              resolvedName = bestStreetNumber != null ? '$bestStreetNumber $bestRoute' : bestRoute;
+            } else if (formatted.isNotEmpty && formatted.split(',').first.trim().toLowerCase() != 'dakar') {
               resolvedName = formatted.split(',').first.trim();
+            } else {
+              resolvedName = refinedDistrict ?? 'Ma position actuelle';
             }
 
             debugPrint('[TCU Geocode] ✅ Google Maps a résolu: "$resolvedName" ($formatted)');
@@ -302,13 +323,29 @@ class TransitPlaceSearchService {
         final suburb = address?['suburb']?.toString();
         final name = data['name']?.toString();
 
+        final rawDist = neighbourhood ?? suburb;
+        var refinedDist = rawDist != null
+            ? PlacesService.refineDakarDistrict(rawDist, route: road, lat: lat, lng: lon)
+            : null;
+        if (refinedDist == null ||
+            refinedDist.toLowerCase() == 'dakar' ||
+            refinedDist.toLowerCase() == 'dakar, sénégal' ||
+            refinedDist.toLowerCase() == 'dakar, senegal') {
+          final fb = PlacesService.getDakarDistrictFallback(lat, lon).mainText;
+          if (fb.toLowerCase() != 'dakar') {
+            refinedDist = fb;
+          }
+        }
+
         String finalName;
-        if (road != null && road.isNotEmpty) {
+        if (refinedDist != null && refinedDist.isNotEmpty && refinedDist.toLowerCase() != 'dakar') {
+          finalName = refinedDist;
+        } else if (road != null && road.isNotEmpty) {
           finalName = houseNumber != null ? '$houseNumber $road' : road;
-        } else if (name != null && name.isNotEmpty) {
+        } else if (name != null && name.isNotEmpty && name.toLowerCase() != 'dakar') {
           finalName = name;
         } else {
-          finalName = neighbourhood ?? suburb ?? 'Ma position actuelle';
+          finalName = 'Ma position actuelle';
         }
 
         return PlaceModel(
@@ -320,11 +357,13 @@ class TransitPlaceSearchService {
       }
     } catch (_) {}
 
+    final fb = PlacesService.getDakarDistrictFallback(lat, lon);
+    final fallbackName = fb.mainText.toLowerCase() != 'dakar' ? fb.mainText : 'Ma position actuelle';
     return PlaceModel(
       latitude: lat,
       longitude: lon,
-      name: 'Ma position actuelle',
-      address: 'Position GPS (${lat.toStringAsFixed(4)}, ${lon.toStringAsFixed(4)})',
+      name: fallbackName,
+      address: fb.secondaryText,
     );
   }
 }

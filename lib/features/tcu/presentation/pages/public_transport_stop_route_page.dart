@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
@@ -9,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
+import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/tcu/data/models/tcu_route_model.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/route_service.dart';
@@ -59,6 +61,9 @@ class _PublicTransportStopRoutePageState
   bool _isVoiceEnabled = true;
   int _lastSpokenPhase = -1;
 
+  BitmapDescriptor? _userLocationMarkerIcon;
+  BitmapDescriptor? _destinationFlagMarkerIcon;
+
   @override
   void initState() {
     super.initState();
@@ -74,6 +79,23 @@ class _PublicTransportStopRoutePageState
     _initTts();
     _initRealGpsLocation();
     _fetchRoadWalkingPath();
+    _loadCustomMarkers();
+  }
+
+  Future<void> _loadCustomMarkers() async {
+    if (_isTestEnvironment) return;
+    try {
+      final userIcon = await MapMarkerHelper.getBlackUserPositionMarker();
+      final flagIcon = await MapMarkerHelper.getSvgDestinationFlagMarker();
+      if (mounted) {
+        setState(() {
+          _userLocationMarkerIcon = userIcon;
+          _destinationFlagMarkerIcon = flagIcon;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading custom navigation markers: $e');
+    }
   }
 
   Future<void> _fetchRoadWalkingPath() async {
@@ -217,9 +239,11 @@ class _PublicTransportStopRoutePageState
       Marker(
         markerId: const MarkerId('user_location'),
         position: _currentUserPos,
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          _isNavigating ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueOrange,
-        ),
+        icon: _userLocationMarkerIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(
+              _isNavigating ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueOrange,
+            ),
+        anchor: const Offset(0.5, 1.0),
         infoWindow: InfoWindow(
           title: 'Votre position',
           snippet: _isArrived
@@ -232,7 +256,9 @@ class _PublicTransportStopRoutePageState
       Marker(
         markerId: const MarkerId('stop_destination'),
         position: _stopPos,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        icon: _destinationFlagMarkerIcon ??
+            BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        anchor: const Offset(0.5, 1.0),
         infoWindow: InfoWindow(
           title: widget.routeOption.departureStop.name,
           snippet:
@@ -282,10 +308,18 @@ class _PublicTransportStopRoutePageState
           points: points,
           color: _isNavigating ? AppColors.yangoRouteGreen : AppColors.primary,
           width: 7,
-          patterns: [
-            PatternItem.dot,
-            PatternItem.gap(8.0),
-          ],
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          patterns: (defaultTargetPlatform == TargetPlatform.iOS)
+              ? [
+                  PatternItem.dash(10.0),
+                  PatternItem.gap(8.0),
+                ]
+              : [
+                  PatternItem.dot,
+                  PatternItem.gap(8.0),
+                ],
         ),
       );
     }

@@ -163,6 +163,9 @@ class UserLocationStorage {
           short.isNotEmpty &&
           short != 'Position sur la carte' &&
           short != 'Position GPS actuelle' &&
+          short.toLowerCase() != 'dakar' &&
+          short.toLowerCase() != 'dakar, sénégal' &&
+          short.toLowerCase() != 'dakar, senegal' &&
           !short.toLowerCase().contains('position sur la carte') &&
           !RegExp(r'^-?\d+\.\d+').hasMatch(short) &&
           lat != null &&
@@ -189,6 +192,9 @@ class UserLocationStorage {
         addressShort == 'Chargement...' ||
         addressShort == 'Position GPS actuelle' ||
         addressShort == 'Position sur la carte' ||
+        addressShort.toLowerCase() == 'dakar' ||
+        addressShort.toLowerCase() == 'dakar, sénégal' ||
+        addressShort.toLowerCase() == 'dakar, senegal' ||
         addressShort.toLowerCase().contains('position sur la carte') ||
         RegExp(r'^-?\d+\.\d+').hasMatch(addressShort) ||
         RegExp(r'\d+\.\d+,\s*-?\d+\.\d+').hasMatch(addressShort)) {

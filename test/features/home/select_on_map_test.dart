@@ -202,6 +202,34 @@ void main() {
       expect(result.secondaryText, contains('Dakar'));
     });
 
+    test('reverseGeocode at Fann Hock resolves to Fann Hock and not generic Dakar', () async {
+      final fannHockDio = Dio()
+        ..httpClientAdapter = MockGeocodeAdapter({
+          'results': [
+            {
+              'formatted_address': 'Rue 57 x 68, Fann Hock, Dakar, Sénégal',
+              'address_components': [
+                {'long_name': 'Rue 57', 'types': ['route']},
+                {'long_name': 'Fann Hock', 'types': ['neighborhood', 'sublocality']},
+                {'long_name': 'Dakar', 'types': ['locality', 'political']},
+                {'long_name': 'Sénégal', 'types': ['country', 'political']},
+              ],
+            },
+          ]
+        });
+      final fannHockService = PlacesService(null, fannHockDio);
+      final result = await fannHockService.reverseGeocode(14.6880, -17.4620);
+
+      expect(result.mainText, 'Fann Hock');
+      expect(result.secondaryText, contains('Rue 57'));
+      expect(result.secondaryText, contains('Dakar'));
+
+      // Test fallback géographique quand aucun nom de rue n'est trouvé
+      final fallback = PlacesService.getDakarDistrictFallback(14.6880, -17.4620);
+      expect(fallback.mainText, 'Fann Hock');
+      expect(fallback.secondaryText, contains('Dakar'));
+    });
+
     test('UserLocationStorage.isStreetLevelAddress identifies real streets vs communes', () {
       // Vraies rues
       expect(UserLocationStorage.isStreetLevelAddress('77 Rue 4'), isTrue);

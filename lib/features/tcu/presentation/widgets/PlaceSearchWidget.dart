@@ -32,6 +32,8 @@ class PlaceSearchWidget extends StatefulWidget {
 class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
   final TextEditingController _controller = TextEditingController();
   final TransitPlaceSearchService _searchService = TransitPlaceSearchService();
+  final SuggestionsController<PlaceModel> _suggestionsController =
+      SuggestionsController<PlaceModel>();
   bool positionLoader = false;
   late FocusNode _focusNode;
 
@@ -48,6 +50,9 @@ class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
   }
 
   void _onFocusOrTextChanged() {
+    if (!_focusNode.hasFocus) {
+      _suggestionsController.close();
+    }
     if (mounted) setState(() {});
   }
 
@@ -70,6 +75,7 @@ class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
       _focusNode.dispose();
     }
     _controller.dispose();
+    _suggestionsController.dispose();
     super.dispose();
   }
 
@@ -138,7 +144,12 @@ class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
 
     return TypeAheadField<PlaceModel>(
       controller: _controller,
+      focusNode: _focusNode,
+      suggestionsController: _suggestionsController,
       suggestionsCallback: _fetchSuggestions,
+      hideOnUnfocus: true,
+      hideKeyboardOnDrag: false,
+      constraints: const BoxConstraints(maxHeight: 280),
       decorationBuilder: (context, child) {
         return Material(
           type: MaterialType.card,
@@ -146,6 +157,7 @@ class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
           borderRadius: BorderRadius.circular(16),
           color: Colors.white,
           shadowColor: Colors.black26,
+          clipBehavior: Clip.antiAlias,
           child: child,
         );
       },
@@ -153,6 +165,10 @@ class _PlaceSearchWidgetState extends State<PlaceSearchWidget> {
         return TextField(
           controller: controller,
           focusNode: focusNode,
+          onTapOutside: (_) {
+            _focusNode.unfocus();
+            _suggestionsController.close();
+          },
           cursorColor: const Color(0xFF0D47A1),
           style: GoogleFonts.inter(
             fontSize: 15,

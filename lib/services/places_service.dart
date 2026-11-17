@@ -261,16 +261,13 @@ class PlacesService {
               bestPremise = itemPremise;
             }
 
-            // Si numéro de rue + nom de voie sont trouvés, c'est l'adresse exacte idéale !
-            if (bestStreetNumber != null && bestRoute.isNotEmpty) {
-              break;
-            }
+            // Ne pas interrompre prématurément pour permettre la détection du quartier (neighborhood) dans les résultats suivants
           }
         }
 
-        // 1. Détection et affinage du quartier pour Dakar (ex: convertir "Fann-Point E-Amitié" en "Point E")
+        // 1. Détection et affinage du quartier pour Dakar (ex: convertir "Fann-Point E-Amitié" en "Fann Hock" ou "Point E")
         final rawDistrict = bestNeighborhood ?? bestSublocality;
-        final district = rawDistrict != null && rawDistrict.isNotEmpty
+        var district = rawDistrict != null && rawDistrict.isNotEmpty
             ? refineDakarDistrict(
                 rawDistrict,
                 route: bestRoute,
@@ -279,9 +276,26 @@ class PlacesService {
               )
             : null;
 
-        final city = bestLocality ?? bestAdminArea ?? 'Dakar';
+        final country = (bestCountry != null && bestCountry.isNotEmpty) ? bestCountry : 'Sénégal';
+        final isSenegal = country.toLowerCase() == 'sénégal' || country.toLowerCase() == 'senegal';
 
-        // 2. Préparer le libellé de rue pour le sous-titre (ex: "Rue LIB 42" ou "Rue PE 24")
+        // Si le quartier n'a pas été trouvé ou a renvoyé "Dakar" (trop générique),
+        // déterminer le vrai quartier via la géolocalisation précise
+        if (isSenegal &&
+            (district == null ||
+                district.toLowerCase() == 'dakar' ||
+                district.toLowerCase() == 'dakar, sénégal' ||
+                district.toLowerCase() == 'dakar, senegal')) {
+          final fallbackDistrict = getDakarDistrictFallback(lat, lng).mainText;
+          if (fallbackDistrict.toLowerCase() != 'dakar') {
+            district = fallbackDistrict;
+          }
+        }
+
+        final city = bestLocality ?? bestAdminArea ?? (isSenegal ? 'Dakar' : country);
+        final defaultCityCountry = (city != country) ? '$city, $country' : city;
+
+        // 2. Préparer le libellé de rue pour le sous-titre (ex: "Rue LIB 42" ou "Rue FN 57")
         String? streetDetail;
         if (bestRoute != null && bestRoute.isNotEmpty) {
           final rawStreet = bestStreetNumber != null
@@ -290,7 +304,28 @@ class PlacesService {
           streetDetail = _cleanAddress(rawStreet);
         }
 
-        // Cas 1 : Lieu ou établissement connu dans Google Maps (ex: "Sea Plaza", "Hôtel Radisson Blu", "Pharmacie...")
+        // Cas 1 : Adresse exacte avec numéro de rue (ex: "77 Rue 4")
+        if (bestStreetNumber != null && bestRoute != null && bestRoute.isNotEmpty) {
+          final cleanMain = _cleanAddress('$bestStreetNumber $bestRoute');
+          final secDistrict = (district != null &&
+                  district.isNotEmpty &&
+                  district.toLowerCase() != 'dakar')
+              ? district
+              : null;
+          final cleanSec = secDistrict != null ? '$secDistrict, $city' : defaultCityCountry;
+          final full = '$cleanMain, $cleanSec';
+
+          return PlaceSearchResult(
+            id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+            mainText: cleanMain,
+            secondaryText: cleanSec,
+            fullAddress: full,
+            latitude: lat,
+            longitude: lng,
+          );
+        }
+
+        // Cas 2 : Lieu ou établissement connu dans Google Maps (ex: "Sea Plaza", "Hôtel Radisson Blu", "Pharmacie...")
         // -> C'est le GRAND TITRE !
         // -> Et le sous-titre contient la rue (ou quartier) + ville
         if (bestEstablishment != null && bestEstablishment.isNotEmpty) {
@@ -301,7 +336,7 @@ class PlacesService {
           } else if (district != null && district.isNotEmpty && district != cleanMain) {
             cleanSec = '$district, $city';
           } else {
-            cleanSec = '$city, Sénégal';
+            cleanSec = defaultCityCountry;
           }
           final full = '$cleanMain, $cleanSec';
 
@@ -315,16 +350,20 @@ class PlacesService {
           );
         }
 
-        // Cas 2 : Quartier / lieu connu (ex: "Point E", "Liberté 6 Extension", "Almadies", "Grand Yoff")
+        // Cas 3 : Quartier / lieu connu (ex: "Fann Hock", "Point E", "Liberté 6 Extension", "Almadies", "Grand Yoff")
         // -> Le quartier / lieu est le GRAND TITRE !
-        // -> Les rues ("Rue LIB 42", "Rue PE 24") se trouvent dans le SOUS-TITRE !
-        if (district != null && district.isNotEmpty) {
+        // -> Les rues ("Rue LIB 42", "Rue FN 57") se trouvent dans le SOUS-TITRE !
+        if (district != null &&
+            district.isNotEmpty &&
+            district.toLowerCase() != 'dakar' &&
+            district.toLowerCase() != 'dakar, sénégal' &&
+            district.toLowerCase() != 'dakar, senegal') {
           final cleanMain = _cleanAddress(district);
           String cleanSec = '';
           if (streetDetail != null && streetDetail.isNotEmpty) {
             cleanSec = '$streetDetail, $city';
           } else {
-            cleanSec = '$city, Sénégal';
+            cleanSec = defaultCityCountry;
           }
           final full = '$cleanMain, $cleanSec';
 
@@ -341,7 +380,13 @@ class PlacesService {
         // Cas 3 : Si aucun quartier ni établissement n'est détecté, la rue sert de titre
         if (streetDetail != null && streetDetail.isNotEmpty) {
           final cleanMain = streetDetail;
-          final cleanSec = '$city, Sénégal';
+          final secDistrict = (district != null &&
+                  district.isNotEmpty &&
+                  district.toLowerCase() != 'dakar' &&
+                  district.toLowerCase() != 'dakar, sénégal')
+              ? district
+              : null;
+          final cleanSec = secDistrict != null ? '$secDistrict, $city' : defaultCityCountry;
           final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
@@ -364,7 +409,22 @@ class PlacesService {
               firstPart.toLowerCase().contains('unnamed road');
 
           if (firstPart.isNotEmpty && !_isPlusCode(firstPart) && !isUnnamed) {
-            final sec = parts.length > 1 ? parts.sublist(1).join(', ') : '$city, Sénégal';
+            // Si la première partie est simplement "Dakar", utiliser le quartier réel
+            if (firstPart.toLowerCase() == 'dakar' ||
+                firstPart.toLowerCase() == 'dakar, sénégal' ||
+                firstPart.toLowerCase() == 'dakar, senegal') {
+              final fb = getDakarDistrictFallback(lat, lng);
+              return PlaceSearchResult(
+                id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+                mainText: fb.mainText,
+                secondaryText: fb.secondaryText,
+                fullAddress: fb.fullAddress,
+                latitude: lat,
+                longitude: lng,
+              );
+            }
+
+            final sec = parts.length > 1 ? parts.sublist(1).join(', ') : defaultCityCountry;
             return PlaceSearchResult(
               id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
               mainText: firstPart,
@@ -420,13 +480,46 @@ class PlacesService {
 
         final bestStreetOrWay =
             road ?? pedestrian ?? footway ?? path ?? residential;
-        final bestDistrict =
-            neighbourhood ?? suburb ?? quarter ?? cityDistrict ?? city;
+        final rawDistrict =
+            neighbourhood ?? suburb ?? quarter ?? cityDistrict;
+        var bestDistrict = rawDistrict != null
+            ? refineDakarDistrict(rawDistrict, route: bestStreetOrWay, lat: lat, lng: lng)
+            : null;
+        if (bestDistrict == null ||
+            bestDistrict.toLowerCase() == 'dakar' ||
+            bestDistrict.toLowerCase() == 'dakar, sénégal' ||
+            bestDistrict.toLowerCase() == 'dakar, senegal') {
+          final fb = getDakarDistrictFallback(lat, lng).mainText;
+          if (fb.toLowerCase() != 'dakar') {
+            bestDistrict = fb;
+          }
+        }
+
         final sec = (bestDistrict != null && city != null && bestDistrict != city)
             ? '$bestDistrict, $city'
             : (bestDistrict ?? (city ?? 'Dakar, Sénégal'));
 
-        if (bestStreetOrWay != null && bestStreetOrWay.isNotEmpty) {
+        // Si un quartier reconnu existe (ex: "Fann Hock")
+        if (bestDistrict != null &&
+            bestDistrict.isNotEmpty &&
+            bestDistrict.toLowerCase() != 'dakar' &&
+            bestDistrict.toLowerCase() != 'dakar, sénégal' &&
+            bestDistrict.toLowerCase() != 'dakar, senegal') {
+          final cleanMain = _cleanAddress(bestDistrict);
+          final cleanSub = bestStreetOrWay != null && bestStreetOrWay.isNotEmpty
+              ? (houseNumber != null
+                  ? '$houseNumber $bestStreetOrWay, ${city ?? 'Dakar'}'
+                  : '$bestStreetOrWay, ${city ?? 'Dakar'}')
+              : (city != null ? '$city, Sénégal' : 'Dakar, Sénégal');
+          return PlaceSearchResult(
+            id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+            mainText: cleanMain,
+            secondaryText: _cleanAddress(cleanSub),
+            fullAddress: '$cleanMain, $cleanSub',
+            latitude: lat,
+            longitude: lng,
+          );
+        } else if (bestStreetOrWay != null && bestStreetOrWay.isNotEmpty) {
           final main =
               houseNumber != null ? '$houseNumber $bestStreetOrWay' : bestStreetOrWay;
           return PlaceSearchResult(
@@ -437,21 +530,12 @@ class PlacesService {
             latitude: lat,
             longitude: lng,
           );
-        } else if (name != null && name.isNotEmpty) {
+        } else if (name != null && name.isNotEmpty && name.toLowerCase() != 'dakar') {
           return PlaceSearchResult(
             id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
             mainText: _cleanAddress(name),
             secondaryText: _cleanAddress(sec),
             fullAddress: '$name, $sec',
-            latitude: lat,
-            longitude: lng,
-          );
-        } else if (bestDistrict != null && bestDistrict.isNotEmpty) {
-          return PlaceSearchResult(
-            id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
-            mainText: _cleanAddress(bestDistrict),
-            secondaryText: _cleanAddress(city ?? 'Dakar, Sénégal'),
-            fullAddress: '$bestDistrict, ${city ?? 'Dakar, Sénégal'}',
             latitude: lat,
             longitude: lng,
           );
@@ -461,7 +545,7 @@ class PlacesService {
           final rest = parts.length > 1
               ? parts.sublist(1).take(2).join(', ')
               : 'Dakar, Sénégal';
-          if (first.isNotEmpty) {
+          if (first.isNotEmpty && first.toLowerCase() != 'dakar') {
             return PlaceSearchResult(
               id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
               mainText: _cleanAddress(first),
@@ -477,13 +561,28 @@ class PlacesService {
       debugPrint('[PlacesService] ⚠️ Erreur Nominatim: $e');
     }
 
-    // 3. Repli géographique intelligent sur le quartier réel (évite "Position sur la carte" et coordonnées brutes)
+    // 3. Repli géographique intelligent sur le quartier réel (évite "Position sur la carte", coordonnées brutes et "Dakar" générique)
     return getDakarDistrictFallback(lat, lng);
   }
 
   /// Repli géographique précis pour Dakar et sa région lorsqu'aucun nom de rue n'est disponible
   /// ou en mode hors-ligne. Retourne le vrai quartier / commune au lieu de coordonnées ou "Position sur la carte".
   static PlaceSearchResult getDakarDistrictFallback(double lat, double lng) {
+    // Si en dehors du Sénégal (ex: Guinée, Mali, etc. ou coordonnées internationales hors Sénégal),
+    // renvoyer les coordonnées brutes au lieu d'un faux "Dakar"
+    final isWithinSenegal = (lat >= 12.0 && lat <= 16.8 && lng >= -17.6 && lng <= -11.3);
+    if (!isWithinSenegal) {
+      final coords = '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
+      return PlaceSearchResult(
+        id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+        mainText: coords,
+        secondaryText: coords,
+        fullAddress: coords,
+        latitude: lat,
+        longitude: lng,
+      );
+    }
+
     String district = 'Dakar';
     String secondary = 'Dakar, Sénégal';
 
@@ -503,7 +602,11 @@ class PlacesService {
     }
     // 3. Ouakam & Mamelles
     else if (lat >= 14.715 && lat <= 14.745 && lng >= -17.505 && lng <= -17.475) {
-      district = 'Ouakam / Mamelles';
+      if (lng <= -17.495) {
+        district = 'Les Mamelles';
+      } else {
+        district = 'Ouakam';
+      }
       secondary = 'Dakar, Sénégal';
     }
     // 4. Mermoz & Sacré-Cœur
@@ -520,57 +623,77 @@ class PlacesService {
       district = 'Liberté 6 Extension';
       secondary = 'Rue LIB, Dakar';
     }
-    // 6. Point E, Fann & Amitié
-    else if (lat >= 14.685 && lat <= 14.708 && lng >= -17.475 && lng <= -17.450) {
-      if (lat >= 14.688 && lng >= -17.465) {
-        district = 'Point E';
-        secondary = 'Rue PE, Dakar';
-      } else {
-        district = 'Fann';
-        secondary = 'Fann Hock, Dakar';
-      }
-    }
-    // 7. Médina, Fass, Colobane & Gueule Tapée
-    else if (lat >= 14.675 && lat <= 14.698 && lng >= -17.460 && lng <= -17.435) {
-      district = 'Médina / Fass';
+    // 6. Fann Hock (Sud de Fann, Corniche Ouest sud, Canal 4)
+    else if (lat >= 14.672 && lat <= 14.688 && lng > -17.464 && lng <= -17.453) {
+      district = 'Fann Hock';
       secondary = 'Dakar, Sénégal';
     }
-    // 8. Dakar Plateau (Centre-ville)
+    // 7. Fann & Fann Résidence (UCAD, Corniche Ouest centre)
+    else if (lat >= 14.680 && lat <= 14.698 && lng >= -17.478 && lng <= -17.464) {
+      district = 'Fann';
+      secondary = 'Dakar, Sénégal';
+    }
+    // 8. Point E & Amitié
+    else if (lat >= 14.687 && lat <= 14.712 && lng >= -17.468 && lng <= -17.452) {
+      if (lat >= 14.698) {
+        district = 'Amitié';
+      } else {
+        district = 'Point E';
+      }
+      secondary = 'Dakar, Sénégal';
+    }
+    // 9. Médina
+    else if (lat >= 14.670 && lat <= 14.690 && lng >= -17.452 && lng <= -17.432) {
+      district = 'Médina';
+      secondary = 'Dakar, Sénégal';
+    }
+    // 10. Gueule Tapée, Fass & Colobane
+    else if (lat >= 14.675 && lat <= 14.708 && lng >= -17.460 && lng <= -17.435) {
+      if (lat <= 14.688 && lng <= -17.450) {
+        district = 'Gueule Tapée';
+      } else if (lat >= 14.696) {
+        district = 'Colobane';
+      } else {
+        district = 'Fass';
+      }
+      secondary = 'Dakar, Sénégal';
+    }
+    // 11. Dakar Plateau (Centre-ville)
     else if (lat >= 14.650 && lat <= 14.680 && lng >= -17.445 && lng <= -17.420) {
       district = 'Dakar Plateau';
       secondary = 'Dakar Centre, Sénégal';
     }
-    // 9. Grand Dakar, HLM, Belle-Vue
+    // 12. Grand Dakar, HLM, Belle-Vue
     else if (lat >= 14.698 && lat <= 14.720 && lng >= -17.455 && lng <= -17.435) {
       district = 'Grand Dakar / HLM';
       secondary = 'Dakar, Sénégal';
     }
-    // 10. Grand Yoff & Zone de Captage
+    // 13. Grand Yoff & Zone de Captage
     else if (lat >= 14.725 && lat <= 14.750 && lng >= -17.455 && lng <= -17.430) {
       district = 'Grand Yoff';
       secondary = 'Dakar, Sénégal';
     }
-    // 11. Parcelles Assainies & Golf
+    // 14. Parcelles Assainies & Golf
     else if (lat >= 14.750 && lat <= 14.795 && lng >= -17.450 && lng <= -17.410) {
       district = 'Parcelles Assainies';
       secondary = 'Dakar, Sénégal';
     }
-    // 12. Guédiawaye
+    // 15. Guédiawaye
     else if (lat >= 14.760 && lat <= 14.800 && lng >= -17.410 && lng <= -17.360) {
       district = 'Guédiawaye';
       secondary = 'Dakar Banlieue, Sénégal';
     }
-    // 13. Pikine & Thiaroye
+    // 16. Pikine & Thiaroye
     else if (lat >= 14.730 && lat <= 14.770 && lng >= -17.410 && lng <= -17.340) {
       district = 'Pikine';
       secondary = 'Dakar Banlieue, Sénégal';
     }
-    // 14. Rufisque & Bargny
+    // 17. Rufisque & Bargny
     else if (lat >= 14.690 && lat <= 14.745 && lng >= -17.300 && lng <= -17.200) {
       district = 'Rufisque';
       secondary = 'Dakar Région, Sénégal';
     }
-    // 15. Diamniadio
+    // 18. Diamniadio
     else if (lat >= 14.700 && lat <= 14.750 && lng >= -17.200 && lng <= -17.140) {
       district = 'Diamniadio';
       secondary = 'Dakar Région, Sénégal';
@@ -590,7 +713,7 @@ class PlacesService {
   }
 
   /// Raffine les communes administratives composées de Dakar en véritables quartiers usuels
-  /// (ex: transforme "Fann-Point E-Amitié" en "Point E" ou "Fann", "Mermoz-Sacré-Cœur" en "Sacré-Cœur", etc.)
+  /// (ex: transforme "Fann-Point E-Amitié" en "Fann Hock" ou "Point E", "Mermoz-Sacré-Cœur" en "Sacré-Cœur", etc.)
   static String refineDakarDistrict(
     String rawDistrict, {
     String? route,
@@ -603,18 +726,55 @@ class PlacesService {
     final lower = clean.toLowerCase();
     final lowerRoute = (route ?? '').toLowerCase();
 
+    // 0. Quartiers déjà nommés et précis
+    if (lower.contains('fann hock') || lower.contains('fann-hock')) {
+      return 'Fann Hock';
+    }
+    if (lower.contains('fann résidence') || lower.contains('fann residence')) {
+      return 'Fann Résidence';
+    }
+    if (lower.contains('gueule tapée') || lower.contains('gueule tapee')) {
+      return 'Gueule Tapée';
+    }
+    if (lower.contains('colobane')) {
+      return 'Colobane';
+    }
+    if (lower == 'fass' || lower.startsWith('fass ')) {
+      return 'Fass';
+    }
+    if (lower.contains('médina') || lower.contains('medina')) {
+      return 'Médina';
+    }
+
     // 1. Détection Fann - Point E - Amitié
     if (lower.contains('fann') &&
         (lower.contains('point e') ||
             lower.contains('point-e') ||
             lower.contains('amitié') ||
             lower.contains('amitie'))) {
+      if (lat != null && lng != null) {
+        if (lat <= 14.688 && lng > -17.464 && lng <= -17.453) {
+          return 'Fann Hock';
+        }
+        if (lat <= 14.698 && lng <= -17.464) {
+          return 'Fann';
+        }
+        if (lat >= 14.698) {
+          return 'Amitié';
+        }
+        if (lat >= 14.687 && lng >= -17.465) {
+          return 'Point E';
+        }
+      }
       if (lowerRoute.contains('pe') ||
           lowerRoute.contains('point e') ||
           lowerRoute.contains('point-e')) {
         return 'Point E';
       }
-      if (lowerRoute.contains('fn') || lowerRoute.contains('fann')) {
+      if (lowerRoute.contains('hock') || lower.contains('hock')) {
+        return 'Fann Hock';
+      }
+      if (lowerRoute.contains('fn')) {
         return 'Fann';
       }
       if (lowerRoute.contains('am') ||
@@ -622,19 +782,31 @@ class PlacesService {
           lowerRoute.contains('amitie')) {
         return 'Amitié';
       }
-      if (lat != null && lng != null) {
-        // Coordonnées géographiques de Point E
-        if (lat >= 14.688 && lat <= 14.700 && lng >= -17.465 && lng <= -17.452) {
-          return 'Point E';
-        }
-        if (lat < 14.688 && lng >= -17.475 && lng <= -17.455) {
-          return 'Fann';
-        }
-      }
-      return 'Point E';
+      return 'Fann';
     }
 
-    // 2. Mermoz - Sacré-Cœur
+    // 2. Gueule Tapée - Fass - Colobane
+    if ((lower.contains('gueule') || lower.contains('tapée') || lower.contains('tapee')) &&
+        (lower.contains('fass') || lower.contains('colobane'))) {
+      if (lat != null && lng != null) {
+        if (lat <= 14.688 && lng <= -17.450) {
+          return 'Gueule Tapée';
+        }
+        if (lat >= 14.696) {
+          return 'Colobane';
+        }
+        return 'Fass';
+      }
+      if (lowerRoute.contains('gt') || lowerRoute.contains('gueule')) {
+        return 'Gueule Tapée';
+      }
+      if (lowerRoute.contains('colobane')) {
+        return 'Colobane';
+      }
+      return 'Fass';
+    }
+
+    // 3. Mermoz - Sacré-Cœur
     if (lower.contains('mermoz') &&
         (lower.contains('sacré') || lower.contains('sacre'))) {
       if (lowerRoute.contains('sc') || lowerRoute.contains('sacr')) {
@@ -649,13 +821,23 @@ class PlacesService {
       return 'Mermoz';
     }
 
-    // 3. Sicap - Liberté
+    // 4. Sicap - Liberté
     if (lower.contains('sicap') &&
         (lower.contains('liberté') || lower.contains('liberte'))) {
       if (lowerRoute.contains('lib')) {
         return 'Liberté 6 Extension';
       }
       return 'Liberté';
+    }
+
+    // Si la chaîne est simplement "Dakar" mais qu'on a des coordonnées précises
+    if ((lower == 'dakar' || lower == 'dakar, sénégal' || lower == 'dakar, senegal') &&
+        lat != null &&
+        lng != null) {
+      final fb = getDakarDistrictFallback(lat, lng).mainText;
+      if (fb.toLowerCase() != 'dakar') {
+        return fb;
+      }
     }
 
     // Retirer les Plus Codes si présents
