@@ -632,8 +632,31 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     String initials,
     String? accessToken,
   ) {
+    if (AuthRepository.cachedUserPhotoBytes != null &&
+        AuthRepository.cachedUserPhotoBytes!.isNotEmpty) {
+      return Image.memory(
+        AuthRepository.cachedUserPhotoBytes!,
+        fit: BoxFit.cover,
+        width: AppConstants.accountAvatarSize,
+        height: AppConstants.accountAvatarSize,
+      );
+    }
+
     final photoUrl = user?.photoUrl;
     if (photoUrl != null && photoUrl.isNotEmpty) {
+      if (AuthRepository.cachedUserPhotoBytes == null) {
+        _authRepo.getUserPhotoBytes().then((bytes) {
+          if (mounted && bytes != null && bytes.isNotEmpty) {
+            setState(() {});
+          }
+        });
+      }
+
+      final isApiUrl = photoUrl.contains('/v1/users/');
+      if (isApiUrl && (accessToken == null || accessToken.isEmpty)) {
+        return _buildInitialsText(initials);
+      }
+
       final fullUrl = photoUrl.startsWith('http')
           ? photoUrl
           : (photoUrl.startsWith('/')
@@ -641,7 +664,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
               : '${ApiEndpoints.baseUrl}/$photoUrl');
       return Image.network(
         fullUrl,
-        headers: accessToken != null
+        headers: accessToken != null && accessToken.isNotEmpty
             ? {'Authorization': 'Bearer $accessToken'}
             : null,
         fit: BoxFit.cover,

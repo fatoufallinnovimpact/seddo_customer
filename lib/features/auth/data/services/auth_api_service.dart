@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:seddo/core/network/api_client.dart';
 import 'package:seddo/core/utils/api_endpoints.dart';
 import 'package:seddo/features/auth/data/models/auth_tokens_model.dart';
@@ -195,20 +196,30 @@ class AuthApiService {
     try {
       final options = Options(
         headers: {
-          'Content-Type': 'multipart/form-data',
           if (accessToken != null && accessToken.isNotEmpty)
             'Authorization': 'Bearer $accessToken',
         },
       );
 
-      final fileName = filePath.split(Platform.pathSeparator).last;
+      final lower = filePath.toLowerCase();
+      final isPng = lower.endsWith('.png');
+      final mimeType = isPng ? 'image/png' : 'image/jpeg';
+      final ext = isPng ? '.png' : '.jpg';
+
+      var fileName = filePath.split(Platform.pathSeparator).last;
+      if (!fileName.contains('.')) {
+        fileName = 'profile_photo$ext';
+      }
+
       final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(
           filePath,
           filename: fileName,
+          contentType: DioMediaType.parse(mimeType),
         ),
       });
 
+      debugPrint('[AuthApiService] 🚀 PUT ${ApiEndpoints.userPhoto} ($fileName, $mimeType)');
       final response = await _dio.put(
         ApiEndpoints.userPhoto,
         data: formData,
@@ -220,6 +231,30 @@ class AuthApiService {
     } on DioException catch (e) {
       throw _handleDioError(e);
     }
+  }
+
+  /// GET /v1/users/me/photo
+  /// Télécharge le flux d'octets de la photo de profil avec le jeton d'authentification.
+  Future<Uint8List?> getUserPhotoBytes({String? accessToken}) async {
+    try {
+      final options = Options(
+        responseType: ResponseType.bytes,
+        headers: {
+          if (accessToken != null && accessToken.isNotEmpty)
+            'Authorization': 'Bearer $accessToken',
+        },
+      );
+      final response = await _dio.get<List<int>>(
+        ApiEndpoints.userPhoto,
+        options: options,
+      );
+      if (response.statusCode == 200 &&
+          response.data != null &&
+          response.data!.isNotEmpty) {
+        return Uint8List.fromList(response.data!);
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// POST /v1/auth/logout

@@ -46,6 +46,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
         _authRepo.currentUser ??
         const UserModel(id: '', phone: '');
 
+    _accessToken = AuthRepository.cachedAccessToken;
+
     _firstNameController = TextEditingController(text: _user.firstName ?? '');
     _lastNameController = TextEditingController(text: _user.lastName ?? '');
 
@@ -54,9 +56,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Future<void> _loadTokenAndLatestProfile() async {
     final token = await _authRepo.getAccessToken();
-    if (mounted && token != null) {
+    if (mounted && token != null && token != _accessToken) {
       setState(() {
         _accessToken = token;
+      });
+    }
+
+    if (AuthRepository.cachedUserPhotoBytes == null &&
+        _user.photoUrl != null &&
+        _user.photoUrl!.isNotEmpty) {
+      _authRepo.getUserPhotoBytes().then((bytes) {
+        if (mounted && bytes != null && bytes.isNotEmpty) {
+          setState(() {});
+        }
       });
     }
 
@@ -469,18 +481,36 @@ class _EditProfilePageState extends State<EditProfilePage> {
       );
     }
 
+    if (AuthRepository.cachedUserPhotoBytes != null &&
+        AuthRepository.cachedUserPhotoBytes!.isNotEmpty) {
+      return Image.memory(
+        AuthRepository.cachedUserPhotoBytes!,
+        fit: BoxFit.cover,
+        width: 96,
+        height: 96,
+      );
+    }
+
     final explicitUrl = _user.photoUrl;
     if (explicitUrl != null && explicitUrl.isNotEmpty) {
+      final isApiUrl = explicitUrl.contains('/v1/users/');
+      if (isApiUrl && (_accessToken == null || _accessToken!.isEmpty)) {
+        return _buildInitialsText(initials);
+      }
+
       final basePhotoUrl = explicitUrl.startsWith('http')
           ? explicitUrl
           : (explicitUrl.startsWith('/')
               ? '${ApiEndpoints.baseUrl}$explicitUrl'
               : '${ApiEndpoints.baseUrl}/$explicitUrl');
-      final photoUrlToLoad = '$basePhotoUrl?t=$_photoVersion';
+      final separator = basePhotoUrl.contains('?') ? '&' : '?';
+      final photoUrlToLoad = '$basePhotoUrl${separator}t=$_photoVersion';
 
       return Image.network(
         photoUrlToLoad,
-        headers: _accessToken != null ? {'Authorization': 'Bearer $_accessToken'} : null,
+        headers: _accessToken != null && _accessToken!.isNotEmpty
+            ? {'Authorization': 'Bearer $_accessToken'}
+            : null,
         fit: BoxFit.cover,
         width: 96,
         height: 96,

@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +20,13 @@ class AuthRepository {
 
   static UserModel? _currentUser;
   UserModel? get currentUser => _currentUser;
+
+  static String? _cachedAccessToken;
+  static String? get cachedAccessToken => _cachedAccessToken;
+
+  static Uint8List? _cachedUserPhotoBytes;
+  static Uint8List? get cachedUserPhotoBytes => _cachedUserPhotoBytes;
+  static void setUserPhotoBytes(Uint8List bytes) => _cachedUserPhotoBytes = bytes;
 
   @visibleForTesting
   void setCurrentUser(UserModel? user) => _currentUser = user;
@@ -308,10 +317,17 @@ class AuthRepository {
     return null;
   }
 
-  /// Retrieves stored access token
+  /// Retrieves stored access token (instant in-memory cache first)
   Future<String?> getAccessToken() async {
+    if (_cachedAccessToken != null && _cachedAccessToken!.isNotEmpty) {
+      return _cachedAccessToken;
+    }
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_access_token');
+    final token = prefs.getString('auth_access_token');
+    if (token != null && token.isNotEmpty) {
+      _cachedAccessToken = token;
+    }
+    return token;
   }
 
   /// Fetches profile from GET /v1/users/me (identity, rating, ratingCount, photoUrl)
@@ -388,9 +404,29 @@ class AuthRepository {
       filePath: filePath,
       accessToken: token,
     );
+    try {
+      final bytes = await File(filePath).readAsBytes();
+      if (bytes.isNotEmpty) {
+        _cachedUserPhotoBytes = bytes;
+      }
+    } catch (_) {}
     _currentUser = updated;
     await _persistUser(updated);
     return updated;
+  }
+
+  /// Downloads profile photo bytes with authentication and in-memory cache
+  Future<Uint8List?> getUserPhotoBytes({bool forceRefresh = false}) async {
+    if (_isTest) return null;
+    if (!forceRefresh && _cachedUserPhotoBytes != null && _cachedUserPhotoBytes!.isNotEmpty) {
+      return _cachedUserPhotoBytes;
+    }
+    final token = await getAccessToken();
+    final bytes = await _apiService.getUserPhotoBytes(accessToken: token);
+    if (bytes != null && bytes.isNotEmpty) {
+      _cachedUserPhotoBytes = bytes;
+    }
+    return bytes;
   }
 
   /// Checks if user has an active access token and has completed profile setup

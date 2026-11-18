@@ -71,20 +71,9 @@ void main() async {
   };
 
   await EasyLocalization.ensureInitialized();
-  await NotificationService().initialize();
-  await MapStyleService.loadMapStyle();
-  await AppParamsService().initParams();
-  await MapServiceManager.instance.init();
-  await UserLocationStorage.loadCachedLocation();
 
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    await FcmService().init();
-  } catch (e) {
-    debugPrint('[Firebase] Initialisation reportée: $e');
-  }
+  // Initialisations non-bloquantes en parallèle pour un lancement d'application instantané
+  _initServicesInBackground();
 
   runApp(
     EasyLocalization(
@@ -98,6 +87,31 @@ void main() async {
       child: const SeddoApp(),
     ),
   );
+}
+
+void _initServicesInBackground() {
+  Future.microtask(() async {
+    try {
+      await Future.wait([
+        NotificationService().initialize(),
+        MapStyleService.loadMapStyle(),
+        AppParamsService().initParams(),
+        MapServiceManager.instance.init(),
+        UserLocationStorage.loadCachedLocation(),
+      ]);
+    } catch (e) {
+      debugPrint('[ServicesInit] Initialisation services: $e');
+    }
+
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      await FcmService().init();
+    } catch (e) {
+      debugPrint('[Firebase] Initialisation reportée: $e');
+    }
+  });
 }
 
 class SeddoApp extends StatelessWidget {

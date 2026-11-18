@@ -33,112 +33,57 @@ class _SplashPageState extends State<SplashPage>
   late final Animation<double> _fadeAnimation;
   late final Animation<double> _scaleAnimation;
   late final Animation<Offset> _slideAnimation;
-  Timer? _navigationTimer;
+  late final Future<Widget> _destinationFuture;
+  Timer? _splashTimer;
 
   @override
   void initState() {
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1300),
     );
 
-    // Fade in animation
+    // Fade in animation dès le début
     _fadeAnimation = CurvedAnimation(
       parent: _animationController,
-      curve: const Interval(0.1, 0.85, curve: Curves.easeOut),
+      curve: const Interval(0.0, 0.60, curve: Curves.easeIn),
     );
 
-    // Scale animation with gentle ease out
-    _scaleAnimation = Tween<double>(begin: 0.82, end: 1.0).animate(
+    // Effet d'échelle bien visible avec rebond élégant (de 55% à 100%)
+    _scaleAnimation = Tween<double>(begin: 0.55, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.1, 0.95, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.85, curve: Curves.easeOutBack),
       ),
     );
 
-    // Subtle slide up animation
+    // Montée dynamique bien visible (slide up)
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.08),
+      begin: const Offset(0.0, 0.18),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.1, 0.9, curve: Curves.easeOutCubic),
+        curve: const Interval(0.0, 0.80, curve: Curves.easeOutCubic),
       ),
     );
 
-    // Start reveal animation slightly after initial frame for seamless entry
-    Future.delayed(const Duration(milliseconds: 150), () {
-      if (mounted) {
-        _animationController.forward();
-      }
-    });
+    // Lancer la résolution de la page cible en arrière-plan pendant l'animation
+    _destinationFuture = _resolveTargetPage();
 
-    // Navigate to next screen after viewing logo
-    _navigationTimer = Timer(
-      const Duration(milliseconds: 2800),
+    // Démarrer l'animation immédiatement
+    _animationController.forward();
+
+    // Naviguer après l'animation complète et bien visible du logo
+    _splashTimer = Timer(
+      const Duration(milliseconds: 2300),
       _navigateToNextScreen,
     );
   }
 
   Future<void> _navigateToNextScreen() async {
-    if (!mounted) return;
-    final authRepo = widget.authRepository ?? AuthRepository();
-    final isAuth = await authRepo.isAuthenticated();
-    if (!mounted) return;
-
-    final Widget targetPage;
-    if (isAuth) {
-      // 1. Restaurer le dernier ID de course terminée en local
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final lastCompleted = prefs.getString('seddo_last_completed_ride_id');
-        if (lastCompleted != null && lastCompleted.isNotEmpty) {
-          RideService.lastCompletedRideId = lastCompleted;
-        }
-      } catch (_) {}
-
-      // 2. GET /v1/rides/current : Course en cours de l’appelant, ou ride: null (au démarrage de l’app)
-      Widget? activePage;
-      bool hasOnlineResult = false;
-      try {
-        final rideService = widget.rideService ?? RideService();
-        final currentRideData = await rideService.getCurrentRide();
-        if (currentRideData != null) {
-          hasOnlineResult = true;
-          final ride = currentRideData['ride'];
-          if (ride != null && ride is Map<String, dynamic>) {
-            activePage = _resolveActiveRidePage(ride);
-            if (activePage == null) {
-              // Si la course reçue est terminée/annulée, purger immédiatement le cache local
-              await ActiveRideOfflineStorage.clearActiveRide();
-            }
-          } else {
-            // Le serveur confirme expressément qu'aucune course n'est en cours (ride: null)
-            await ActiveRideOfflineStorage.clearActiveRide();
-          }
-        }
-      } catch (_) {}
-
-      // 3. Récupérer la course sauvegardée en local UNIQUEMENT si le serveur était injoignable (vrai offline)
-      if (!hasOnlineResult && activePage == null) {
-        try {
-          final cachedRide = await ActiveRideOfflineStorage.getActiveRide();
-          if (cachedRide != null) {
-            activePage = _resolveActiveRidePage(cachedRide);
-          }
-        } catch (_) {}
-      }
-
-      targetPage = activePage ?? const HomePage();
-    } else {
-      // If the user has not completed their profile yet, clear the incomplete session
-      // so they restart cleanly from Onboarding and re-enter their number to receive a new OTP.
-      await authRepo.clearIncompleteSession();
-      targetPage = const OnboardingPage();
-    }
-
+    final targetPage = await _destinationFuture;
     if (!mounted) return;
 
     Navigator.of(context).pushReplacement(
@@ -152,6 +97,62 @@ class _SplashPageState extends State<SplashPage>
     );
   }
 
+  Future<Widget> _resolveTargetPage() async {
+    try {
+      final authRepo = widget.authRepository ?? AuthRepository();
+      final isAuth = await authRepo.isAuthenticated();
+      if (!isAuth) {
+        await authRepo.clearIncompleteSession();
+        return const OnboardingPage();
+      }
+
+      // 1. Restaurer le dernier ID de course terminée en local
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final lastCompleted = prefs.getString('seddo_last_completed_ride_id');
+        if (lastCompleted != null && lastCompleted.isNotEmpty) {
+          RideService.lastCompletedRideId = lastCompleted;
+        }
+      } catch (_) {}
+
+      // 2. GET /v1/rides/current avec timeout pour garantir un lancement instantané sans freeze
+      Widget? activePage;
+      bool hasOnlineResult = false;
+      try {
+        final rideService = widget.rideService ?? RideService();
+        final currentRideData = await rideService
+            .getCurrentRide()
+            .timeout(const Duration(milliseconds: 1400));
+        if (currentRideData != null) {
+          hasOnlineResult = true;
+          final ride = currentRideData['ride'];
+          if (ride != null && ride is Map<String, dynamic>) {
+            activePage = _resolveActiveRidePage(ride);
+            if (activePage == null) {
+              await ActiveRideOfflineStorage.clearActiveRide();
+            }
+          } else {
+            await ActiveRideOfflineStorage.clearActiveRide();
+          }
+        }
+      } catch (_) {}
+
+      // 3. Récupérer la course sauvegardée en local UNIQUEMENT si le serveur était injoignable
+      if (!hasOnlineResult && activePage == null) {
+        try {
+          final cachedRide = await ActiveRideOfflineStorage.getActiveRide();
+          if (cachedRide != null) {
+            activePage = _resolveActiveRidePage(cachedRide);
+          }
+        } catch (_) {}
+      }
+
+      return activePage ?? const HomePage();
+    } catch (_) {
+      return const HomePage();
+    }
+  }
+
   /// Resolves the corresponding screen according to the active ride status
   Widget? _resolveActiveRidePage(Map<String, dynamic> ride) {
     return ActiveRideNavigationHelper.resolveActiveRidePage(
@@ -162,7 +163,7 @@ class _SplashPageState extends State<SplashPage>
 
   @override
   void dispose() {
-    _navigationTimer?.cancel();
+    _splashTimer?.cancel();
     _animationController.dispose();
     super.dispose();
   }

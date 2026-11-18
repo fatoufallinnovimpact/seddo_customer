@@ -19,6 +19,7 @@ class DrawerAccountBloc extends Bloc<DrawerAccountEvent, DrawerAccountState> {
         _activityRepository = activityRepository ?? ActivityRepositoryImpl(),
         super(DrawerAccountState(
           user: (authRepository ?? AuthRepository()).currentUser,
+          accessToken: AuthRepository.cachedAccessToken,
           tripsCount:
               (authRepository ?? AuthRepository()).currentUser?.tripsCount ?? 0,
         )) {
@@ -95,7 +96,6 @@ class DrawerAccountBloc extends Bloc<DrawerAccountEvent, DrawerAccountState> {
         tripsCount: current.tripsCount ?? state.tripsCount,
       ));
     }
-    add(const DrawerAccountLoadRequested());
   }
 
   Future<void> _onNotificationsChanged(
