@@ -602,6 +602,103 @@ void main() {
       expect(find.text('Aucune connexion Internet. Veuillez vérifier votre réseau et réessayer.'),
           findsOneWidget);
     });
+
+    testWidgets(
+        'OrangeMoneyPaymentSheet completes Wave payment upon app resume via GET /v1/rides/current or payment.status SUCCESS without spamming API',
+        (tester) async {
+      int apiCallCount = 0;
+
+      final dio = Dio();
+      dio.interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.path.endsWith('/v1/rides') && options.method == 'POST') {
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 201,
+                  data: {
+                    'ride': {
+                      'id': 'ride_wave_resume_123',
+                      'status': 'PAYMENT_PENDING',
+                    },
+                    'payment': {
+                      'method': 'WAVE',
+                      'status': 'PENDING',
+                      'paymentUrl': 'https://pay.wave.com/m/test_checkout',
+                    },
+                  },
+                ),
+              );
+            } else if (options.path.contains('/v1/rides/ride_wave_resume_123')) {
+              apiCallCount++;
+              // Backend reports payment.status = SUCCESS
+              return handler.resolve(
+                Response(
+                  requestOptions: options,
+                  statusCode: 200,
+                  data: {
+                    'ride': {
+                      'id': 'ride_wave_resume_123',
+                      'status': 'PAYMENT_PENDING',
+                      'payment': {
+                        'method': 'WAVE',
+                        'status': 'SUCCESS',
+                      },
+                    },
+                  },
+                ),
+              );
+            }
+            return handler.next(options);
+          },
+        ),
+      );
+
+      final service = RideService(dio: dio);
+      OrangeMoneyPaymentResult? paymentResult;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  paymentResult = await OrangeMoneyPaymentSheet.show(
+                    context,
+                    rideOption: testOption,
+                    rideService: service,
+                    paymentMethod: PaymentMethodType.wave,
+                    autoValidate: true,
+                  );
+                },
+                child: const Text('Commander Wave Direct'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Commander Wave Direct'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // Sheet is waiting for Wave payment
+      expect(find.text('En attente du paiement...'), findsOneWidget);
+
+      // Simulate user returning from Wave app to Seddo app (AppLifecycleState.resumed)
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      // Sheet closes with success so RideBookingPage opens DriverSearchPage
+      expect(paymentResult, OrangeMoneyPaymentResult.success);
+      expect(RideService.lastCreatedRideId, 'ride_wave_resume_123');
+      expect(RideService.lastCreatedRideData?['status'], 'SEARCHING');
+      // Only 1 controlled API call was made on resume
+      expect(apiCallCount, 1);
+    });
   });
 }
 

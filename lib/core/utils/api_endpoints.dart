@@ -35,6 +35,10 @@ abstract class ApiEndpoints {
   static String rideCancel(String id) => '$baseUrl/v1/rides/$id/cancel';
   static String rideMessages(String id) => '$baseUrl/v1/rides/$id/messages';
   static String rideRating(String id) => '$baseUrl/v1/rides/$id/rating';
+  static String ridePartyPhoto(String rideId, String party) =>
+      '$baseUrl/v1/rides/$rideId/$party/photo';
+  static String rideDriverPhoto(String rideId) =>
+      ridePartyPhoto(rideId, 'driver');
   static String rideReceiptLink(String id) => '$baseUrl/v1/rides/$id/receipt';
   static String rideReceiptPdf(String id) => '$baseUrl/v1/rides/$id/receipt.pdf';
   static String receiptDownload(String token) => '$baseUrl/v1/receipts/$token';

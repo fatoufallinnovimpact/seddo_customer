@@ -38,6 +38,12 @@ object LiveUpdateNotificationManager {
     private const val CHANNEL_NAME = "Courses Seddo en direct"
     const val NOTIFICATION_ID = 2026
 
+    /** Gris par défaut de la voiture dans la notification live (#9CA3AF, identique à iOS). */
+    private val DEFAULT_CAR_GRAY: Int = Color.parseColor("#9CA3AF")
+
+    /** Mettre à true pour réactiver la teinte selon la couleur réelle du véhicule. */
+    private const val USE_REAL_CAR_COLOR = false
+
     private var cachedCarIconTemplate: Bitmap? = null
 
     private var channelsCleaned = false
@@ -225,11 +231,11 @@ object LiveUpdateNotificationManager {
         val seddoOrange = Color.parseColor("#FB5B00")
         val headlineColor = if (isTrip) Color.parseColor("#111827") else Color.parseColor("#FB5B00")
 
-        // Route track line: ONLY when moving/approaching or en route.
-        // When driver is arrived at pickup point, NO horizontal line is drawn or shown.
-        val showRouteLine = !isArrivedAtPickup && !isFinished
+        // Route track line: shown throughout approach, arrival at pickup, and trip (like iOS Live Activity)
+        val showRouteLine = !isFinished
+        val effectiveTrackProgress = if (isArrivedAtPickup) 0.94 else rawProgress
         val routeBitmap = if (showRouteLine) {
-            generateRouteTrackBitmap(context, rawProgress, isFinished, carColor)
+            generateRouteTrackBitmap(context, effectiveTrackProgress, isFinished, carColor)
         } else {
             null
         }
@@ -269,7 +275,7 @@ object LiveUpdateNotificationManager {
             }
         }
 
-        // Public version shown on Lock Screen before device unlock (standard BigTextStyle for 100% Keyguard compatibility on Samsung & Android)
+        // Public version shown on Lock Screen before device unlock (also uses the iOS-style custom view with the car on the horizontal line)
         val publicNotification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
             .setColor(seddoOrange)
@@ -282,11 +288,9 @@ object LiveUpdateNotificationManager {
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(pendingIntent)
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .setBigContentTitle(etaHeadline)
-                    .bigText("$statusSubtitlePlain\n$driverName • $plateText • $carText")
-            )
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(customView)
+            .setCustomBigContentView(customBigView)
             .build()
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -303,6 +307,7 @@ object LiveUpdateNotificationManager {
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
             .setCustomContentView(customView)
             .setCustomBigContentView(customBigView)
+            .setCustomHeadsUpContentView(customBigView)
             .setPublicVersion(publicNotification)
             .build()
 
@@ -364,7 +369,8 @@ object LiveUpdateNotificationManager {
             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
         }
 
-        val targetColor = parseCarColor(carColorStr)
+        // La voiture de la notification live garde le gris Seddo par défaut (pas de couleur réelle du véhicule)
+        val targetColor = if (USE_REAL_CAR_COLOR) parseCarColor(carColorStr) else DEFAULT_CAR_GRAY
         val tinted = Bitmap.createBitmap(template.width, template.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(tinted)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -390,16 +396,27 @@ object LiveUpdateNotificationManager {
         }
 
         return when {
-            clean.contains("noir") || clean.contains("black") -> Color.parseColor("#262626") // Color(white: 0.15)
-            clean.contains("blanc") || clean.contains("white") -> Color.parseColor("#D9D9D9") // Color(white: 0.85)
-            clean.contains("rouge") || clean.contains("red") || clean.contains("bordeaux") -> Color.parseColor("#DC2626") // rgb(220, 38, 38)
-            clean.contains("bleu") || clean.contains("blue") -> Color.parseColor("#2563EB") // rgb(37, 99, 235)
-            clean.contains("jaune") || clean.contains("yellow") -> Color.parseColor("#F59E0B") // rgb(245, 158, 11)
+            clean.contains("mauve") || clean.contains("meuve") || clean.contains("violet") || clean.contains("purple") || clean.contains("pourpre") || clean.contains("lilas") || clean.contains("prune") || clean.contains("lavande") || clean.contains("indigo") ->
+                Color.parseColor("#9333EA")
+            clean.contains("rose") || clean.contains("pink") || clean.contains("magenta") || clean.contains("fuchsia") || clean.contains("corail") ->
+                Color.parseColor("#EC4899")
+            clean.contains("noir") || clean.contains("black") -> Color.parseColor("#262626")
+            clean.contains("blanc") || clean.contains("white") -> Color.parseColor("#D9D9D9")
+            clean.contains("bordeaux") || clean.contains("grenat") || clean.contains("burgundy") -> Color.parseColor("#991B1B")
+            clean.contains("rouge") || clean.contains("red") -> Color.parseColor("#DC2626")
+            clean.contains("turquoise") || clean.contains("cyan") || clean.contains("bleu ciel") -> Color.parseColor("#06B6D4")
+            clean.contains("marine") || clean.contains("nuit") || clean.contains("navy") -> Color.parseColor("#1E3A8A")
+            clean.contains("bleu") || clean.contains("blue") -> Color.parseColor("#2563EB")
+            clean.contains("doré") || clean.contains("dore") || clean.contains("gold") || clean.contains("champagne") -> Color.parseColor("#D97706")
+            clean.contains("jaune") || clean.contains("yellow") -> Color.parseColor("#F59E0B")
+            clean.contains("anthracite") || clean.contains("charcoal") -> Color.parseColor("#4B5563")
             clean.contains("gris") || clean.contains("grey") || clean.contains("gray") || clean.contains("argent") || clean.contains("silver") ->
-                Color.parseColor("#9CA3AF") // rgb(156, 163, 175)
-            clean.contains("vert") || clean.contains("green") -> Color.parseColor("#16A34A") // rgb(22, 163, 74)
-            clean.contains("orange") -> Color.parseColor("#EA580C") // rgb(234, 88, 12)
-            clean.contains("marron") || clean.contains("brown") -> Color.parseColor("#8C461E") // rgb(140, 70, 30)
+                Color.parseColor("#9CA3AF")
+            clean.contains("vert") || clean.contains("green") -> Color.parseColor("#16A34A")
+            clean.contains("orange") -> Color.parseColor("#EA580C")
+            clean.contains("beige") || clean.contains("crème") || clean.contains("creme") || clean.contains("ivoire") -> Color.parseColor("#D6C7A1")
+            clean.contains("bronze") || clean.contains("cuivre") -> Color.parseColor("#B45309")
+            clean.contains("marron") || clean.contains("brown") || clean.contains("brun") -> Color.parseColor("#8C461E")
             else -> Color.parseColor("#9CA3AF")
         }
     }

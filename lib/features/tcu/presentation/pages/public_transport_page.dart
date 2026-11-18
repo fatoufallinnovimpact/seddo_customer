@@ -8,6 +8,8 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/place_search_page.dart';
+import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dart';
+import 'package:seddo/services/network_connectivity_service.dart';
 
 import '../../data/models/transit/PlaceModel.dart';
 import '../widgets/PlaceSearchWidget.dart';
@@ -202,8 +204,18 @@ class _PublicTransportPageState extends State<PublicTransportPage> {
     }
   }
 
-  void _onSearchPressed() {
+  Future<void> _onSearchPressed() async {
     FocusScope.of(context).unfocus();
+    final isOnline = await NetworkConnectivityService.isConnected;
+    if (!isOnline && mounted) {
+      await OfflineModalSheet.show(
+        context,
+        currentAddress: origine?.address ?? origine?.name,
+        onRetry: () => _onSearchPressed(),
+      );
+      return;
+    }
+    if (!mounted) return;
     if (destination == null || destination!.name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

@@ -702,6 +702,9 @@ class _HomePageContentState extends State<_HomePageContent>
         ),
       );
 
+      RideService.clearActiveRideData();
+      RealtimeService().clearLastRideStatus();
+
       await Navigator.of(context).push(
         SlideRightToLeftRoute(
           page: RideBookingPage(
@@ -754,6 +757,9 @@ class _HomePageContentState extends State<_HomePageContent>
       longitude: pickupLocation.longitude,
       category: 'pickup',
     );
+
+    RideService.clearActiveRideData();
+    RealtimeService().clearLastRideStatus();
 
     await Navigator.of(context).push(
       SlideRightToLeftRoute(

@@ -141,9 +141,23 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   @visibleForTesting
   double get totalTripDistanceMeters => _totalTripDistanceMeters;
 
+  @visibleForTesting
+  double get liveNotificationProgress => _computeLiveTripProgress();
+
   double _progressRatio = 0.05;
   double _totalTripDistanceMeters = 0.0;
   double? _telemetryRemainingMeters;
+
+  /// Progression de la notification live (iOS Live Activity / Android Live Update)
+  /// calculée EXCLUSIVEMENT à partir des distances restantes reçues par WebSocket :
+  /// la référence (100 %) est la première distance restante reçue au démarrage du trajet,
+  /// la voiture part donc toujours du début de la ligne et n'avance qu'au rythme
+  /// des mises à jour réelles du chauffeur (aucun saut lié au tracé planifié).
+  /// Conservée par course pour survivre à une reconstruction de la page.
+  static final Map<String, double> _liveTripBaselineByRide = {};
+  double _liveTripBaselineM = 0.0;
+  double? _liveTripRemainingM;
+  bool _liveTripHasTelemetry = false;
   int _lastNearestRouteIndex = 0;
   final bool _isStopped = false;
   bool _driverArrivedAtDestination = false;
@@ -190,6 +204,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     _traffic = List<TrafficSegmentModel>.from(widget.rideOption.traffic);
     _currentSheetExtent = _isOffline ? 0.25 : 0.38;
     _initRoute();
+    _liveTripBaselineByRide.remove(_liveTripRideKey);
+    _liveTripBaselineM = 0.0;
+    _liveTripRemainingM = null;
+    _liveTripHasTelemetry = false;
     _persistLocalState();
     _startOfflineMonitor();
     _loadCustomMarkers();
@@ -370,18 +388,9 @@ class _ActiveRidePageState extends State<ActiveRidePage>
               if (event.traffic.isNotEmpty) {
                 _traffic = event.traffic;
               }
-              if (_totalTripDistanceMeters <= 0) {
-                _totalTripDistanceMeters = remainingDistM;
-              }
-              if (_totalTripDistanceMeters > 0) {
-                if (remainingDistM > _totalTripDistanceMeters) {
-                  _totalTripDistanceMeters = remainingDistM;
-                }
-                _progressRatio =
-                    (1.0 - (remainingDistM / _totalTripDistanceMeters))
-                        .clamp(0.05, 0.98);
-                _remainingDistanceKm = remainingDistM / 1000.0;
-              }
+              _recordLiveTripRemaining(remainingDistM, fromTelemetry: true);
+              _progressRatio = _computeLiveTripProgress();
+              _remainingDistanceKm = remainingDistM / 1000.0;
             });
           } else if (event.traffic.isNotEmpty) {
             setState(() {
@@ -400,39 +409,14 @@ class _ActiveRidePageState extends State<ActiveRidePage>
 
           if (effectiveRemainingM != null && effectiveRemainingM > 0) {
             _telemetryRemainingMeters = effectiveRemainingM;
-            if (_totalTripDistanceMeters <= 0) {
-              _totalTripDistanceMeters =
-                  _calculatePolylineDistanceMeters(_effectiveRoute);
-              if (_totalTripDistanceMeters <= 0 && widget.rideOption.distanceM != null) {
-                _totalTripDistanceMeters = widget.rideOption.distanceM!.toDouble();
-              }
-              if (_totalTripDistanceMeters <= 0 && widget.driver.distanceKm > 0) {
-                _totalTripDistanceMeters = widget.driver.distanceKm * 1000.0;
-              }
-              if (_totalTripDistanceMeters <= 0) {
-                _totalTripDistanceMeters = effectiveRemainingM / 0.95;
-              }
-            }
-            if (_totalTripDistanceMeters > 0) {
-              if (effectiveRemainingM > _totalTripDistanceMeters) {
-                _totalTripDistanceMeters = effectiveRemainingM;
-              }
-              final progressFromRemaining =
-                  (1.0 - (effectiveRemainingM / _totalTripDistanceMeters))
-                      .clamp(0.05, 0.98);
-              setState(() {
-                _progressRatio = progressFromRemaining;
-                _remainingDistanceKm = effectiveRemainingM > 100
-                    ? effectiveRemainingM / 1000.0
-                    : effectiveRemainingM;
-              });
-            } else {
-              setState(() {
-                _remainingDistanceKm = effectiveRemainingM > 100
-                    ? effectiveRemainingM / 1000.0
-                    : effectiveRemainingM;
-              });
-            }
+            _recordLiveTripRemaining(effectiveRemainingM, fromTelemetry: true);
+            final progressFromRemaining = _computeLiveTripProgress();
+            setState(() {
+              _progressRatio = progressFromRemaining;
+              _remainingDistanceKm = effectiveRemainingM > 100
+                  ? effectiveRemainingM / 1000.0
+                  : effectiveRemainingM;
+            });
           }
 
           final effectiveEtaS = event.etaS;
@@ -475,17 +459,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           if (event.distanceMeters != null && event.distanceMeters! > 0) {
             final distM = event.distanceMeters!.toDouble();
             _telemetryRemainingMeters = distM;
-            if (_totalTripDistanceMeters <= 0) {
-              _totalTripDistanceMeters =
-                  _calculatePolylineDistanceMeters(_effectiveRoute);
-            }
-            if (_totalTripDistanceMeters > 0) {
-              if (distM > _totalTripDistanceMeters) {
-                _totalTripDistanceMeters = distM;
-              }
-              _progressRatio =
-                  (1.0 - (distM / _totalTripDistanceMeters)).clamp(0.05, 0.98);
-            }
+            _recordLiveTripRemaining(distM, fromTelemetry: false);
+            _progressRatio = _computeLiveTripProgress();
             setState(() {
               _remainingDistanceKm = distM / 1000.0;
             });
@@ -674,20 +649,26 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         : null;
 
     if (driverObj != null) {
-      final dName = driverObj['name'] as String? ?? (driverObj['fullName'] as String?);
-      final dPlate = driverObj['licensePlate'] as String? ?? (driverObj['plate'] as String?);
-      final dCarModel = driverObj['vehicleModel'] as String? ?? (driverObj['carModel'] as String?);
-      final dCarColor = driverObj['vehicleColor'] as String? ?? (driverObj['carColor'] as String?);
-      final dPhone = driverObj['phoneNumber'] as String? ?? (driverObj['phone'] as String?);
-
-      if (dName != null || dPlate != null || dCarModel != null || dCarColor != null) {
+      final previousColor = _currentDriver.carColor;
+      final parsedDriver = DriverModel.fromRideJson(
+        data,
+        defaultRideType: widget.rideOption.type,
+        fallbackCarColor: previousColor,
+        fallbackName: _currentDriver.name,
+      );
+      setState(() {
         _currentDriver = _currentDriver.copyWith(
-          name: dName ?? _currentDriver.name,
-          licensePlate: dPlate ?? _currentDriver.licensePlate,
-          carModel: dCarModel ?? _currentDriver.carModel,
-          carColor: dCarColor ?? _currentDriver.carColor,
-          phone: dPhone ?? _currentDriver.phone,
+          name: parsedDriver.name,
+          licensePlate: parsedDriver.licensePlate,
+          carModel: parsedDriver.carModel,
+          carColor: parsedDriver.carColor,
+          phone: parsedDriver.phone,
+          photoUrl: parsedDriver.photoUrl ?? _currentDriver.photoUrl,
+          rating: parsedDriver.rating,
         );
+      });
+      if (_currentDriver.carColor != previousColor) {
+        _loadCustomMarkers();
       }
     }
     final posObj = driverObj?['position'] is Map<String, dynamic>
@@ -1202,11 +1183,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
         _totalTripDistanceMeters = totalM;
       }
       if (_telemetryRemainingMeters != null &&
-          _telemetryRemainingMeters! > 0 &&
-          _totalTripDistanceMeters > 0) {
-        _progressRatio =
-            (1.0 - (_telemetryRemainingMeters! / _totalTripDistanceMeters))
-                .clamp(0.05, 0.98);
+          _telemetryRemainingMeters! > 0) {
+        _progressRatio = _computeLiveTripProgress();
       } else {
         final calculatedRatio = (traveledM / totalM).clamp(0.05, 0.98);
         _progressRatio = calculatedRatio;
@@ -1327,14 +1305,49 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     }
   }
 
+  /// Enregistre une distance restante reçue par WebSocket pour la notification live.
+  /// - La première valeur reçue sert STRICTEMENT de référence initiale (début de la ligne horizontale à 0.05).
+  /// - La voiture ne saute jamais à 50% au début du trajet : la ligne commence toujours à 0 comme côté chauffeur.
+  /// - Si un nouvel itinéraire rallonge le trajet, la référence est agrandie pour garder une progression fluide.
+  void _recordLiveTripRemaining(double remainingM, {required bool fromTelemetry}) {
+    if (remainingM <= 0) return;
+    if (!fromTelemetry && _liveTripHasTelemetry) return;
+    if (fromTelemetry && !_liveTripHasTelemetry) {
+      _liveTripHasTelemetry = true;
+    }
+
+    final rideKey = _liveTripRideKey;
+    if (_totalTripDistanceMeters <= 0 || remainingM > _totalTripDistanceMeters) {
+      _totalTripDistanceMeters = remainingM;
+    }
+    _liveTripBaselineM = _totalTripDistanceMeters;
+    _liveTripBaselineByRide[rideKey] = _liveTripBaselineM;
+    _liveTripRemainingM = remainingM;
+  }
+
+  String get _liveTripRideKey =>
+      widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
+
+  /// Progression 0.05 → 0.98 de la notification live, basée sur le WebSocket :
+  /// Au démarrage de la course, la voiture part toujours du tout début (0.05),
+  /// et n'avance qu'au rythme réel de la distance restante reçue par WebSocket.
+  double _computeLiveTripProgress() {
+    final baseline = _liveTripBaselineM;
+    final remaining = _liveTripRemainingM ?? _telemetryRemainingMeters;
+    if (remaining == null || baseline <= 0) {
+      return 0.05;
+    }
+    return (1.0 - (remaining / baseline)).clamp(0.05, 0.98);
+  }
+
   void _syncLiveUpdate({double? progress, int? etaMinutes, String? statusLabel}) {
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? 'seddo_active_ride';
 
     final isDone = statusLabel != null && statusLabel.contains('terminée');
-    final effProgress = isDone
-        ? 1.0
-        : (progress ?? _progressRatio).clamp(0.05, 0.98);
+    // La position de la voiture sur la ligne horizontale suit strictement le WebSocket
+    // (distance restante réelle), et non le ratio calculé sur le tracé planifié.
+    final effProgress = isDone ? 1.0 : _computeLiveTripProgress();
     final effEta = etaMinutes ?? _remainingEtaMinutes;
     final effLabel = statusLabel ??
         (_driverArrivedAtDestination
@@ -1470,7 +1483,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   }
 
   Future<void> _loadCustomMarkers() async {
-    final carColor = VehicleColorHelper.parseColor(widget.driver.carColor);
+    final carColor = VehicleColorHelper.parseColor(_currentDriver.carColor);
     final car = await MapMarkerHelper.get3DCarMarker(color: carColor);
     final pickup = await MapMarkerHelper.getDeparturePinMarker();
     final dest = await MapMarkerHelper.getDestinationPinMarker();
@@ -1494,7 +1507,7 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       }
       return;
     }
-    await InAppCallPage.show(context, driver: widget.driver);
+    await InAppCallPage.show(context, driver: widget.driver, rideId: widget.rideId);
   }
 
   Future<void> _sendSmsDriver() async {
@@ -1763,6 +1776,8 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       });
     }
     ActiveRideOfflineStorage.clearActiveRide();
+    RideService.clearActiveRideData();
+    RealtimeService().clearLastRideStatus();
     Navigator.of(context).pushReplacement(
       SlideRightToLeftRoute(
         page: RideRatingPage(
@@ -2268,9 +2283,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                       // Driver Summary Card even when offline
                       ActiveDriverCardWidget(
                         driver: _currentDriver,
-                        isPaid: true,
+                        rideId: widget.rideId,
+                        isPaid: false, // Badge "Payé" masqué une fois la course démarrée
                         isOffline: true,
-                        vehicleImagePath: 'assets/images/carr_cropped.png',
+                        vehicleImagePath: 'assets/icons/vectoreco.svg',
                       ),
 
                       const SizedBox(height: 10),
@@ -2397,9 +2413,10 @@ class _ActiveRidePageState extends State<ActiveRidePage>
                     // Driver Summary Card with initials avatar, 3D vehicle and "✓ Payé" badge
                     ActiveDriverCardWidget(
                       driver: _currentDriver,
-                      isPaid: true,
+                      rideId: widget.rideId,
+                      isPaid: false, // Badge "Payé" masqué une fois la course démarrée
                       isOffline: _isOffline,
-                      vehicleImagePath: 'assets/images/carr_cropped.png',
+                      vehicleImagePath: 'assets/icons/vectoreco.svg',
                     ),
 
                     const SizedBox(height: 10),

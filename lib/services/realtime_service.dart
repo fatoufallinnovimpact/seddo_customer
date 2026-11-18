@@ -96,7 +96,11 @@ class RealtimeRideStatusEvent {
     }
 
     final version = (map['version'] ?? rideObj['version'] as num?)?.toInt() ?? 0;
-    final departureCode = DriverModel.extractDepartureCode(rideObj.isNotEmpty ? rideObj : map);
+    final extractedCode = DriverModel.extractDepartureCode(
+      rideObj.isNotEmpty ? rideObj : map,
+      fallback: '',
+    );
+    final departureCode = extractedCode.isNotEmpty ? extractedCode : null;
 
     DriverModel? driver;
     if (map['driver'] != null ||
@@ -817,6 +821,16 @@ class RealtimeService {
   // Cache du dernier événement de statut pour transmission instantanée aux nouveaux écrans
   RealtimeRideStatusEvent? _lastRideStatusEvent;
   RealtimeRideStatusEvent? get lastRideStatusEvent => _lastRideStatusEvent;
+
+  /// Nettoie le cache du dernier statut WebSocket pour éviter que les données
+  /// d'une course précédente terminée (ex: code de départ, chauffeur) ne polluent une nouvelle commande.
+  void clearLastRideStatus() {
+    _lastRideStatusEvent = null;
+    if (_currentActiveRideId != null && _currentActiveRideId!.isNotEmpty) {
+      leaveRide(_currentActiveRideId!);
+      _currentActiveRideId = null;
+    }
+  }
 
   RealtimeConnectionStatus get connectionStatus => _connectionStatus;
   bool get isConnected => _connectionStatus == RealtimeConnectionStatus.connected;

@@ -31,6 +31,7 @@ import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page
 import 'package:seddo/features/ride/presentation/widgets/cancel_ride_reason_sheet.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
+import 'package:seddo/features/ride/presentation/widgets/driver_avatar_widget.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
 import 'package:seddo/features/safety/presentation/widgets/safety_modal_widget.dart';
 import 'package:seddo/services/map_style_service.dart';
@@ -120,6 +121,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   late String _departureCode;
   late RideService _rideService;
   Timer? _ridePollTimer;
+  void Function(void Function())? _detailsModalSetState;
 
   // Realtime Socket.IO streams
   AnimationController? _smoothCarController;
@@ -153,6 +155,26 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     WidgetsBinding.instance.addObserver(this);
 
     _currentDriver = widget.driver;
+    // Résolution immédiate de la vraie photo et couleur depuis le cache pour éviter tout délai ou flash
+    final cachedRaw = RealtimeService().lastRideStatusEvent?.raw ??
+        RideService.lastCreatedRideData;
+    if (cachedRaw != null && cachedRaw.isNotEmpty) {
+      final parsed = DriverModel.fromRideJson(
+        cachedRaw,
+        defaultRideType: widget.rideOption.type,
+        fallbackPhotoUrl: _currentDriver.photoUrl,
+      );
+      _currentDriver = _currentDriver.copyWith(
+        photoUrl: parsed.photoUrl ?? _currentDriver.photoUrl,
+        carColor: parsed.carColor.isNotEmpty &&
+                !parsed.carColor.toLowerCase().contains('gris')
+            ? parsed.carColor
+            : _currentDriver.carColor,
+        carModel: parsed.carModel.isNotEmpty
+            ? parsed.carModel
+            : _currentDriver.carModel,
+      );
+    }
     _departureCode = widget.departureCode;
     _rideService = widget.rideService ?? RideService();
     _tripPolylinePoints = List.from(widget.polylinePoints);
@@ -164,8 +186,16 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       value: 1.0,
     );
 
+    final parsedPickupMinutes = int.tryParse(
+        widget.rideOption.pickupDuration.replaceAll(RegExp(r'\D'), ''));
     final initialEtaS = _currentDriver.approachDurationS ??
         widget.rideOption.pickupEtaS ??
+        (parsedPickupMinutes != null && parsedPickupMinutes > 0
+            ? parsedPickupMinutes * 60
+            : null) ??
+        (_currentDriver.etaMinutes > 0
+            ? _currentDriver.etaMinutes * 60
+            : null) ??
         240;
     _totalApproachS = initialEtaS;
     _remainingEtaMinutes = (initialEtaS / 60.0).ceil();
@@ -413,9 +443,24 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     if (event.driver != null) {
+      final previousColor = _currentDriver.carColor;
+      final previousName = _currentDriver.name;
+      final previousPhoto = _currentDriver.photoUrl;
+      final resolvedDriver = event.raw.isNotEmpty
+          ? DriverModel.fromRideJson(
+              event.raw,
+              defaultRideType: widget.rideOption.type,
+              fallbackCarColor: previousColor,
+              fallbackName: previousName,
+              fallbackPhotoUrl: previousPhoto,
+            )
+          : event.driver!;
       setState(() {
-        _currentDriver = event.driver!;
+        _currentDriver = resolvedDriver;
       });
+      if (_currentDriver.carColor != previousColor) {
+        _updateCarMarkerColor(_currentDriver.carColor);
+      }
     }
 
     // Mise à jour de la polyline si renvoyée dans le statut
@@ -507,11 +552,15 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     final effectiveEtaS = event.etaS;
-    if (effectiveEtaS != null && effectiveEtaS > 0) {
+    if (effectiveEtaS != null &&
+        effectiveEtaS > 0 &&
+        !(effectiveEtaS <= 15 && _totalApproachS > 60)) {
       final mins = (effectiveEtaS / 60.0).ceil();
       _setEtaLabel('$mins min', mins);
       _syncLiveUpdate(etaMinutes: mins);
-    } else if (event.etaMinutes != null && event.etaMinutes! > 0) {
+    } else if (event.etaMinutes != null &&
+        event.etaMinutes! > 0 &&
+        !(event.etaMinutes == 1 && _totalApproachS > 120)) {
       _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
       _syncLiveUpdate(etaMinutes: event.etaMinutes!);
     } else {
@@ -570,6 +619,14 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           }
         }
       });
+      if (phase != 'TRIP' &&
+          phase != 'DESTINATION' &&
+          !_driverArrived &&
+          event.durationSeconds != null &&
+          event.durationSeconds! > 0) {
+        final mins = (event.durationSeconds! / 60.0).ceil();
+        _setEtaLabel('$mins min', mins);
+      }
     }
   }
 
@@ -781,9 +838,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         : data;
 
     final status = (rideObj['status'] as String? ?? '').toUpperCase();
-    final routeObj = rideObj['route'] is Map<String, dynamic>
-        ? rideObj['route'] as Map<String, dynamic>
-        : null;
+    final routeObj = rideObj['route'] is Map
+        ? Map<String, dynamic>.from(rideObj['route'] as Map)
+        : (data['route'] is Map
+            ? Map<String, dynamic>.from(data['route'] as Map)
+            : null);
     final phase = (routeObj?['phase'] as String? ?? '').toUpperCase();
     final startedAt = rideObj['startedAt'];
     final arrivedAt = rideObj['arrivedAt'];
@@ -825,12 +884,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         DriverModel.extractDepartureCode(data, fallback: _departureCode);
 
     // 4. Extraction du vrai chauffeur retourné par l'API (avec position, heading et infos véhicule)
-    final hasDriver = rideObj['driver'] != null || rideObj['carModel'] != null;
+    final hasDriver = rideObj['driver'] != null ||
+        rideObj['carModel'] != null ||
+        rideObj['vehicle'] != null;
+    final previousColor = _currentDriver.carColor;
+    final previousName = _currentDriver.name;
+    final previousPhoto = _currentDriver.photoUrl;
     DriverModel updatedDriver = _currentDriver;
     if (hasDriver) {
       updatedDriver = DriverModel.fromRideJson(
         data,
         defaultRideType: widget.rideOption.type,
+        fallbackCarColor: previousColor,
+        fallbackName: previousName,
+        fallbackPhotoUrl: previousPhoto,
       );
     }
 
@@ -879,12 +946,40 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           .toList();
     }
 
-    // 8. Temps d'approche restant (ETA)
-    final int? etaSecondsFromApi = (routeObj != null && routeObj['durationS'] != null)
-        ? (routeObj['durationS'] as num).toInt()
-        : ((rideObj['etaMinutes'] as num?)?.toInt() != null
-            ? (rideObj['etaMinutes'] as num).toInt() * 60
-            : null);
+    // 8. Temps d'approche restant (ETA réel renvoyé par l'API, y compris durationS: 688)
+    int? parseSec(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toInt();
+      if (v is String) return num.tryParse(v)?.toInt();
+      return null;
+    }
+
+    final driverMap = rideObj['driver'] is Map
+        ? Map<String, dynamic>.from(rideObj['driver'] as Map)
+        : null;
+    final routeDurS = parseSec(routeObj?['durationS'] ??
+        routeObj?['etaS'] ??
+        routeObj?['durationSeconds']);
+    final rideDurS = parseSec(rideObj['pickupEtaS'] ??
+        rideObj['etaS'] ??
+        rideObj['durationS'] ??
+        rideObj['durationSeconds'] ??
+        data['durationS'] ??
+        (parseSec(rideObj['etaMinutes']) != null
+            ? parseSec(rideObj['etaMinutes'])! * 60
+            : null) ??
+        (parseSec(driverMap?['etaMinutes']) != null
+            ? parseSec(driverMap?['etaMinutes'])! * 60
+            : null) ??
+        driverMap?['etaS']);
+
+    final int? etaSecondsFromApi = (routeDurS != null && routeDurS > 15)
+        ? routeDurS
+        : (rideDurS ?? routeDurS);
+
+    if (etaSecondsFromApi != null && etaSecondsFromApi > 0) {
+      _totalApproachS = etaSecondsFromApi;
+    }
 
     final etaFromApi = etaSecondsFromApi != null && etaSecondsFromApi > 0
         ? (etaSecondsFromApi / 60.0).ceil()
@@ -894,11 +989,18 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       _departureCode = newCode;
       _currentDriver = updatedDriver;
     });
+    _detailsModalSetState?.call(() {});
+    if (updatedDriver.carColor != previousColor) {
+      _updateCarMarkerColor(updatedDriver.carColor);
+    }
 
     if (isArrived && !_driverArrived) {
       _onDriverReachedPickup();
     } else if (!_driverArrived && etaFromApi != null && etaFromApi > 0) {
       _setEtaLabel('$etaFromApi min', etaFromApi);
+      _syncLiveUpdate(etaMinutes: etaFromApi);
+    } else if (!_driverArrived) {
+      _syncLiveUpdate(etaMinutes: _remainingEtaMinutes);
     }
 
     // Synchronisation de la position GPS en temps réel
@@ -913,20 +1015,14 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
               _currentCarPosition, updatedDriver.currentLocation);
       _currentCarPosition = updatedDriver.currentLocation;
       _currentCarHeading = heading;
-      _updateEtaAndDistance(
-        updatedDriver.currentLocation,
-        overrideEtaSeconds: etaSecondsFromApi,
-      );
+      if (etaSecondsFromApi == null) {
+        _updateEtaAndDistance(updatedDriver.currentLocation);
+      }
 
       // Si aucun polyline backend n'est fourni et qu'on n'a pas encore de tracé, charger la route
       if (_approachRoutePoints.isEmpty) {
         _loadApproachRoute();
       }
-    } else if (etaSecondsFromApi != null && _approachRoutePoints.isNotEmpty) {
-      _updateEtaAndDistance(
-        _currentCarPosition,
-        overrideEtaSeconds: etaSecondsFromApi,
-      );
     }
   }
 
@@ -934,6 +1030,13 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
   Future<void> _loadApproachRoute() async {
     // Si l'itinéraire routier réel a déjà été initialisé (ex. depuis l'API backend), ne pas l'écraser
     if (_approachRoutePoints.length >= 2) return;
+
+    final bool isTest =
+        WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (isTest && widget.rideService == null) {
+      _setupFallbackApproachRoute();
+      return;
+    }
 
     final effectiveRideId =
         widget.rideId ?? RideService.lastCreatedRideId ?? '';
@@ -944,8 +1047,6 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       return;
     }
 
-    final bool isTest =
-        WidgetsBinding.instance.runtimeType.toString().contains('Test');
     if (isTest) {
       _setupFallbackApproachRoute();
       return;
@@ -1160,6 +1261,16 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
   }
 
+  Future<void> _updateCarMarkerColor(String colorStr) async {
+    final carColor = VehicleColorHelper.parseColor(colorStr);
+    final car = await MapMarkerHelper.get3DCarMarker(color: carColor);
+    if (mounted) {
+      setState(() {
+        _carMarkerIcon = car;
+      });
+    }
+  }
+
   Future<void> _loadCustomMarkers() async {
     final carColor = VehicleColorHelper.parseColor(_currentDriver.carColor);
     final car = await MapMarkerHelper.get3DCarMarker(color: carColor);
@@ -1239,6 +1350,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       _driverArrived = true;
       _totalApproachS = 0;
     });
+
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      _fetchRideDetails(effectiveRideId);
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1506,7 +1622,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       }
       return;
     }
-    await InAppCallPage.show(context, driver: _currentDriver);
+    await InAppCallPage.show(context, driver: _currentDriver, rideId: widget.rideId);
   }
 
   Future<void> _sendSmsDriver() async {
@@ -1776,18 +1892,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final systemBottom = MediaQuery.of(context).padding.bottom;
     final licensePlateText =
         _currentDriver.licensePlate.replaceAll('-', ' ');
+    final hasCarColor = _currentDriver.carColor.trim().isNotEmpty &&
+        _currentDriver.carColor.trim().toLowerCase() != 'gris' &&
+        _currentDriver.carColor.trim().toLowerCase() != 'grise';
     final carDescription = _currentDriver.carModel.isNotEmpty
-        ? '${_currentDriver.carModel} ${_currentDriver.carColor.isNotEmpty ? _currentDriver.carColor : "grise"}'
-        : 'Toyota Corolla grise';
+        ? (hasCarColor
+            ? '${_currentDriver.carModel} · ${_currentDriver.carColor.trim()}'
+            : _currentDriver.carModel)
+        : (hasCarColor
+            ? 'Toyota Corolla · ${_currentDriver.carColor.trim()}'
+            : 'Toyota Corolla');
 
-    final initials = _currentDriver.name.isNotEmpty
-        ? _currentDriver.name
-            .split(' ')
-            .map((e) => e.isNotEmpty ? e[0] : '')
-            .take(2)
-            .join()
-            .toUpperCase()
-        : 'MS';
+    final ratingValue =
+        _currentDriver.rating > 0 ? _currentDriver.rating : 4.9;
+    final ratingDisplay = (ratingValue * 10 == (ratingValue * 10).roundToDouble())
+        ? ratingValue.toStringAsFixed(1)
+        : ratingValue.toStringAsFixed(2);
 
     final etaDisplay = _driverArrived
         ? 'ride.arrived'.tr()
@@ -2013,42 +2133,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                     ),
                                     const SizedBox(height: 12),
 
-                                    // Header: Title & Remaining Time Pill
+                                    // Header: Title & Remaining Time Pill (sans sous-texte de distance)
                                     Row(
-                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
                                       children: [
                                         Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                titleText,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 16.0,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: AppColors.textPrimary,
-                                                  letterSpacing: -0.2,
-                                                ),
-                                              ),
-                                              if (_remainingDistanceM > 0 &&
-                                                  !_driverArrived) ...[
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  '${'ride.approaching'.tr()} · ${RideEtaCalculator.formatRemainingDistance(_remainingDistanceM)}',
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 12.0,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppColors.textSecondary,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
+                                          child: Text(
+                                            titleText,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 17.5,
+                                              fontWeight: FontWeight.w800,
+                                              color: AppColors.textPrimary,
+                                              letterSpacing: -0.3,
+                                            ),
                                           ),
                                         ),
                                         const SizedBox(width: 10),
@@ -2101,161 +2201,210 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                               ),
                               const SizedBox(height: 10),
 
-                              // 2. Card 1: Véhicule & Chauffeur (Design exact capture utilisateur)
+                              // 2. Card 1: Véhicule & Chauffeur (Sans bordure : Avatar cercle gris + note ★ en bas, Nom complet + Modèle · Couleur au centre, Voiture colorée + Plaque à droite)
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
-                                  vertical: 11,
+                                  vertical: 12,
                                 ),
                                 decoration: BoxDecoration(
                                   color: AppColors.grayBgSubtle,
                                   borderRadius: BorderRadius.circular(18),
-                                  border: Border.all(
-                                    color: AppColors.grayBorderLight,
-                                    width: 1.0,
-                                  ),
                                 ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    // Colonne gauche : Nom ★Note, Modèle/Couleur, Plaque d'immatriculation
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
+                                    // Côté gauche : Cercle gris avec photo ou initiales noires + badge note ★ en bas
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Stack(
+                                        clipBehavior: Clip.none,
+                                        alignment: Alignment.bottomCenter,
                                         children: [
-                                          // Nom ★Note (ex: Mor ★4.53)
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Flexible(
-                                                child: Text(
-                                                  _currentDriver.name
-                                                      .split(' ')
-                                                      .first,
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w800,
-                                                    color: AppColors.textPrimary,
+                                          DriverAvatarWidget(
+                                            photoUrl: _currentDriver.photoUrl,
+                                            rideId: widget.rideId,
+                                            name: _currentDriver.name,
+                                            size: 52,
+                                          ),
+                                          Positioned(
+                                            bottom: -7,
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 7,
+                                                vertical: 1.5,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                boxShadow: const [
+                                                  BoxShadow(
+                                                    color: AppColors
+                                                        .shadowSubtleBlack,
+                                                    blurRadius: 4,
+                                                    offset: Offset(0, 1),
                                                   ),
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
+                                                ],
                                               ),
-                                              const SizedBox(width: 4),
-                                              const Icon(
-                                                Icons.star_rounded,
-                                                color: AppColors.amberRating,
-                                                size: 16,
-                                              ),
-                                              const SizedBox(width: 2),
-                                              Text(
-                                                _currentDriver.rating > 0
-                                                    ? _currentDriver.rating
-                                                        .toStringAsFixed(2)
-                                                    : '4.53',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 14.5,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: AppColors.textPrimary,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 3),
-
-                                          // Modèle & couleur (ex: Citroen C4 Picasso Gris)
-                                          Text(
-                                            carDescription,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 12.5,
-                                              color: AppColors.textSecondary,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 6),
-
-                                          // Plaque encadrée rectangle [ AA034RB ]
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2.5,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              border: Border.all(
-                                                color: const Color(0xFF0F172A),
-                                                width: 1.4,
-                                              ),
-                                            ),
-                                            child: Text(
-                                              licensePlateText,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 16.5,
-                                                fontWeight: FontWeight.w900,
-                                                color: const Color(0xFF0F172A),
-                                                letterSpacing: 0.6,
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    ratingDisplay,
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color:
+                                                          AppColors.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 2),
+                                                  const Icon(
+                                                    Icons.star_rounded,
+                                                    size: 12,
+                                                    color:
+                                                        AppColors.amberRating,
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: 12),
 
-                                    // Côté droit : Voiture 3D + Avatar collés côte à côte (sans flèche)
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        // Image voiture 3D
-                                        Builder(
-                                          builder: (context) {
-                                            final colorFilter =
-                                                VehicleColorHelper.getColorFilter(
-                                                    _currentDriver.carColor);
-                                            final carImg = Image.asset(
-                                              'assets/images/carr_cropped.png',
-                                              width: 78,
-                                              height: 48,
-                                              fit: BoxFit.contain,
-                                            );
-                                            if (colorFilter != null) {
-                                              return ColorFiltered(
-                                                colorFilter: colorFilter,
-                                                child: carImg,
-                                              );
-                                            }
-                                            return carImg;
-                                          },
-                                        ),
-                                        const SizedBox(width: 4),
+                                    // Centre & Droite : Ligne 1 (Nom complet + Voiture colorée) et Ligne 2 (Modèle · Couleur aligné avec la plaque en bas de la voiture, sans se toucher)
+                                    Expanded(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          // Ligne 1 : Nom complet du chauffeur à gauche + Voiture colorée à droite
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  _currentDriver.name,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 16.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                    letterSpacing: -0.2,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Builder(
+                                                builder: (context) {
+                                                  final colorFilter =
+                                                      VehicleColorHelper
+                                                          .getColorFilter(
+                                                              _currentDriver
+                                                                  .carColor);
+                                                  final carImg = SizedBox(
+                                                    width: 86,
+                                                    height: 40,
+                                                    child: Transform.scale(
+                                                      scale: 1.38,
+                                                      child: SvgPicture.asset(
+                                                        'assets/icons/vectoreco.svg',
+                                                        width: 86,
+                                                        height: 40,
+                                                        fit: BoxFit.contain,
+                                                      ),
+                                                    ),
+                                                  );
+                                                  final renderedCar = colorFilter != null
+                                                      ? ColorFiltered(
+                                                          colorFilter: colorFilter,
+                                                          child: carImg,
+                                                        )
+                                                      : carImg;
+                                                  return AnimatedSwitcher(
+                                                    duration: const Duration(milliseconds: 300),
+                                                    transitionBuilder: (child, animation) => FadeTransition(
+                                                      opacity: animation,
+                                                      child: child,
+                                                    ),
+                                                    child: KeyedSubtree(
+                                                      key: ValueKey('car_tint_${_currentDriver.carColor}'),
+                                                      child: renderedCar,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
 
-                                        // Avatar / Initiales du chauffeur
-                                        Container(
-                                          width: 44,
-                                          height: 44,
-                                          decoration: BoxDecoration(
-                                            color: AppColors.peachMedium,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
+                                          // Ligne 2 : Modèle · Couleur à gauche + Plaque compacte en bas de la voiture à droite (alignés sur la même ligne sans se toucher)
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              Expanded(
+                                                child: AnimatedSwitcher(
+                                                  duration: const Duration(milliseconds: 300),
+                                                  transitionBuilder: (child, animation) => FadeTransition(
+                                                    opacity: animation,
+                                                    child: child,
+                                                  ),
+                                                  child: Text(
+                                                    carDescription,
+                                                    key: ValueKey('car_desc_$carDescription'),
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 13,
+                                                      color:
+                                                          AppColors.textSecondary,
+                                                      fontWeight: FontWeight.w500,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 1.5,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(5),
+                                                  border: Border.all(
+                                                    color: AppColors.slateDark,
+                                                    width: 1.1,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  licensePlateText,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 11.0,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: AppColors.slateDark,
+                                                    letterSpacing: 0.4,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          alignment: Alignment.center,
-                                          child: Text(
-                                            initials,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppColors.orangeDarkAccent,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -2325,7 +2474,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           // 2. Bouton Discussion (Gris clair)
           _buildPillButton(
             key: const ValueKey('approaching_btn_discussion'),
-            icon: Icons.chat_bubble_rounded,
+            svgAsset: 'assets/icons/chat-round-svgrepo-com.svg',
             label: 'Discussion',
             onTap: _openChat,
           ),
@@ -2363,13 +2512,14 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
   Widget _buildPillButton({
     Key? key,
-    required IconData icon,
+    IconData? icon,
+    String? svgAsset,
     required String label,
     required VoidCallback onTap,
   }) {
     return Material(
       key: key,
-      color: const Color(0xFFF1F5F9),
+      color: AppColors.slateLightBg,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -2379,18 +2529,29 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                color: const Color(0xFF0F172A),
-                size: 18,
-              ),
+              if (svgAsset != null)
+                SvgPicture.asset(
+                  svgAsset,
+                  width: 18,
+                  height: 18,
+                  colorFilter: const ColorFilter.mode(
+                    AppColors.slateDark,
+                    BlendMode.srcIn,
+                  ),
+                )
+              else if (icon != null)
+                Icon(
+                  icon,
+                  color: AppColors.slateDark,
+                  size: 18,
+                ),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF0F172A),
+                  color: AppColors.slateDark,
                 ),
               ),
             ],
@@ -2415,12 +2576,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     return 'Espèces';
   }
 
-  /// Modal complet des détails de la course (Prise en charge avec heure, Destination, Code de départ, Montant, Switch position, Annuler)
+  /// Modal complet des détails de la course (Design moderne style Dribbble / Figma : cards blanches sans contour sur fond gris doux, Code de départ en tuiles modernes, Timeline Prise en charge -> Destination, Paiement & Tarif, Annuler)
   void _openRideDetailsModal() {
-    final digits = _departureCode.padRight(4, '0').split('');
+    final effectiveRideId =
+        widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (effectiveRideId.isNotEmpty) {
+      _fetchRideDetails(effectiveRideId);
+    }
     final estTime = _formatEstimatedPickupTime();
     final paymentLabel = _getPaymentMethodDisplay();
     final priceText = '${widget.rideOption.price} F CFA';
+    final methodUpper = (widget.paymentMethod ?? 'ESPECES').toUpperCase();
+    final String paymentAsset = methodUpper.contains('WAVE')
+        ? 'assets/images/wave_logo_sq.png'
+        : (methodUpper.contains('ORANGE')
+            ? 'assets/images/orange_logo_sq.png'
+            : 'assets/images/cash_banknotes.png');
 
     showModalBottomSheet(
       context: context,
@@ -2431,20 +2602,24 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
       barrierColor: AppColors.pureBlack.withValues(alpha: 0.5),
       builder: (modalCtx) {
         final systemBottom = MediaQuery.of(modalCtx).padding.bottom;
-        return DraggableScrollableSheet(
-          initialChildSize: 0.72,
-          minChildSize: 0.35,
-          maxChildSize: 0.90,
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            _detailsModalSetState = setModalState;
+            final digits = _departureCode.padRight(4, '0').split('');
+            return DraggableScrollableSheet(
+          initialChildSize: 0.76,
+          minChildSize: 0.40,
+          maxChildSize: 0.92,
           expand: false,
           builder: (context, scrollController) {
             return Container(
               decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                color: AppColors.accountScaffoldBg,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0x33000000),
-                    blurRadius: 24,
+                    color: AppColors.shadowHeavy,
+                    blurRadius: 28,
                     offset: Offset(0, -6),
                   ),
                 ],
@@ -2459,28 +2634,64 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                       height: 4.5,
                       decoration: BoxDecoration(
                         color: AppColors.dragHandle,
-                        borderRadius: BorderRadius.circular(2),
+                        borderRadius: BorderRadius.circular(2.5),
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(20, 14, 16, 10),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Text(
-                            'Détails de la course',
-                            style: GoogleFonts.inter(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF0F172A),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Détails de la course',
+                                style: GoogleFonts.inter(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Récapitulatif et code de sécurité',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 22),
-                          onPressed: () => Navigator.pop(modalCtx),
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: const BoxDecoration(
+                            color: AppColors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.shadowSubtleBlack,
+                                blurRadius: 8,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 20,
+                              color: AppColors.textPrimary,
+                            ),
+                            onPressed: () => Navigator.pop(modalCtx),
+                          ),
                         ),
                       ],
                     ),
@@ -2489,40 +2700,42 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                     child: SingleChildScrollView(
                       controller: scrollController,
                       padding: EdgeInsets.fromLTRB(
-                        20,
-                        0,
-                        20,
+                        18,
+                        4,
+                        18,
                         systemBottom > 0 ? systemBottom + 24 : 32,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // 1. Code de départ PIN Card
+                          // 1. Card Code de départ (Style Dribbble / Figma : card blanche sans contour + 4 tuiles modernes)
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 12),
+                            padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: AppColors.orangeLightBg,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: AppColors.peachMedium,
-                                width: 1.0,
-                              ),
+                              color: AppColors.white,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: AppColors.shadowSubtleBlack,
+                                  blurRadius: 14,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
                             ),
                             child: Row(
                               children: [
                                 Container(
-                                  width: 38,
-                                  height: 38,
+                                  width: 42,
+                                  height: 42,
                                   decoration: const BoxDecoration(
-                                    color: AppColors.peachMedium,
+                                    color: AppColors.orangeLightBg,
                                     shape: BoxShape.circle,
                                   ),
                                   alignment: Alignment.center,
                                   child: const Icon(
                                     Icons.key_rounded,
                                     color: AppColors.primary,
-                                    size: 20,
+                                    size: 21,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -2534,7 +2747,7 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                       Text(
                                         'Code de départ',
                                         style: GoogleFonts.inter(
-                                          fontSize: 14,
+                                          fontSize: 15,
                                           fontWeight: FontWeight.w800,
                                           color: AppColors.textPrimary,
                                         ),
@@ -2551,25 +2764,25 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                     ],
                                   ),
                                 ),
+                                const SizedBox(width: 8),
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: digits.map((digit) {
                                     return Container(
-                                      width: 28,
-                                      height: 34,
-                                      margin: const EdgeInsets.only(left: 4),
+                                      width: 32,
+                                      height: 38,
+                                      margin: const EdgeInsets.only(left: 5),
                                       decoration: BoxDecoration(
-                                        color: AppColors.licensePlateBg,
-                                        borderRadius:
-                                            BorderRadius.circular(6),
+                                        color: AppColors.orangeLightBg,
+                                        borderRadius: BorderRadius.circular(10),
                                       ),
                                       alignment: Alignment.center,
                                       child: Text(
                                         digit,
                                         style: GoogleFonts.inter(
-                                          fontSize: 16,
+                                          fontSize: 17,
                                           fontWeight: FontWeight.w900,
-                                          color: AppColors.white,
+                                          color: AppColors.primary,
                                         ),
                                       ),
                                     );
@@ -2578,34 +2791,41 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
 
-                          // 2. Trajet Card (Prise en charge + Destination sans carrés de fond)
+                          // 2. Card Trajet (Timeline moderne sans contour : Prise en charge -> Destination)
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(18),
-                              border:
-                                  Border.all(color: const Color(0xFFE2E8F0)),
+                              color: AppColors.white,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: AppColors.shadowSubtleBlack,
+                                  blurRadius: 14,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Prise en charge avec icône Icons.hail_rounded (silhouette passager comme dans l'aperçu de ma position)
+                                // Prise en charge
                                 Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const SizedBox(
-                                      width: 26,
-                                      height: 26,
-                                      child: Center(
-                                        child: Icon(
-                                          Icons.hail_rounded,
-                                          color: AppColors.primary,
-                                          size: 24,
-                                        ),
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.accountIconGreenBg,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: const Icon(
+                                        Icons.hail_rounded,
+                                        color: AppColors.accountIconGreen,
+                                        size: 19,
                                       ),
                                     ),
                                     const SizedBox(width: 14),
@@ -2617,21 +2837,20 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                           Text(
                                             'Prise en charge à ≈$estTime',
                                             style: GoogleFonts.inter(
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.textSecondary,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.accountIconGreen,
                                             ),
                                           ),
-                                          const SizedBox(height: 2),
+                                          const SizedBox(height: 3),
                                           Text(
                                             widget.departure.mainText.isNotEmpty
                                                 ? widget.departure.mainText
-                                                : widget
-                                                    .departure.fullAddress,
+                                                : widget.departure.fullAddress,
                                             style: GoogleFonts.inter(
-                                              fontSize: 14.5,
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFF0F172A),
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: AppColors.textPrimary,
                                             ),
                                           ),
                                         ],
@@ -2639,33 +2858,51 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                     ),
                                   ],
                                 ),
-                                // Trait de liaison
-                                Padding(
-                                  padding: const EdgeInsets.only(
-                                      left: 12, top: 4, bottom: 4),
-                                  child: Container(
-                                    width: 2,
-                                    height: 22,
-                                    color: const Color(0xFFCBD5E1),
-                                  ),
-                                ),
-                                // Destination avec icône flag de assets/icons
+                                // Trait de liaison vertical et séparateur subtil
                                 Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
                                   children: [
                                     SizedBox(
-                                      width: 26,
-                                      height: 26,
+                                      width: 34,
                                       child: Center(
-                                        child: SvgPicture.asset(
-                                          'assets/icons/flag-svgrepo-com.svg',
-                                          width: 22,
-                                          height: 22,
-                                          colorFilter: const ColorFilter.mode(
-                                            Color(0xFF0F172A),
-                                            BlendMode.srcIn,
+                                        child: Container(
+                                          width: 2,
+                                          height: 24,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.grayBorderLight,
+                                            borderRadius:
+                                                BorderRadius.circular(1),
                                           ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    const Expanded(
+                                      child: Divider(
+                                        height: 1,
+                                        color: AppColors.subtleDivider,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                // Destination
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.orangeLightBg,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: SvgPicture.asset(
+                                        'assets/icons/flag-svgrepo-com.svg',
+                                        width: 17,
+                                        height: 17,
+                                        colorFilter: const ColorFilter.mode(
+                                          AppColors.primary,
+                                          BlendMode.srcIn,
                                         ),
                                       ),
                                     ),
@@ -2678,24 +2915,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                           Text(
                                             'Destination',
                                             style: GoogleFonts.inter(
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: AppColors.textSecondary,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.primary,
                                             ),
                                           ),
-                                          const SizedBox(height: 2),
+                                          const SizedBox(height: 3),
                                           Text(
-                                            widget
-                                                    .destination
-                                                    .mainText
+                                            widget.destination.mainText
                                                     .isNotEmpty
                                                 ? widget.destination.mainText
                                                 : widget
                                                     .destination.fullAddress,
                                             style: GoogleFonts.inter(
-                                              fontSize: 14.5,
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFF0F172A),
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: AppColors.textPrimary,
                                             ),
                                           ),
                                         ],
@@ -2706,32 +2941,49 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
 
-                          // 3. Montant & Moyen de paiement Card
+                          // 3. Card Moyen de paiement & Montant (Sans contour, avec icône réelle du mode de paiement et prix mis en valeur)
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(18),
-                              border:
-                                  Border.all(color: const Color(0xFFE2E8F0)),
+                              color: AppColors.white,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: AppColors.shadowSubtleBlack,
+                                  blurRadius: 14,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
                             ),
                             child: Row(
                               children: [
                                 Container(
-                                  width: 38,
-                                  height: 38,
+                                  width: 44,
+                                  height: 44,
+                                  padding: const EdgeInsets.all(7),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF10B981)
-                                        .withValues(alpha: 0.14),
-                                    borderRadius: BorderRadius.circular(10),
+                                    color: AppColors.accountScaffoldBg,
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                   alignment: Alignment.center,
-                                  child: const Icon(
-                                    Icons.payments_rounded,
-                                    color: Color(0xFF059669),
-                                    size: 22,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.asset(
+                                      paymentAsset,
+                                      width: 30,
+                                      height: 30,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, _, _) => const Icon(
+                                        Icons.payments_rounded,
+                                        color: AppColors.accountIconGreen,
+                                        size: 22,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -2743,15 +2995,16 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                       Text(
                                         paymentLabel,
                                         style: GoogleFonts.inter(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFF0F172A),
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.textPrimary,
                                         ),
                                       ),
+                                      const SizedBox(height: 2),
                                       Text(
-                                        priceText,
+                                        'Tarif garanti · Fixe',
                                         style: GoogleFonts.inter(
-                                          fontSize: 13,
+                                          fontSize: 12,
                                           fontWeight: FontWeight.w600,
                                           color: AppColors.textSecondary,
                                         ),
@@ -2761,17 +3014,19 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 5),
+                                    horizontal: 12,
+                                    vertical: 7,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFE2E8F0),
-                                    borderRadius: BorderRadius.circular(100),
+                                    color: AppColors.orangeLightBg,
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Text(
-                                    'Fixe',
+                                    priceText,
                                     style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF334155),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.primary,
                                     ),
                                   ),
                                 ),
@@ -2780,27 +3035,25 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
                           ),
                           const SizedBox(height: 18),
 
-                          // 4. Bouton Annuler la commande (protégé par padding pour la barre Android)
+                          // 4. Bouton Annuler la commande (Style Dribbble doux sans bordure agressive)
                           SizedBox(
                             width: double.infinity,
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFFDC2626),
-                                side: const BorderSide(
-                                    color: Color(0xFFFCA5A5), width: 1.2),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
+                            height: 52,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.accountIconRedBg,
+                                foregroundColor: AppColors.accountIconRed,
+                                elevation: 0,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(18),
                                 ),
-                                backgroundColor: const Color(0xFFFEF2F2),
                               ),
                               icon: const Icon(Icons.close_rounded, size: 20),
                               label: Text(
                                 'Annuler la commande',
                                 style: GoogleFonts.inter(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                               onPressed: () {
@@ -2820,5 +3073,9 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         );
       },
     );
+  },
+).whenComplete(() {
+  _detailsModalSetState = null;
+});
   }
 }

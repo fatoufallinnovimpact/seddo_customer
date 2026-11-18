@@ -104,6 +104,10 @@ class _RideBookingPageState extends State<RideBookingPage>
   @override
   void initState() {
     super.initState();
+    // Nettoyer les caches d'anciennes courses pour garantir qu'une nouvelle
+    // commande démarre avec un endpoint frais et son propre code de départ
+    RideService.clearActiveRideData();
+    RealtimeService().clearLastRideStatus();
     _departure = widget.departure;
     _sanitizeAndResolveDeparture();
 
@@ -747,8 +751,12 @@ class _RideBookingPageState extends State<RideBookingPage>
     Map<String, dynamic> lastData,
     PaymentMethodType chosenMethod,
   ) {
+    final rideObj = lastData['ride'] is Map<String, dynamic>
+        ? lastData['ride'] as Map<String, dynamic>
+        : lastData;
+
     List<LatLng> effectivePoints = _polylinePoints;
-    final plannedPoly = lastData['plannedPolyline'] as String?;
+    final plannedPoly = (rideObj['plannedPolyline'] ?? lastData['plannedPolyline']) as String?;
     if (plannedPoly != null && plannedPoly.isNotEmpty) {
       final decoded = RouteService.decodePolyline(plannedPoly);
       if (decoded.length >= 2) {
@@ -759,7 +767,9 @@ class _RideBookingPageState extends State<RideBookingPage>
     List<TrafficSegmentModel> effectiveTraffic = _traffic.isNotEmpty
         ? _traffic
         : selectedOption.traffic;
-    final rawPlannedTraffic = (lastData['plannedTraffic'] ??
+    final rawPlannedTraffic = (rideObj['plannedTraffic'] ??
+        rideObj['traffic'] ??
+        lastData['plannedTraffic'] ??
         lastData['traffic']) as List<dynamic>?;
     if (rawPlannedTraffic != null && rawPlannedTraffic.isNotEmpty) {
       final parsed = rawPlannedTraffic
@@ -771,9 +781,34 @@ class _RideBookingPageState extends State<RideBookingPage>
       }
     }
 
-    final cachedEvent = RealtimeService().lastRideStatusEvent;
-    final status = (lastData['status'] as String? ?? cachedEvent?.status ?? '').toUpperCase();
-    final hasDriver = lastData['driver'] != null || cachedEvent?.driver != null;
+    final effectiveRideId = (rideObj['id'] ??
+            rideObj['_id'] ??
+            lastData['id'] ??
+            lastData['_id'] ??
+            RideService.lastCreatedRideId)
+        ?.toString();
+
+    // Vérifier si un événement WebSocket correspond STRICTEMENT à la nouvelle course
+    final rawCached = RealtimeService().lastRideStatusEvent;
+    final cachedEvent = (rawCached != null &&
+            effectiveRideId != null &&
+            effectiveRideId.isNotEmpty &&
+            rawCached.rideId.isNotEmpty &&
+            (rawCached.rideId == effectiveRideId ||
+                rawCached.rideId.endsWith(effectiveRideId) ||
+                effectiveRideId.endsWith(rawCached.rideId)))
+        ? rawCached
+        : null;
+
+    final initialCode = DriverModel.extractDepartureCode(lastData);
+    final status = (rideObj['status'] as String? ??
+            lastData['status'] as String? ??
+            cachedEvent?.status ??
+            '')
+        .toUpperCase();
+    final hasDriver = rideObj['driver'] != null ||
+        lastData['driver'] != null ||
+        cachedEvent?.driver != null;
     final isAccepted = status == 'ACCEPTED' ||
         status == 'DRIVER_ACCEPTED' ||
         status == 'DRIVER_ASSIGNED' ||
@@ -785,16 +820,13 @@ class _RideBookingPageState extends State<RideBookingPage>
         status == 'IN_PROGRESS' ||
         hasDriver;
 
-    final effectiveRideId = lastData['id'] as String? ?? RideService.lastCreatedRideId;
-
     if (isAccepted) {
       final driver = cachedEvent?.driver ??
           DriverModel.fromRideJson(
             lastData,
             defaultRideType: selectedOption.type,
           );
-      final code = cachedEvent?.departureCode ??
-          DriverModel.extractDepartureCode(lastData);
+      final code = cachedEvent?.departureCode ?? initialCode;
 
       Navigator.of(context).push(
         SlideRightToLeftRoute(
@@ -823,6 +855,7 @@ class _RideBookingPageState extends State<RideBookingPage>
             pickupLandmark: _pickupLandmark,
             rideId: effectiveRideId,
             paymentMethod: chosenMethod,
+            departureCode: initialCode,
           ),
         ),
       );

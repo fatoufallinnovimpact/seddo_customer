@@ -328,7 +328,12 @@
     "send_alert_to": "Yónnee alert bi ci SMS ci :"
   },
   "rating": {
+    "page_title": "Joxe sa xalaat",
+    "how_is_trip": "Naka la sa yoon déme ?",
+    "feedback_hint": "Sa xalaat dafay dimbali ñu gëna rafetal yoon wi",
     "how_was_ride_with": "Naka la sa yoon déme ak {} ?",
+    "additional_comments": "Bindeel sa xalaat ci yoon wi...",
+    "submit_review": "Yónnee sa xalaat",
     "safe_driving": "Doxalin bu dal",
     "punctual": "Teyla jot",
     "clean_car": "Auto bu set",

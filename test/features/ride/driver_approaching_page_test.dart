@@ -99,8 +99,8 @@ void main() {
 
       // Card 1: Driver & Vehicle verification
       expect(find.text('DK 4821 AB'), findsOneWidget);
-      expect(find.text('Toyota Corolla Gris argent'), findsOneWidget);
-      expect(find.text('Moussa'), findsOneWidget);
+      expect(find.text('Toyota Corolla · Gris argent'), findsOneWidget);
+      expect(find.text('Moussa Diop'), findsOneWidget);
       expect(find.text('MD'), findsOneWidget);
 
       // Action buttons horizontal row
@@ -153,7 +153,7 @@ void main() {
       // En mode replié, le texte affiche "Arrive dans 4 min" et la Card 1 est visible
       expect(find.textContaining('Arrive dans 4 min'), findsOneWidget);
       expect(find.text('DK 4821 AB'), findsOneWidget);
-      expect(find.text('Moussa'), findsOneWidget);
+      expect(find.text('Moussa Diop'), findsOneWidget);
     });
 
     testWidgets('tapping message opens DriverChatPage',
@@ -284,10 +284,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       // Vérification des infos réelles du chauffeur retourné par l'API
-      expect(find.text('Ibrahima'), findsOneWidget);
+      expect(find.text('Ibrahima Ndiaye'), findsOneWidget);
       expect(find.text('IN'), findsOneWidget);
       expect(find.text('DK 9876 ZZ'), findsOneWidget);
-      expect(find.text('Hyundai Elantra Noir'), findsOneWidget);
+      expect(find.text('Hyundai Elantra · Noir'), findsOneWidget);
       expect(find.textContaining('4.8'), findsOneWidget);
       expect(find.text('2 min'), findsWidgets);
 
@@ -383,7 +383,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(DriverApproachingPage), findsOneWidget);
-      expect(find.text('Modou'), findsOneWidget);
+      expect(find.text('Modou Fall'), findsOneWidget);
       expect(find.text('DK 1122 CC'), findsOneWidget);
 
       await tester.ensureVisible(find.text('Détails'));

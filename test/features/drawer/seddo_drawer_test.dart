@@ -83,7 +83,10 @@ void main() {
     await EasyLocalization.ensureInitialized();
   });
 
-  Widget buildTestableWidget({required Widget child}) {
+  Widget buildTestableWidget({
+    required Widget child,
+    TargetPlatform? platform,
+  }) {
     return EasyLocalization(
       supportedLocales: const [Locale('fr'), Locale('wo')],
       path: 'assets/translations',
@@ -95,6 +98,7 @@ void main() {
       child: Builder(
         builder: (context) {
           return MaterialApp(
+            theme: ThemeData(platform: platform ?? TargetPlatform.android),
             locale: context.locale,
             supportedLocales: context.supportedLocales,
             localizationsDelegates: [
@@ -152,8 +156,9 @@ void main() {
     expect(find.text('Activité'), findsOneWidget);
     expect(find.text('Courses et remboursements'), findsOneWidget);
 
-    expect(find.text('TCU'), findsOneWidget);
-    expect(find.text('Bus AFTU, DDD, BRT'), findsOneWidget);
+    // TCU removed from first card
+    expect(find.text('TCU'), findsNothing);
+    expect(find.text('Bus AFTU, DDD, BRT'), findsNothing);
 
     expect(find.text('Lieux enregistrés'), findsOneWidget);
     expect(find.text('Maison, Travail, Aéroport'), findsOneWidget);
@@ -464,5 +469,83 @@ void main() {
 
     expect(tester.widget<Switch>(smsSwitch).value, isTrue);
     expect(AuthRepository().currentUser?.notifySms, isTrue);
+  });
+
+  testWidgets(
+      'Header has centered title and platform-dependent back button (Android vs iOS)',
+      (tester) async {
+    // 1. Sur Android (défaut) : flèche de retour présente
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Mon compte'), findsOneWidget);
+    expect(find.byKey(const Key('drawer_back_button')), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsNothing);
+
+    // Vérifier l'absence de Divider dans les cartes
+    expect(find.byType(Divider), findsNothing);
+
+    // 2. Sur iOS : flèche de retour absente, titre toujours centré
+    await tester.pumpWidget(
+      buildTestableWidget(
+        child: const SeddoDrawerWidget(),
+        platform: TargetPlatform.iOS,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Mon compte'), findsOneWidget);
+    expect(find.byKey(const Key('drawer_back_button')), findsNothing);
+    expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
+  });
+
+  testWidgets('Swiping from left to right triggers pop', (tester) async {
+    bool didPop = false;
+
+    await tester.pumpWidget(
+      EasyLocalization(
+        supportedLocales: const [Locale('fr'), Locale('wo')],
+        path: 'assets/translations',
+        assetLoader: const MockDrawerTestAssetLoader(),
+        fallbackLocale: const Locale('fr'),
+        startLocale: const Locale('fr'),
+        saveLocale: false,
+        useOnlyLangCode: true,
+        child: Builder(
+          builder: (context) {
+            return MaterialApp(
+              locale: context.locale,
+              supportedLocales: context.supportedLocales,
+              localizationsDelegates: [
+                const WolofMaterialLocalizationsDelegate(),
+                const WolofCupertinoLocalizationsDelegate(),
+                ...context.localizationDelegates,
+              ],
+              home: Navigator(
+                onDidRemovePage: (page) => didPop = true,
+                pages: const [
+                  MaterialPage(child: Scaffold(body: Text('Home'))),
+                  MaterialPage(child: SeddoDrawerWidget()),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Mon compte'), findsOneWidget);
+
+    // Effectuer un glissement horizontal de gauche à droite
+    await tester.drag(find.text('Mon compte'), const Offset(200.0, 0.0));
+    await tester.pumpAndSettle();
+
+    expect(didPop, isTrue);
   });
 }

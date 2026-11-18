@@ -111,33 +111,41 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
         child: Scaffold(
           backgroundColor: AppColors.white,
           body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppConstants.spacingLg,
-                vertical: AppConstants.spacingMd,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Top Bar: Circular Back Button on left + Orange SEDDO Logo on right
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const CircularBackButton(),
-                      SvgPicture.asset(
-                        'assets/icons/seddo_logo_orange.svg',
-                        height: 28,
-                        fit: BoxFit.contain,
-                      ),
-                    ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingLg,
+                    vertical: AppConstants.spacingMd,
                   ),
-                  const SizedBox(height: 28),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - (AppConstants.spacingMd * 2),
+                    ),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 1. Top Bar: Circular Back Button on left + Orange SEDDO Logo on right
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const CircularBackButton(),
+                              SvgPicture.asset(
+                                'assets/icons/seddo_logo_orange.svg',
+                                height: 28,
+                                fit: BoxFit.contain,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 28),
 
-                  // 2. Headline
-                  Text(
-                    'auth.code_received'.tr(),
-                    style: GoogleFonts.inter(
-                      fontSize: 28,
+                          // 2. Headline
+                          Text(
+                            'auth.code_received'.tr(),
+                            style: GoogleFonts.inter(
+                              fontSize: 28,
                       fontWeight: FontWeight.w900,
                       color: AppColors.textPrimary,
                       letterSpacing: -0.6,
@@ -366,9 +374,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                       );
                     },
                   ),
-                  const SizedBox(height: AppConstants.spacingSm),
-                ],
-              ),
+                          const SizedBox(height: AppConstants.spacingSm),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),

@@ -1,4 +1,5 @@
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -25,7 +26,6 @@ import 'package:seddo/features/privacy/presentation/pages/privacy_page.dart';
 import 'package:seddo/features/profile/presentation/pages/edit_profile_page.dart';
 import 'package:seddo/features/safety/presentation/pages/safety_page.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
-import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 
 /// Full-screen Account / Menu View ("Mon compte") matching the user's design mockups:
 /// - Opens full-screen occupying the entire phone screen width & height
@@ -50,6 +50,7 @@ class SeddoDrawerWidget extends StatefulWidget {
 class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
   late final DrawerAccountBloc _accountBloc;
   final AuthRepository _authRepo = AuthRepository();
+  double _dragDistance = 0;
 
   @override
   void initState() {
@@ -111,219 +112,193 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
           borderRadius: BorderRadius.zero,
         ),
         child: SafeArea(
-          child: BlocBuilder<DrawerAccountBloc, DrawerAccountState>(
-            builder: (context, state) {
-              final user = state.user ?? _authRepo.currentUser;
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragStart: (_) => _dragDistance = 0,
+            onHorizontalDragUpdate: (details) {
+              if (details.primaryDelta != null) {
+                _dragDistance += details.primaryDelta!;
+              }
+            },
+            onHorizontalDragEnd: (details) {
+              final velocity = details.primaryVelocity ?? 0;
+              // Balayage de gauche vers la droite pour fermer/retourner à l'accueil
+              if (velocity > 250 || _dragDistance > 80) {
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                } else {
+                  _closeMenuIfNeeded(context);
+                }
+              }
+              _dragDistance = 0;
+            },
+            child: BlocBuilder<DrawerAccountBloc, DrawerAccountState>(
+              builder: (context, state) {
+                final user = state.user ?? _authRepo.currentUser;
 
-              return SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(
-                  AppConstants.spacingTwenty,
-                  AppConstants.spacingUnitLg,
-                  AppConstants.spacingTwenty,
-                  AppConstants.spacingXl,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 1. Top Header ("Mon compte")
-                    _buildTopHeader(context),
-                    const SizedBox(height: AppConstants.spacingUnitLg),
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(
+                    AppConstants.spacingTwenty,
+                    AppConstants.spacingUnitLg,
+                    AppConstants.spacingTwenty,
+                    AppConstants.spacingXl,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. Top Header ("Mon compte")
+                      _buildTopHeader(context),
+                      const SizedBox(height: AppConstants.spacingUnitLg),
 
-                    // 2. White Profile & Stats Card (borderless, with shadow)
-                    _buildProfileCard(context, user, state),
-                    const SizedBox(height: AppConstants.spacingUnitXl),
+                      // 2. White Profile & Stats Card (borderless, with shadow)
+                      _buildProfileCard(context, user, state),
+                      const SizedBox(height: AppConstants.spacingUnitXl),
 
-                    // 3. First Grouped Card: Trajets & Paiement
-                    _buildGroupedMenuCard(
-                      children: [
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath:
-                              'assets/icons/refresh-ccw-clock-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconGreenBg,
-                          iconColor: AppColors.accountIconGreen,
-                          title: 'drawer.activity'.tr(),
-                          subtitle: 'drawer.activity_sub'.tr(),
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            _closeMenuIfNeeded(context);
-                            navigator.push(
-                              SlideRightToLeftRoute(
-                                page: const ActivityPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildItemDivider(),
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath: 'assets/icons/bus-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconBlueBg,
-                          iconColor: AppColors.accountIconBlue,
-                          title: 'drawer.tcu'.tr(),
-                          subtitle: 'drawer.tcu_sub'.tr(),
-                          onTap: () {
-                            LatLng? userLoc;
-                            try {
-                              userLoc =
-                                  context.read<HomeBloc>().state.userLocation;
-                            } catch (_) {}
-                            final navigator = Navigator.of(context);
-                            _closeMenuIfNeeded(context);
-                            navigator.push(
-                              SlideRightToLeftRoute(
-                                page: PublicTransportPage(
-                                  initialOriginLocation: userLoc,
+                      // 3. First Grouped Card: Trajets & Paiement
+                      _buildGroupedMenuCard(
+                        children: [
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconPath:
+                                'assets/icons/refresh-ccw-clock-svgrepo-com.svg',
+                            title: 'drawer.activity'.tr(),
+                            subtitle: 'drawer.activity_sub'.tr(),
+                            onTap: () {
+                              final navigator = Navigator.of(context);
+                              _closeMenuIfNeeded(context);
+                              navigator.push(
+                                SlideRightToLeftRoute(
+                                  page: const ActivityPage(),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildItemDivider(),
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath: 'assets/icons/star-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconAmberBg,
-                          iconColor: AppColors.accountIconAmber,
-                          title: 'drawer.saved_places'.tr(),
-                          subtitle: 'drawer.saved_places_sub'.tr(),
-                          onTap: () {
-                            LatLng? userLoc;
-                            try {
-                              userLoc =
-                                  context.read<HomeBloc>().state.userLocation;
-                            } catch (_) {}
-                            final navigator = Navigator.of(context);
-                            _closeMenuIfNeeded(context);
-                            navigator.push(
-                              SlideRightToLeftRoute(
-                                page: SavedPlacesPage(
-                                  currentUserLocation: userLoc,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildItemDivider(),
-                        ValueListenableBuilder<String>(
-                          valueListenable:
-                              PaymentMethodsService().selectedCodeNotifier,
-                          builder: (context, selectedCode, _) {
-                            return _buildStyledMenuItem(
-                              context: context,
-                              iconPath: 'assets/icons/wallet-svgrepo-com.svg',
-                              iconBgColor: AppColors.accountIconPurpleBg,
-                              iconColor: AppColors.accountIconPurple,
-                              title: 'drawer.payment_methods_title'.tr(),
-                              subtitle: PaymentMethodsService.getLabelForCode(
-                                selectedCode,
-                              ),
-                              onTap: () {
-                                PaymentMethodModal.show(context);
-                              },
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppConstants.spacingUnitLg),
-
-                    // 4. Second Grouped Card: Préférences & Sécurité
-                    _buildGroupedMenuCard(
-                      children: [
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath: 'assets/icons/security-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconGreenBg,
-                          iconColor: AppColors.accountIconGreen,
-                          title: 'drawer.safety'.tr(),
-                          subtitle: 'drawer.safety_sub'.tr(),
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            _closeMenuIfNeeded(context);
-                            navigator.push(
-                              SlideRightToLeftRoute(
-                                page: const SafetyPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildItemDivider(),
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath:
-                              'assets/icons/notification-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconAmberBg,
-                          iconColor: AppColors.accountIconAmber,
-                          title: 'drawer.notifications'.tr(),
-                          subtitle: 'drawer.notifications_sub'.tr(),
-                          onTap: () {
-                            _openNotificationsModal(context, user);
-                          },
-                        ),
-                        _buildItemDivider(),
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath: 'assets/icons/language-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconBlueBg,
-                          iconColor: AppColors.accountIconBlue,
-                          title: 'drawer.language'.tr(),
-                          subtitle: context.locale.languageCode == 'wo'
-                              ? 'common.wolof'.tr()
-                              : 'common.french'.tr(),
-                          onTap: () {
-                            _openLanguageSheet(context);
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppConstants.spacingUnitLg),
-
-                    // 5. Third Grouped Card: Assistance & Confidentialité
-                    _buildGroupedMenuCard(
-                      children: [
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconPath: 'assets/icons/question-svgrepo-com.svg',
-                          iconBgColor: AppColors.accountIconPurpleBg,
-                          iconColor: AppColors.accountIconPurple,
-                          title: 'drawer.help'.tr(),
-                          subtitle: 'drawer.help_sub'.tr(),
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            _closeMenuIfNeeded(context);
-                            navigator.push(
-                              SlideRightToLeftRoute(
-                                page: const HelpPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        _buildItemDivider(),
-                        _buildStyledMenuItem(
-                          context: context,
-                          iconWidget: const Icon(
-                            Icons.lock_outline_rounded,
-                            size: AppConstants.accountMenuIconSize,
-                            color: AppColors.accountIconRed,
+                              );
+                            },
                           ),
-                          iconBgColor: AppColors.accountIconRedBg,
-                          iconColor: AppColors.accountIconRed,
-                          title: 'drawer.privacy'.tr(),
-                          subtitle: 'drawer.privacy_sub'.tr(),
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            _closeMenuIfNeeded(context);
-                            navigator.push(
-                              SlideRightToLeftRoute(
-                                page: const PrivacyPage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconPath: 'assets/icons/star-svgrepo-com.svg',
+                            title: 'drawer.saved_places'.tr(),
+                            subtitle: 'drawer.saved_places_sub'.tr(),
+                            onTap: () {
+                              LatLng? userLoc;
+                              try {
+                                userLoc =
+                                    context.read<HomeBloc>().state.userLocation;
+                              } catch (_) {}
+                              final navigator = Navigator.of(context);
+                              _closeMenuIfNeeded(context);
+                              navigator.push(
+                                SlideRightToLeftRoute(
+                                  page: SavedPlacesPage(
+                                    currentUserLocation: userLoc,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          ValueListenableBuilder<String>(
+                            valueListenable:
+                                PaymentMethodsService().selectedCodeNotifier,
+                            builder: (context, selectedCode, _) {
+                              return _buildStyledMenuItem(
+                                context: context,
+                                iconPath: 'assets/icons/wallet-svgrepo-com.svg',
+                                title: 'drawer.payment_methods_title'.tr(),
+                                subtitle: PaymentMethodsService.getLabelForCode(
+                                  selectedCode,
+                                ),
+                                onTap: () {
+                                  PaymentMethodModal.show(context);
+                                },
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppConstants.spacingUnitLg),
+
+                      // 4. Second Grouped Card: Préférences & Sécurité
+                      _buildGroupedMenuCard(
+                        children: [
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconPath: 'assets/icons/security-svgrepo-com.svg',
+                            title: 'drawer.safety'.tr(),
+                            subtitle: 'drawer.safety_sub'.tr(),
+                            onTap: () {
+                              final navigator = Navigator.of(context);
+                              _closeMenuIfNeeded(context);
+                              navigator.push(
+                                SlideRightToLeftRoute(
+                                  page: const SafetyPage(),
+                                ),
+                              );
+                            },
+                          ),
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconPath:
+                                'assets/icons/notification-svgrepo-com.svg',
+                            title: 'drawer.notifications'.tr(),
+                            subtitle: 'drawer.notifications_sub'.tr(),
+                            onTap: () {
+                              _openNotificationsModal(context, user);
+                            },
+                          ),
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconPath: 'assets/icons/language-svgrepo-com.svg',
+                            title: 'drawer.language'.tr(),
+                            subtitle: context.locale.languageCode == 'wo'
+                                ? 'common.wolof'.tr()
+                                : 'common.french'.tr(),
+                            onTap: () {
+                              _openLanguageSheet(context);
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppConstants.spacingUnitLg),
+
+                      // 5. Third Grouped Card: Assistance & Confidentialité
+                      _buildGroupedMenuCard(
+                        children: [
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconPath: 'assets/icons/question-svgrepo-com.svg',
+                            title: 'drawer.help'.tr(),
+                            subtitle: 'drawer.help_sub'.tr(),
+                            onTap: () {
+                              final navigator = Navigator.of(context);
+                              _closeMenuIfNeeded(context);
+                              navigator.push(
+                                SlideRightToLeftRoute(
+                                  page: const HelpPage(),
+                                ),
+                              );
+                            },
+                          ),
+                          _buildStyledMenuItem(
+                            context: context,
+                            iconWidget: const Icon(
+                              Icons.lock_outline_rounded,
+                              size: AppConstants.accountMenuIconSize,
+                              color: Color(0xFF0F172A),
+                            ),
+                            title: 'drawer.privacy'.tr(),
+                            subtitle: 'drawer.privacy_sub'.tr(),
+                            onTap: () {
+                              final navigator = Navigator.of(context);
+                              _closeMenuIfNeeded(context);
+                              navigator.push(
+                                SlideRightToLeftRoute(
+                                  page: const PrivacyPage(),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: AppConstants.spacingUnitLg),
 
                     // 6. Logout Card at the bottom
@@ -339,62 +314,78 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildTopHeader(BuildContext context) {
-    final canPop = Navigator.of(context).canPop() || _isInDrawer(context);
+    final isIOS = defaultTargetPlatform == TargetPlatform.iOS ||
+        Theme.of(context).platform == TargetPlatform.iOS;
     final rawTitle = 'drawer.account_title'.tr();
     final titleText =
         rawTitle == 'drawer.account_title' ? 'Mon compte' : rawTitle;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Text(
-            titleText,
-            style: GoogleFonts.inter(
-              fontSize: AppConstants.accountTitleFontSize,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.5,
-            ),
-          ),
-        ),
-        if (canPop)
-          Material(
-            color: AppColors.white,
-            shape: const CircleBorder(),
-            elevation: AppConstants.elevationNone,
-            child: InkWell(
-              key: const Key('drawer_close_button'),
-              customBorder: const CircleBorder(),
-              onTap: () => Navigator.of(context).maybePop(),
-              child: Container(
-                width: AppConstants.circularIconContainerSize,
-                height: AppConstants.circularIconContainerSize,
-                decoration: const BoxDecoration(
-                  color: AppColors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.shadowSubtleBlack,
-                      blurRadius: AppConstants.spacingUnit,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.close_rounded,
-                  size: AppConstants.iconSizeLg,
-                  color: AppColors.textPrimary,
-                ),
+    return SizedBox(
+      height: AppConstants.circularIconContainerSize,
+      width: double.infinity,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Titre centré
+          Center(
+            child: Text(
+              titleText,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: AppConstants.accountTitleFontSize,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.5,
               ),
             ),
           ),
-      ],
+          // Flèche de retour à gauche uniquement sur Android (masquée sur iOS)
+          if (!isIOS)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Material(
+                color: AppColors.transparent,
+                child: InkWell(
+                  key: const Key('drawer_back_button'),
+                  customBorder: const CircleBorder(),
+                  onTap: () {
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    } else {
+                      _closeMenuIfNeeded(context);
+                    }
+                  },
+                  child: Container(
+                    width: AppConstants.circularIconContainerSize,
+                    height: AppConstants.circularIconContainerSize,
+                    decoration: const BoxDecoration(
+                      color: AppColors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.shadowSubtleBlack,
+                          blurRadius: AppConstants.spacingUnit,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.arrow_back_rounded,
+                      size: AppConstants.iconSizeLg,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -699,22 +690,12 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     );
   }
 
-  Widget _buildItemDivider() {
-    return const Divider(
-      height: AppConstants.spacingTiny,
-      thickness: AppConstants.spacingTiny,
-      indent: AppConstants.accountDividerIndent,
-      endIndent: AppConstants.spacingMd,
-      color: AppColors.subtleDivider,
-    );
-  }
-
   Widget _buildStyledMenuItem({
     required BuildContext context,
     String? iconPath,
     Widget? iconWidget,
-    required Color iconBgColor,
-    required Color iconColor,
+    Color iconBgColor = const Color(0xFFF3F4F6),
+    Color iconColor = const Color(0xFF0F172A),
     required String title,
     required String subtitle,
     required VoidCallback onTap,
@@ -781,12 +762,6 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                   ],
                 ),
               ),
-              const SizedBox(width: AppConstants.spacingSm),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: AppConstants.iconSizeMd,
-                color: AppColors.accountChevronGrey,
-              ),
             ],
           ),
         ),
@@ -811,7 +786,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                 width: AppConstants.accountMenuIconCircleSize,
                 height: AppConstants.accountMenuIconCircleSize,
                 decoration: const BoxDecoration(
-                  color: AppColors.accountIconRedBg,
+                  color: Color(0xFFF3F4F6),
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
@@ -820,7 +795,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                   width: AppConstants.accountMenuIconSize,
                   height: AppConstants.accountMenuIconSize,
                   colorFilter: const ColorFilter.mode(
-                    AppColors.sirenRed,
+                    Color(0xFF0F172A),
                     BlendMode.srcIn,
                   ),
                 ),
@@ -835,11 +810,6 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                     color: AppColors.sirenRed,
                   ),
                 ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: AppConstants.iconSizeMd,
-                color: AppColors.sirenRed,
               ),
             ],
           ),

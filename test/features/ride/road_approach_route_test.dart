@@ -176,8 +176,8 @@ void main() {
 
       // Verifies driver info
       expect(find.text('DK 3453 BC'), findsOneWidget);
-      expect(find.text('Toyota Corolla Rouge'), findsOneWidget);
-      expect(find.text('sidy'), findsOneWidget);
+      expect(find.textContaining('Toyota Corolla'), findsOneWidget);
+      expect(find.textContaining('sidy'), findsOneWidget);
     });
 
     test('Decodes plannedPolyline from Patte d\'Oie destination route', () {

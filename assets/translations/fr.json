@@ -328,7 +328,12 @@
     "send_alert_to": "Envoyer l'alerte par SMS à :"
   },
   "rating": {
+    "page_title": "Noter la course",
+    "how_is_trip": "Comment s'est passée votre course ?",
+    "feedback_hint": "Votre avis nous aide à améliorer l'expérience de conduite",
     "how_was_ride_with": "Comment s'est passée votre course avec {} ?",
+    "additional_comments": "Commentaires additionnels...",
+    "submit_review": "Envoyer mon avis",
     "safe_driving": "Conduite prudente",
     "punctual": "Ponctuel",
     "clean_car": "Voiture propre",

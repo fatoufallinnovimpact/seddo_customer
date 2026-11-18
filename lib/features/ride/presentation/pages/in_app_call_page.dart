@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/presentation/widgets/driver_avatar_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 enum CallState {
@@ -20,17 +21,19 @@ enum CallState {
 /// Built with responsive scrollable layout to prevent any overflow on all screen sizes.
 class InAppCallPage extends StatefulWidget {
   final DriverModel driver;
+  final String? rideId;
 
   const InAppCallPage({
     super.key,
     required this.driver,
+    this.rideId,
   });
 
-  static Future<void> show(BuildContext context, {required DriverModel driver}) {
+  static Future<void> show(BuildContext context, {required DriverModel driver, String? rideId}) {
     return Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
-        pageBuilder: (_, animation, secondaryAnimation) => InAppCallPage(driver: driver),
+        pageBuilder: (_, animation, secondaryAnimation) => InAppCallPage(driver: driver, rideId: rideId),
         transitionsBuilder: (_, animation, secondaryAnimation, child) {
           final curved = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
           return SlideTransition(
@@ -307,33 +310,24 @@ class _InAppCallPageState extends State<InAppCallPage>
                                     ),
 
                                   // Center Avatar
-                                  Container(
-                                    width: 110,
-                                    height: 110,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: AppColors.primary,
-                                        width: 2.5,
+                                  DriverAvatarWidget(
+                                    photoUrl: widget.driver.photoUrl,
+                                    rideId: widget.rideId,
+                                    name: widget.driver.name,
+                                    size: 110,
+                                    backgroundColor: const Color(0xFF2C2F33),
+                                    initialsColor: Colors.white,
+                                    border: Border.all(
+                                      color: AppColors.primary,
+                                      width: 2.5,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.primary.withValues(alpha: 0.3),
+                                        blurRadius: 20,
+                                        spreadRadius: 3,
                                       ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.primary.withValues(alpha: 0.3),
-                                          blurRadius: 20,
-                                          spreadRadius: 3,
-                                        ),
-                                      ],
-                                    ),
-                                    child: ClipOval(
-                                      child: widget.driver.photoUrl != null &&
-                                              widget.driver.photoUrl!.isNotEmpty
-                                          ? Image.network(
-                                              widget.driver.photoUrl!,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, _, _) => _buildDefaultAvatar(),
-                                            )
-                                          : _buildDefaultAvatar(),
-                                    ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -508,22 +502,6 @@ class _InAppCallPageState extends State<InAppCallPage>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDefaultAvatar() {
-    return Container(
-      color: const Color(0xFF2C2F33),
-      child: Center(
-        child: Text(
-          widget.driver.name.isNotEmpty ? widget.driver.name[0].toUpperCase() : 'C',
-          style: GoogleFonts.inter(
-            fontSize: 42,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
-        ),
       ),
     );
   }

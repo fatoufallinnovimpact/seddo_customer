@@ -39,6 +39,14 @@ class RideService {
   /// Dernière erreur retournée par POST /v1/rides (ex: 422 PAYMENT_DECLINED, INSUFFICIENT_FUNDS)
   static Map<String, dynamic>? lastCreateRideError;
 
+  /// Réinitialise l'état de la course active en mémoire pour éviter toute réutilisation
+  /// de données périmées (code de départ, ancien ID, statut antérieur) lors d'une nouvelle commande.
+  static void clearActiveRideData() {
+    lastCreatedRideId = null;
+    lastCreatedRideData = null;
+    lastCreateRideError = null;
+  }
+
   String get endpoint => _endpoint;
 
   RideService({Dio? dio}) : _dio = dio ?? ApiClient().dio;
@@ -141,7 +149,18 @@ class RideService {
         final data = response.data is String
             ? jsonDecode(response.data as String) as Map<String, dynamic>
             : response.data as Map<String, dynamic>;
-        final rideId = data['id']?.toString();
+        final rideObj = data['ride'] is Map<String, dynamic>
+            ? data['ride'] as Map<String, dynamic>
+            : data;
+        final paymentObj = data['payment'] as Map<String, dynamic>?;
+        final rideId = (rideObj['id'] ??
+                rideObj['_id'] ??
+                rideObj['rideId'] ??
+                data['id'] ??
+                data['_id'] ??
+                data['rideId'] ??
+                paymentObj?['rideId'])
+            ?.toString();
         if (rideId != null && rideId.isNotEmpty) {
           lastCreatedRideId = rideId;
         }
@@ -239,7 +258,18 @@ class RideService {
                         ? jsonDecode(retryResponse.data as String)
                             as Map<String, dynamic>
                         : retryResponse.data as Map<String, dynamic>;
-                    final newRideId = retryData['id']?.toString();
+                    final retryRideObj = retryData['ride'] is Map<String, dynamic>
+                        ? retryData['ride'] as Map<String, dynamic>
+                        : retryData;
+                    final retryPaymentObj = retryData['payment'] as Map<String, dynamic>?;
+                    final newRideId = (retryRideObj['id'] ??
+                            retryRideObj['_id'] ??
+                            retryRideObj['rideId'] ??
+                            retryData['id'] ??
+                            retryData['_id'] ??
+                            retryData['rideId'] ??
+                            retryPaymentObj?['rideId'])
+                        ?.toString();
                     if (newRideId != null && newRideId.isNotEmpty) {
                       lastCreatedRideId = newRideId;
                     }
@@ -868,6 +898,54 @@ class RideService {
             '[RideService] ⚠️ Erreur GET receipt link [${e.response?.statusCode}]: ${e.response?.data}');
       } else {
         debugPrint('[RideService] ⚠️ Erreur inattendue GET receipt link: $e');
+      }
+    }
+    return null;
+  }
+
+  /// GET /v1/rides/{id}/{party}/photo (ex: GET /v1/rides/{id}/driver/photo)
+  /// Récupère la photo de profil du chauffeur (ou du client) pour la course
+  Future<Uint8List?> getPartyPhoto({
+    required String rideId,
+    String party = 'driver',
+    String? explicitUrl,
+  }) async {
+    try {
+      final cleanUrl = explicitUrl?.trim();
+      final cleanRideId = rideId.trim();
+
+      if ((cleanUrl == null || cleanUrl.isEmpty) && cleanRideId.isEmpty) {
+        return null;
+      }
+
+      final url = (cleanUrl != null && cleanUrl.isNotEmpty)
+          ? (cleanUrl.startsWith('http')
+              ? cleanUrl
+              : (cleanUrl.startsWith('/')
+                  ? '${BaseUrl.current}$cleanUrl'
+                  : '${BaseUrl.current}/$cleanUrl'))
+          : ApiEndpoints.ridePartyPhoto(cleanRideId, party);
+
+      debugPrint('[RideService] 🚀 GET $url (party photo)');
+      final response = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null && response.data!.isNotEmpty) {
+        debugPrint('[RideService] ✅ Photo reçue ($party): ${response.data!.length} octets');
+        return Uint8List.fromList(response.data!);
+      }
+    } catch (e) {
+      if (e is DioException) {
+        debugPrint(
+            '[RideService] ℹ️ Photo non disponible ($party) [${e.response?.statusCode}]');
+      } else {
+        debugPrint('[RideService] ℹ️ Erreur chargement photo ($party): $e');
       }
     }
     return null;

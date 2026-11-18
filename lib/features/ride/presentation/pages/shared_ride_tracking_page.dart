@@ -10,6 +10,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/presentation/widgets/driver_avatar_widget.dart';
 import 'package:seddo/features/ride/data/models/shared_ride_details_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
@@ -356,15 +357,6 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
         ? _sharedDetails!.driverFirstName
         : widget.driver.name;
 
-    final initials = driverName.isNotEmpty
-        ? driverName
-            .split(' ')
-            .map((e) => e.isNotEmpty ? e[0] : '')
-            .take(2)
-            .join()
-            .toUpperCase()
-        : 'MS';
-
     final vehicleText = _sharedDetails != null &&
             _sharedDetails!.vehicleMake.isNotEmpty
         ? '${_sharedDetails!.vehicleMake} ${_sharedDetails!.vehicleModel} · ${_sharedDetails!.vehiclePlate} (${_sharedDetails!.vehicleColor})'
@@ -643,22 +635,14 @@ class _SharedRideTrackingPageState extends State<SharedRideTrackingPage>
                   // Driver card
                   Row(
                     children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: const BoxDecoration(
-                          color: AppColors.avatarBeige,
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          initials,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
+                      DriverAvatarWidget(
+                        photoUrl: widget.driver.photoUrl,
+                        rideId: widget.rideId,
+                        name: driverName,
+                        size: 48,
+                        backgroundColor: AppColors.avatarBeige,
+                        initialsColor: AppColors.textPrimary,
+                        rideService: widget.rideService,
                       ),
                       const SizedBox(width: 12),
                       Expanded(

@@ -36,7 +36,7 @@ class DriverActionButtonsWidget extends StatelessWidget {
             ),
             onPressed: onMessagePressed,
             icon: SvgPicture.asset(
-              'assets/icons/message-square-lines-svgrepo-com.svg',
+              'assets/icons/chat-round-svgrepo-com.svg',
               width: 18,
               height: 18,
               colorFilter: const ColorFilter.mode(

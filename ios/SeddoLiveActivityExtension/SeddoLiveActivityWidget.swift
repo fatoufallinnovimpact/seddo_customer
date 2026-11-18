@@ -9,7 +9,7 @@ struct SeddoLiveActivityWidget: Widget {
         ActivityConfiguration(for: RideActivityAttributes.self) { context in
             // Translucent glass Lock Screen / Notification Banner presentation
             SeddoLockScreenLiveView(context: context)
-                .activityBackgroundTint(nil)
+                .modifier(SeddoActivityBackgroundModifier())
                 .activitySystemActionForegroundColor(Color(red: 251/255, green: 91/255, blue: 0/255))
         } dynamicIsland: { context in
             DynamicIsland {
@@ -17,7 +17,7 @@ struct SeddoLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
                         Image(systemName: "car.fill")
-                            .foregroundColor(carTint(from: context.attributes.carColor))
+                            .foregroundColor(seddoDefaultCarGray)
                             .font(.system(size: 16, weight: .bold))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(context.attributes.driverName)
@@ -77,7 +77,7 @@ struct SeddoLiveActivityWidget: Widget {
                             Spacer()
                             HStack(spacing: 4) {
                                 Circle()
-                                    .fill(carTint(from: context.attributes.carColor))
+                                    .fill(seddoDefaultCarGray)
                                     .frame(width: 8, height: 8)
                                 Text(context.attributes.carColor)
                                     .font(.system(size: 11, weight: .medium))
@@ -167,9 +167,37 @@ struct SeddoLockScreenLiveView: View {
         return "Arrivée imminente"
     }
 
+    private var effectiveDriverName: String {
+        if let s = context.state.driverName?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            return s
+        }
+        return context.attributes.driverName
+    }
+
+    private var effectiveCarModel: String {
+        if let s = context.state.carModel?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            return s
+        }
+        return context.attributes.carModel
+    }
+
+    private var effectiveCarColor: String {
+        if let s = context.state.carColor?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            return s
+        }
+        return context.attributes.carColor
+    }
+
+    private var effectiveLicensePlate: String {
+        if let s = context.state.licensePlate?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+            return s
+        }
+        return context.attributes.licensePlate
+    }
+
     private var vehicleSubtitle: String {
-        let color = context.attributes.carColor.trimmingCharacters(in: .whitespacesAndNewlines)
-        let model = context.attributes.carModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let color = effectiveCarColor.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = effectiveCarModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !color.isEmpty && !model.isEmpty {
             return "\(color.capitalized) \(model)"
         }
@@ -177,7 +205,7 @@ struct SeddoLockScreenLiveView: View {
     }
 
     private var plateText: String {
-        context.attributes.licensePlate.isEmpty ? "AA-647-JZ" : context.attributes.licensePlate
+        effectiveLicensePlate.isEmpty ? "AA-647-JZ" : effectiveLicensePlate
     }
 
     private func driverInitials(from name: String) -> String {
@@ -213,7 +241,7 @@ struct SeddoLockScreenLiveView: View {
 
                     let destName = context.attributes.destinationText.trimmingCharacters(in: .whitespacesAndNewlines)
                     let cleanDest = destName.isEmpty ? "la destination" : (destName.components(separatedBy: ",").first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? destName)
-                    Text(isTrip ? "En route vers \(cleanDest)" : (isArrivedAtPickup ? "Au point de départ" : "\(context.attributes.driverName) arrive bientôt"))
+                    Text(isTrip ? "En route vers \(cleanDest)" : (isArrivedAtPickup ? "Au point de départ" : "\(effectiveDriverName) arrive bientôt"))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color.white.opacity(0.85))
                         .lineLimit(2)
@@ -225,16 +253,16 @@ struct SeddoLockScreenLiveView: View {
                 // Side-view car preview colored with REAL vehicle color (facing right)
                 Image(systemName: "car.side.fill")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(carTint(from: context.attributes.carColor))
+                    .foregroundColor(seddoDefaultCarGray)
                     .scaleEffect(x: -1, y: 1)
                     .padding(.trailing, 4)
             }
 
-            // Middle Row: Continuous Solid Route Line with Top-Down Car in REAL COLOR and White Destination Flag (flag-svgrepo-com.svg)
-            if !isArrivedAtPickup && !isFinished {
+            // Middle Row: Continuous Solid Route Line with Top-Down Car in REAL COLOR and White Destination Flag (always shown until finished)
+            if !isFinished {
                 SeddoRouteTrackView(
-                    progress: context.state.progress,
-                    carColor: context.attributes.carColor
+                    progress: isArrivedAtPickup ? 0.94 : context.state.progress,
+                    carColor: effectiveCarColor
                 )
                 .frame(height: 28)
             }
@@ -246,13 +274,13 @@ struct SeddoLockScreenLiveView: View {
                     Circle()
                         .fill(Color(red: 38/255, green: 50/255, blue: 56/255))
                         .frame(width: 34, height: 34)
-                    Text(driverInitials(from: context.attributes.driverName))
+                    Text(driverInitials(from: effectiveDriverName))
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(context.attributes.driverName)
+                    Text(effectiveDriverName)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(1)
@@ -277,10 +305,26 @@ struct SeddoLockScreenLiveView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.black.opacity(0.65))
-        )
+        .background(SeddoLiveCardBackground())
+    }
+}
+
+/// Gris par défaut de la voiture dans la Live Activity (on ne colorie plus selon la couleur réelle).
+let seddoDefaultCarGray = Color(red: 156/255, green: 163/255, blue: 175/255)
+
+/// Fond de la Live Activity :
+/// - Fond 100% transparent / verre liquide natif (Liquid Glass d'iOS) sans carte noire opaque
+@available(iOSApplicationExtension 16.1, *)
+struct SeddoActivityBackgroundModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.activityBackgroundTint(nil)
+    }
+}
+
+@available(iOSApplicationExtension 16.1, *)
+struct SeddoLiveCardBackground: View {
+    var body: some View {
+        Color.clear
     }
 }
 
@@ -413,7 +457,7 @@ struct SeddoRouteTrackView: View {
                 // 4. Moving Car directly on the track colored with the REAL vehicle color (flipped to face right/forward towards destination)
                 Image(systemName: "car.side.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(carTint(from: carColor))
+                    .foregroundColor(seddoDefaultCarGray)
                     .scaleEffect(x: -1, y: 1)
                     .shadow(color: Color.black.opacity(0.45), radius: 2, x: 0, y: 1)
                     .position(x: carX, y: centerY)
@@ -426,20 +470,41 @@ struct SeddoRouteTrackView: View {
 func carTint(from colorStr: String) -> Color {
     let clean = colorStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
+    if clean.contains("mauve") || clean.contains("meuve") || clean.contains("violet") || clean.contains("purple") || clean.contains("pourpre") || clean.contains("lilas") || clean.contains("prune") || clean.contains("lavande") || clean.contains("indigo") {
+        return Color(red: 147/255, green: 51/255, blue: 234/255)
+    }
+    if clean.contains("rose") || clean.contains("pink") || clean.contains("magenta") || clean.contains("fuchsia") || clean.contains("corail") {
+        return Color(red: 236/255, green: 72/255, blue: 153/255)
+    }
     if clean.contains("noir") || clean.contains("black") {
         return Color(white: 0.15)
     }
     if clean.contains("blanc") || clean.contains("white") {
         return Color(white: 0.85)
     }
-    if clean.contains("rouge") || clean.contains("red") || clean.contains("bordeaux") {
+    if clean.contains("bordeaux") || clean.contains("grenat") || clean.contains("burgundy") {
+        return Color(red: 153/255, green: 27/255, blue: 27/255)
+    }
+    if clean.contains("rouge") || clean.contains("red") {
         return Color(red: 220/255, green: 38/255, blue: 38/255)
+    }
+    if clean.contains("turquoise") || clean.contains("cyan") || clean.contains("bleu ciel") {
+        return Color(red: 6/255, green: 182/255, blue: 212/255)
+    }
+    if clean.contains("marine") || clean.contains("nuit") || clean.contains("navy") {
+        return Color(red: 30/255, green: 58/255, blue: 138/255)
     }
     if clean.contains("bleu") || clean.contains("blue") {
         return Color(red: 37/255, green: 99/255, blue: 235/255)
     }
+    if clean.contains("doré") || clean.contains("dore") || clean.contains("gold") || clean.contains("champagne") {
+        return Color(red: 217/255, green: 119/255, blue: 6/255)
+    }
     if clean.contains("jaune") || clean.contains("yellow") {
         return Color(red: 245/255, green: 158/255, blue: 11/255)
+    }
+    if clean.contains("anthracite") || clean.contains("charcoal") {
+        return Color(red: 75/255, green: 85/255, blue: 99/255)
     }
     if clean.contains("gris") || clean.contains("grey") || clean.contains("argent") || clean.contains("silver") {
         return Color(red: 156/255, green: 163/255, blue: 175/255)
@@ -450,7 +515,13 @@ func carTint(from colorStr: String) -> Color {
     if clean.contains("orange") {
         return Color(red: 234/255, green: 88/255, blue: 12/255)
     }
-    if clean.contains("marron") || clean.contains("brown") {
+    if clean.contains("beige") || clean.contains("crème") || clean.contains("creme") || clean.contains("ivoire") {
+        return Color(red: 214/255, green: 199/255, blue: 161/255)
+    }
+    if clean.contains("bronze") || clean.contains("cuivre") {
+        return Color(red: 180/255, green: 83/255, blue: 9/255)
+    }
+    if clean.contains("marron") || clean.contains("brown") || clean.contains("brun") {
         return Color(red: 140/255, green: 70/255, blue: 30/255)
     }
 

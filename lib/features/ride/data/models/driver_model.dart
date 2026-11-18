@@ -116,6 +116,16 @@ class DriverModel {
   }
 
   factory DriverModel.fromJson(Map<String, dynamic> json) {
+    final vehicleMap = json['vehicle'] is Map<String, dynamic>
+        ? json['vehicle'] as Map<String, dynamic>
+        : null;
+    final resolvedColor = (json['carColor'] ??
+            json['vehicleColor'] ??
+            json['color'] ??
+            vehicleMap?['color'] ??
+            vehicleMap?['carColor'] ??
+            'Blanc')
+        .toString();
     return DriverModel(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Chauffeur Seddo',
@@ -124,7 +134,7 @@ class DriverModel {
       rating: (json['rating'] as num?)?.toDouble() ?? 4.9,
       totalRides: json['totalRides'] as int? ?? 1250,
       carModel: json['carModel'] as String? ?? 'Toyota Corolla',
-      carColor: json['carColor'] as String? ?? 'Blanc',
+      carColor: resolvedColor,
       licensePlate: json['licensePlate'] as String? ?? 'DK-4582-AB',
       rideType: json['rideType'] == 'confort' ? RideType.confort : RideType.eco,
       currentLocation: LatLng(
@@ -163,7 +173,7 @@ class DriverModel {
       carModel: rideType == RideType.confort
           ? 'Mercedes-Benz Classe C'
           : 'Toyota Corolla',
-      carColor: 'Gris argent',
+      carColor: '',
       licensePlate: 'DK-4821-AB',
       rideType: rideType,
       currentLocation: location ?? const LatLng(14.6980, -17.4680),
@@ -173,43 +183,208 @@ class DriverModel {
   }
 
   /// Extrait et instancie un [DriverModel] depuis la réponse de l'API :
-  /// GET /v1/rides/{id} ou GET /v1/rides/current
+  /// GET /v1/rides/{id} ou GET /v1/rides/current ou événement WebSocket
   factory DriverModel.fromRideJson(
     Map<String, dynamic> rawJson, {
     RideType? defaultRideType,
+    String? fallbackCarColor,
+    String? fallbackName,
+    String? fallbackPhotoUrl,
   }) {
-    final json = rawJson['ride'] is Map<String, dynamic>
-        ? rawJson['ride'] as Map<String, dynamic>
+    final unwrapped = rawJson['data'] is Map<String, dynamic>
+        ? rawJson['data'] as Map<String, dynamic>
         : rawJson;
+
+    final json = unwrapped['ride'] is Map<String, dynamic>
+        ? unwrapped['ride'] as Map<String, dynamic>
+        : (rawJson['ride'] is Map<String, dynamic>
+            ? rawJson['ride'] as Map<String, dynamic>
+            : unwrapped);
 
     final driverRaw = json['driver'] is Map<String, dynamic>
         ? json['driver'] as Map<String, dynamic>
-        : json;
+        : (unwrapped['driver'] is Map<String, dynamic>
+            ? unwrapped['driver'] as Map<String, dynamic>
+            : json);
+
+    final userRaw = driverRaw['user'] is Map<String, dynamic>
+        ? driverRaw['user'] as Map<String, dynamic>
+        : (driverRaw['identity'] is Map<String, dynamic>
+            ? driverRaw['identity'] as Map<String, dynamic>
+            : (driverRaw['profile'] is Map<String, dynamic>
+                ? driverRaw['profile'] as Map<String, dynamic>
+                : <String, dynamic>{}));
 
     final vehicleRaw = driverRaw['vehicle'] is Map<String, dynamic>
         ? driverRaw['vehicle'] as Map<String, dynamic>
-        : <String, dynamic>{};
+        : (driverRaw['vehicule'] is Map<String, dynamic>
+            ? driverRaw['vehicule'] as Map<String, dynamic>
+            : (json['vehicle'] is Map<String, dynamic>
+                ? json['vehicle'] as Map<String, dynamic>
+                : (json['vehicule'] is Map<String, dynamic>
+                    ? json['vehicule'] as Map<String, dynamic>
+                    : (unwrapped['vehicle'] is Map<String, dynamic>
+                        ? unwrapped['vehicle'] as Map<String, dynamic>
+                        : (unwrapped['vehicule'] is Map<String, dynamic>
+                            ? unwrapped['vehicule'] as Map<String, dynamic>
+                            : (rawJson['vehicle'] is Map<String, dynamic>
+                                ? rawJson['vehicle'] as Map<String, dynamic>
+                                : (rawJson['vehicule'] is Map<String, dynamic>
+                                    ? rawJson['vehicule'] as Map<String, dynamic>
+                                    : (driverRaw['car'] is Map<String, dynamic>
+                                        ? driverRaw['car'] as Map<String, dynamic>
+                                        : (json['car'] is Map<String, dynamic>
+                                            ? json['car'] as Map<String, dynamic>
+                                            : <String, dynamic>{})))))))));
 
-    final firstName = driverRaw['firstName'] as String? ?? '';
-    final lastName = driverRaw['lastName'] as String? ?? '';
-    String resolvedName = driverRaw['name'] as String? ?? '';
-    if (resolvedName.isEmpty && (firstName.isNotEmpty || lastName.isNotEmpty)) {
+    String? firstNonEmpty(List<dynamic> candidates) {
+      for (final c in candidates) {
+        if (c != null) {
+          final str = c.toString().trim();
+          if (str.isNotEmpty && str.toLowerCase() != 'null') {
+            return str;
+          }
+        }
+      }
+      return null;
+    }
+
+    final firstName = firstNonEmpty([
+          driverRaw['firstName'],
+          driverRaw['prenom'],
+          driverRaw['givenName'],
+          userRaw['firstName'],
+          userRaw['prenom'],
+          json['driverFirstName'],
+        ]) ??
+        '';
+    final lastName = firstNonEmpty([
+          driverRaw['lastName'],
+          driverRaw['nom'],
+          driverRaw['familyName'],
+          userRaw['lastName'],
+          userRaw['nom'],
+          json['driverLastName'],
+        ]) ??
+        '';
+    String resolvedName = firstNonEmpty([
+          driverRaw['fullName'],
+          driverRaw['displayName'],
+          userRaw['fullName'],
+          userRaw['name'],
+          driverRaw['name'],
+          json['driverName'],
+        ]) ??
+        '';
+
+    bool isAbbreviatedName(String n) {
+      final trimmed = n.trim();
+      if (trimmed.isEmpty) return true;
+      final parts = trimmed.split(RegExp(r'\s+'));
+      if (parts.length < 2) return true;
+      final last = parts.last.replaceAll('.', '');
+      return trimmed.endsWith('.') || last.length <= 1;
+    }
+
+    if (firstName.isNotEmpty && lastName.isNotEmpty) {
+      final combined = '$firstName $lastName'.trim();
+      final cleanLast = lastName.replaceAll('.', '').trim();
+      if (resolvedName.isEmpty ||
+          isAbbreviatedName(resolvedName) ||
+          (cleanLast.length > 1 && combined.length > resolvedName.length)) {
+        resolvedName = combined;
+      }
+    } else if (lastName.isNotEmpty &&
+        resolvedName.isNotEmpty &&
+        !resolvedName.toLowerCase().contains(lastName.toLowerCase())) {
+      final cleanFirst = resolvedName.split(RegExp(r'\s+')).first;
+      resolvedName = '$cleanFirst $lastName'.trim();
+    } else if (resolvedName.isEmpty &&
+        (firstName.isNotEmpty || lastName.isNotEmpty)) {
       resolvedName = '$firstName $lastName'.trim();
     }
-    if (resolvedName.isEmpty) resolvedName = 'Chauffeur Seddo';
 
-    final vehicleMake = vehicleRaw['make'] as String? ?? '';
-    final vehicleModel = vehicleRaw['model'] as String? ??
-        (driverRaw['carModel'] as String? ?? 'Toyota Corolla');
+    // Si une réponse partielle ne contient que le prénom ou un nom abrégé ("Abibatou f.") alors qu'on connaissait déjà le nom complet (ex: "Abibatou Fall"), on conserve le nom complet
+    if (fallbackName != null &&
+        !isAbbreviatedName(fallbackName) &&
+        isAbbreviatedName(resolvedName) &&
+        (resolvedName.isEmpty ||
+            fallbackName
+                .trim()
+                .toLowerCase()
+                .startsWith(resolvedName.split(' ').first.toLowerCase()))) {
+      resolvedName = fallbackName.trim();
+    }
+
+    if (resolvedName.isEmpty) {
+      resolvedName = (fallbackName != null && fallbackName.trim().isNotEmpty)
+          ? fallbackName.trim()
+          : 'Chauffeur Seddo';
+    }
+
+    final vehicleMake = (vehicleRaw['make'] ?? vehicleRaw['brand'] ?? '').toString().trim();
+    final vehicleModel = firstNonEmpty([
+          vehicleRaw['model'],
+          driverRaw['vehicleModel'],
+          driverRaw['carModel'],
+          json['vehicleModel'],
+          json['carModel'],
+        ]) ??
+        'Toyota Corolla';
     final resolvedCarModel =
         vehicleMake.isNotEmpty && !vehicleModel.startsWith(vehicleMake)
             ? '$vehicleMake $vehicleModel'
             : vehicleModel;
 
-    final resolvedCarColor = vehicleRaw['color'] as String? ??
-        (driverRaw['carColor'] as String? ?? 'Gris');
-    final resolvedPlate = vehicleRaw['plate'] as String? ??
-        (driverRaw['licensePlate'] as String? ?? 'DK-4582-AB');
+    final resolvedCarColor = firstNonEmpty([
+          vehicleRaw['color'],
+          vehicleRaw['vehicleColor'],
+          vehicleRaw['vehicle_color'],
+          vehicleRaw['carColor'],
+          vehicleRaw['car_color'],
+          vehicleRaw['couleur'],
+          vehicleRaw['paint'],
+          driverRaw['vehicleColor'],
+          driverRaw['vehicle_color'],
+          driverRaw['carColor'],
+          driverRaw['car_color'],
+          driverRaw['color'],
+          driverRaw['couleur'],
+          json['vehicleColor'],
+          json['vehicle_color'],
+          json['carColor'],
+          json['car_color'],
+          json['color'],
+          json['couleur'],
+          unwrapped['vehicleColor'],
+          unwrapped['vehicle_color'],
+          unwrapped['carColor'],
+          unwrapped['car_color'],
+          unwrapped['color'],
+          unwrapped['couleur'],
+          rawJson['vehicleColor'],
+          rawJson['vehicle_color'],
+          rawJson['carColor'],
+          rawJson['car_color'],
+          rawJson['color'],
+          rawJson['couleur'],
+          if (fallbackCarColor != null &&
+              fallbackCarColor.trim().isNotEmpty &&
+              fallbackCarColor.trim().toLowerCase() != 'gris' &&
+              fallbackCarColor.trim().toLowerCase() != 'grise')
+            fallbackCarColor,
+        ]) ??
+        '';
+    final resolvedPlate = firstNonEmpty([
+          vehicleRaw['plate'],
+          vehicleRaw['licensePlate'],
+          vehicleRaw['registrationNumber'],
+          driverRaw['licensePlate'],
+          driverRaw['plate'],
+          json['licensePlate'],
+          json['plate'],
+        ]) ??
+        'DK-4582-AB';
 
     // Location / Position support (backend returns "position": {"lat": ..., "lng": ..., "heading": ...})
     final posRaw = driverRaw['position'] is Map<String, dynamic>
@@ -262,14 +437,32 @@ class DriverModel {
         rawJson['bearing']);
 
     // Route & Approach route (phase APPROACH with real street polyline and traffic)
-    final routeRaw = json['route'] is Map<String, dynamic>
-        ? json['route'] as Map<String, dynamic>
-        : null;
+    final routeRaw = json['route'] is Map
+        ? Map<String, dynamic>.from(json['route'] as Map)
+        : (rawJson['route'] is Map
+            ? Map<String, dynamic>.from(rawJson['route'] as Map)
+            : null);
+
+    int? parseSec(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toInt();
+      if (v is String) return num.tryParse(v)?.toInt();
+      return null;
+    }
+
     final approachPoly = routeRaw?['polyline'] as String? ??
         (json['approachPolyline'] as String?);
-    final approachDurS = (routeRaw?['durationS'] as num?)?.toInt() ??
-        (json['pickupEtaS'] as num?)?.toInt();
-    final approachDistM = (routeRaw?['distanceM'] as num?)?.toInt();
+    final routeDurS = parseSec(routeRaw?['durationS'] ??
+        routeRaw?['etaS'] ??
+        routeRaw?['durationSeconds']);
+    final rideDurS = parseSec(json['pickupEtaS'] ??
+        json['durationS'] ??
+        json['durationSeconds'] ??
+        rawJson['durationS']);
+    final approachDurS = (routeDurS != null && routeDurS > 15)
+        ? routeDurS
+        : (rideDurS ?? routeDurS);
+    final approachDistM = parseSec(routeRaw?['distanceM'] ?? json['distanceM']);
 
     final rawAppTraffic = (routeRaw?['traffic'] as List<dynamic>? ?? []);
     final appTraffic = rawAppTraffic
@@ -302,8 +495,54 @@ class DriverModel {
       name: resolvedName,
       phone: driverRaw['phone'] as String? ??
           (driverRaw['phoneNumber'] as String? ?? '+221 77 123 45 67'),
-      photoUrl: driverRaw['photoUrl'] as String? ??
-          (driverRaw['photo'] as String? ?? driverRaw['avatar'] as String?),
+      photoUrl: firstNonEmpty([
+        driverRaw['photoUrl'],
+        driverRaw['photo_url'],
+        driverRaw['photo'],
+        driverRaw['avatar'],
+        driverRaw['avatarUrl'],
+        driverRaw['avatar_url'],
+        driverRaw['profilePicture'],
+        driverRaw['profilePictureUrl'],
+        driverRaw['image'],
+        userRaw['photoUrl'],
+        userRaw['photo_url'],
+        userRaw['photo'],
+        userRaw['avatar'],
+        userRaw['avatarUrl'],
+        userRaw['avatar_url'],
+        userRaw['profilePicture'],
+        userRaw['image'],
+        json['driverPhotoUrl'],
+        json['driver_photo_url'],
+        json['driverAvatar'],
+        json['driver_avatar'],
+        json['driverPhoto'],
+        json['photoUrl'],
+        json['photo_url'],
+        unwrapped['driverPhotoUrl'],
+        unwrapped['photoUrl'],
+        rawJson['driverPhotoUrl'],
+        rawJson['photoUrl'],
+        fallbackPhotoUrl,
+        if (firstNonEmpty([
+              json['id'],
+              json['rideId'],
+              unwrapped['id'],
+              unwrapped['rideId'],
+              rawJson['id'],
+              rawJson['rideId'],
+            ]) !=
+            null)
+          '/v1/rides/${firstNonEmpty([
+                json['id'],
+                json['rideId'],
+                unwrapped['id'],
+                unwrapped['rideId'],
+                rawJson['id'],
+                rawJson['rideId'],
+              ])}/driver/photo',
+      ]),
       rating: (driverRaw['rating'] as num?)?.toDouble() ?? 4.9,
       totalRides: (driverRaw['totalRides'] as num?)?.toInt() ?? 1250,
       carModel: resolvedCarModel,
@@ -322,28 +561,66 @@ class DriverModel {
   }
 
   /// Extrait le code de départ à 4 chiffres depuis la réponse de l'API :
-  /// Supporte 'code', 'startCode', 'departureCode', 'pin'
+  /// Supporte 'startCode', 'code', 'departureCode', 'pin', 'start_code', 'departure_code', 'otp', etc.
+  /// Inspecte en profondeur les niveaux imbriqués (data, ride, data.ride, ride.data).
   static String extractDepartureCode(
     Map<String, dynamic> rawJson, {
     String fallback = '4821',
   }) {
-    final rideMap = rawJson['ride'] is Map<String, dynamic>
-        ? rawJson['ride'] as Map<String, dynamic>
-        : rawJson;
+    if (rawJson.isEmpty) return fallback;
 
-    final raw = rideMap['code'] ??
-        rideMap['startCode'] ??
-        rideMap['departureCode'] ??
-        rideMap['pin'] ??
-        rawJson['code'] ??
-        rawJson['startCode'] ??
-        rawJson['departureCode'] ??
-        rawJson['pin'];
+    // Liste de tous les conteneurs potentiels (à plat, dans data, dans ride, etc.)
+    final List<Map<String, dynamic>> mapsToCheck = [];
 
-    if (raw != null) {
-      final str = raw.toString().trim();
-      if (str.isNotEmpty) return str;
+    void addMap(dynamic m) {
+      if (m is Map<String, dynamic> && !mapsToCheck.contains(m)) {
+        mapsToCheck.add(m);
+      } else if (m is Map && !mapsToCheck.any((existing) => identical(existing, m))) {
+        mapsToCheck.add(Map<String, dynamic>.from(m));
+      }
     }
+
+    addMap(rawJson);
+    if (rawJson['data'] != null) addMap(rawJson['data']);
+    if (rawJson['ride'] != null) addMap(rawJson['ride']);
+    if (rawJson['data'] is Map && (rawJson['data'] as Map)['ride'] != null) {
+      addMap((rawJson['data'] as Map)['ride']);
+    }
+    if (rawJson['data'] is Map && (rawJson['data'] as Map)['data'] != null) {
+      addMap((rawJson['data'] as Map)['data']);
+    }
+    if (rawJson['ride'] is Map && (rawJson['ride'] as Map)['data'] != null) {
+      addMap((rawJson['ride'] as Map)['data']);
+    }
+
+    const candidateKeys = [
+      'startCode',
+      'code',
+      'departureCode',
+      'start_code',
+      'departure_code',
+      'pin',
+      'pin_code',
+      'pickupCode',
+      'pickup_code',
+      'verificationCode',
+      'otp',
+    ];
+
+    for (final map in mapsToCheck) {
+      for (final key in candidateKeys) {
+        final val = map[key];
+        if (val != null) {
+          final str = val.toString().trim();
+          if (str.isNotEmpty && str.toLowerCase() != 'null') {
+            return str;
+          }
+        }
+      }
+    }
+
+    // Aucun code trouvé dans la réponse API : on retourne le fallback officiel fourni
+    // (Ne JAMAIS générer un hash aléatoire côté client, car le chauffeur le rejetterait systématiquement)
     return fallback;
   }
 }

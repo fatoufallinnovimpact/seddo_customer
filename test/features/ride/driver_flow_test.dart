@@ -324,8 +324,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
 
       expect(find.text('En route vers Almadies'), findsOneWidget);
-      expect(find.text('Moussa · ★ 4.9'), findsOneWidget);
-      expect(find.text('Payé'), findsOneWidget);
+      expect(find.text('Moussa Diop'), findsOneWidget);
+      expect(find.text('4.9'), findsOneWidget);
+      expect(find.text('Payé'), findsNothing);
       expect(find.text('Message'), findsOneWidget);
       expect(find.text('Appeler'), findsOneWidget);
 

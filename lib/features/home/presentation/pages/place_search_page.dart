@@ -10,6 +10,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/home/data/models/home_suggestions_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
+import 'package:seddo/services/realtime_service.dart';
 import 'package:seddo/features/saved_places/presentation/pages/saved_places_page.dart';
 import 'package:seddo/features/home/presentation/pages/select_on_map_page.dart';
 import 'package:seddo/services/places_service.dart';
@@ -707,6 +708,9 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
 
     await RecentTripStorage.saveLastRecentTrip(arrival);
     if (!mounted) return;
+
+    RideService.clearActiveRideData();
+    RealtimeService().clearLastRideStatus();
 
     final bookingResult = await Navigator.of(context).push(
       SlideRightToLeftRoute(

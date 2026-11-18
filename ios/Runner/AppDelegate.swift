@@ -180,7 +180,7 @@ import ActivityKit
     let status = args["phase"] as? String ?? "driverAssigned"
     let statusLabel = args["statusLabel"] as? String ?? "Chauffeur assigné"
     let etaMinutes = args["etaMinutes"] as? Int ?? 5
-    let progress = args["progress"] as? Double ?? 0.15
+    let progress = (args["progress"] as? NSNumber)?.doubleValue ?? (args["progress"] as? Double) ?? 0.05
     let timestamp = args["updatedAtTimestamp"] as? Int ?? Int(Date().timeIntervalSince1970 * 1000)
 
     let attributes = RideActivityAttributes(
@@ -198,12 +198,16 @@ import ActivityKit
       statusLabel: statusLabel,
       etaMinutes: etaMinutes,
       progress: progress,
-      updatedAtTimestamp: timestamp
+      updatedAtTimestamp: timestamp,
+      driverName: driverName,
+      carModel: carModel,
+      carColor: carColor,
+      licensePlate: licensePlate
     )
 
-    // Si une Live Activity existe déjà (par ex. transition approche -> trajet ou reconnexion),
-    // on la met à jour directement pour une synchronisation fluide sans quota ni race condition
-    if let existing = Activity<RideActivityAttributes>.activities.first(where: { $0.attributes.rideId == rideId }) ?? Activity<RideActivityAttributes>.activities.first {
+    // Si une Live Activity active existe déjà, on la met à jour directement
+    let activeActivities = Activity<RideActivityAttributes>.activities.filter { $0.activityState == .active }
+    if let existing = activeActivities.first(where: { $0.attributes.rideId == rideId }) ?? activeActivities.first {
       self.activeActivityId = existing.id
       print("[ActivityKit] 🔄 Live Activity déjà active (\(existing.id)), mise à jour directe !")
       Task {
@@ -216,17 +220,6 @@ import ActivityKit
       }
       result(existing.id)
       return
-    }
-
-    // Nettoyage préventif des activités orphelines éventuelles
-    for existing in Activity<RideActivityAttributes>.activities {
-      Task {
-        if #available(iOS 16.2, *) {
-          await existing.end(nil, dismissalPolicy: .immediate)
-        } else {
-          await existing.end(dismissalPolicy: .immediate)
-        }
-      }
     }
 
     do {
@@ -288,7 +281,8 @@ import ActivityKit
 
   @available(iOS 16.1, *)
   private func updateLiveActivity(args: [String: Any], result: @escaping FlutterResult) {
-    if Activity<RideActivityAttributes>.activities.isEmpty {
+    let activeActivities = Activity<RideActivityAttributes>.activities.filter { $0.activityState == .active }
+    if activeActivities.isEmpty {
       print("[ActivityKit] ⚠️ Aucune activité active trouvée lors de la mise à jour, auto-démarrage de la Live Activity...")
       startLiveActivity(args: args, result: result)
       return
@@ -297,19 +291,27 @@ import ActivityKit
     let status = args["phase"] as? String ?? "inProgress"
     let statusLabel = args["statusLabel"] as? String ?? ""
     let etaMinutes = args["etaMinutes"] as? Int ?? 0
-    let progress = args["progress"] as? Double ?? 0.5
+    let progress = (args["progress"] as? NSNumber)?.doubleValue ?? (args["progress"] as? Double) ?? 0.05
     let timestamp = args["updatedAtTimestamp"] as? Int ?? Int(Date().timeIntervalSince1970 * 1000)
+    let driverName = args["driverName"] as? String
+    let carModel = args["carModel"] as? String
+    let carColor = args["carColor"] as? String
+    let licensePlate = args["licensePlate"] as? String
 
     let updatedContentState = RideActivityAttributes.ContentState(
       status: status,
       statusLabel: statusLabel,
       etaMinutes: etaMinutes,
       progress: progress,
-      updatedAtTimestamp: timestamp
+      updatedAtTimestamp: timestamp,
+      driverName: driverName,
+      carModel: carModel,
+      carColor: carColor,
+      licensePlate: licensePlate
     )
 
     Task {
-      for activity in Activity<RideActivityAttributes>.activities {
+      for activity in activeActivities {
         if #available(iOS 16.2, *) {
           let content = ActivityContent(state: updatedContentState, staleDate: nil)
           await activity.update(content)

@@ -450,4 +450,25 @@ abstract class AppColors {
   static const Color rideCardUnselectedTint = Color(0xFFF1F2F4);
   static const Color rideCardAcBadgeBg = Color(0xFFE5F4FF);
   static const Color rideCardAcBadgeText = Color(0xFF0284C7);
+
+  // Vehicle Dynamic Tint Palette (API car color mapping)
+  static const Color vehicleWhite = Color(0xFFFFFFFF);
+  static const Color vehicleBlack = Color(0xFF1F2937);
+  static const Color vehicleDarkGrey = Color(0xFF4B5563);
+  static const Color vehicleGrey = Color(0xFF9CA3AF);
+  static const Color vehicleRed = Color(0xFFDC2626);
+  static const Color vehicleBurgundy = Color(0xFF991B1B);
+  static const Color vehicleBlue = Color(0xFF2563EB);
+  static const Color vehicleNavy = Color(0xFF1E3A8A);
+  static const Color vehicleCyan = Color(0xFF06B6D4);
+  static const Color vehicleYellow = Color(0xFFF59E0B);
+  static const Color vehicleGold = Color(0xFFD97706);
+  static const Color vehicleGreen = Color(0xFF16A34A);
+  static const Color vehicleOlive = Color(0xFF65A30D);
+  static const Color vehicleOrange = Color(0xFFEA580C);
+  static const Color vehicleBrown = Color(0xFF78350F);
+  static const Color vehicleBronze = Color(0xFFB45309);
+  static const Color vehicleBeige = Color(0xFFD6C7A1);
+  static const Color vehicleMauve = Color(0xFF9333EA);
+  static const Color vehiclePink = Color(0xFFEC4899);
 }

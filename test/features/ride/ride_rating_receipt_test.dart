@@ -267,7 +267,7 @@ void main() {
       expect(submittedRatingBody!['compliments'], contains('SAFE_DRIVING'));
     });
 
-    testWidgets('tapping back button on RideRatingPage redirects to HomePage',
+    testWidgets('tapping drag handle lowers and raises RideRatingPage bottom sheet',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.625;
@@ -284,12 +284,43 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      final backButton = find.byIcon(Icons.arrow_back_rounded);
-      expect(backButton, findsOneWidget);
-      await tester.tap(backButton);
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-      await tester.pump(const Duration(seconds: 1));
+      final handle = find.byKey(const ValueKey('rating_sheet_drag_handle'));
+      expect(handle, findsOneWidget);
+
+      // Clic sur le tiret -> fait descendre le bottom sheet
+      await tester.tap(handle);
+      await tester.pumpAndSettle();
+
+      // Clic à nouveau sur le tiret -> fait remonter le bottom sheet
+      await tester.tap(handle);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RideRatingPage), findsOneWidget);
+    });
+
+    testWidgets('dragging down modal on RideRatingPage redirects to HomePage',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        wrapWithTestLocalization(
+          child: RideRatingPage(
+            destination: destination,
+            driver: driver,
+            rideOption: rideOption,
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // La flèche en haut à gauche est bien supprimée
+      expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
+
+      // Faire glisser le modal tout en bas pour le fermer
+      await tester.drag(find.byType(RideRatingPage), const Offset(0, 750));
+      await tester.pumpAndSettle();
 
       expect(find.byType(HomePage), findsOneWidget);
     });

@@ -10,19 +10,31 @@ public struct RideActivityAttributes: ActivityAttributes {
         public var etaMinutes: Int
         public var progress: Double
         public var updatedAtTimestamp: Int
+        public var driverName: String?
+        public var carModel: String?
+        public var carColor: String?
+        public var licensePlate: String?
 
         public init(
             status: String,
             statusLabel: String,
             etaMinutes: Int,
             progress: Double,
-            updatedAtTimestamp: Int
+            updatedAtTimestamp: Int,
+            driverName: String? = nil,
+            carModel: String? = nil,
+            carColor: String? = nil,
+            licensePlate: String? = nil
         ) {
             self.status = status
             self.statusLabel = statusLabel
             self.etaMinutes = etaMinutes
             self.progress = progress
             self.updatedAtTimestamp = updatedAtTimestamp
+            self.driverName = driverName
+            self.carModel = carModel
+            self.carColor = carColor
+            self.licensePlate = licensePlate
         }
     }
 

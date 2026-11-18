@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -137,12 +138,20 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
     with WidgetsBindingObserver {
   bool _isSubmitting = false;
   bool _isWaitingForSearching = false;
+  bool _isCompleted = false;
+  bool _isCheckingStatus = false;
+  DateTime _lastApiCheckTime = DateTime.fromMillisecondsSinceEpoch(0);
   String? _errorMessage;
   String? _paymentUrl;
   Timer? _statusPollTimer;
+  Timer? _resumeFollowUpTimer;
   Timer? _devSimulateTimer;
   Timer? _connectivityPollTimer;
   StreamSubscription<RealtimeRideStatusEvent>? _wsStatusSub;
+  StreamSubscription<RealtimePaymentStatusEvent>? _wsPaymentSub;
+  StreamSubscription<void>? _wsReconnectSub;
+  AppLinks? _appLinks;
+  StreamSubscription<Uri>? _appLinksSub;
   String? _activeRideId;
   late final RideService _rideService;
 
@@ -151,6 +160,7 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
+    _initDeepLinks();
     _connectivityPollTimer =
         Timer.periodic(const Duration(seconds: 1), (_) async {
       if (!mounted) return;
@@ -174,85 +184,231 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
     }
   }
 
+  void _initDeepLinks() {
+    try {
+      _appLinks = AppLinks();
+      _appLinksSub = _appLinks?.uriLinkStream.listen((uri) {
+        if (!mounted || !_isWaitingForSearching || _isCompleted) return;
+        final uriStr = uri.toString().toLowerCase();
+        debugPrint('[PaymentModal] 🔗 Deep link reçu dans PaymentSheet: $uri');
+        if (uriStr.contains('payment') ||
+            uriStr.contains('return') ||
+            uriStr.contains('wave') ||
+            uriStr.contains('seddo')) {
+          _triggerControlledStatusVerification(force: true);
+        }
+      });
+    } catch (_) {}
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed &&
         _isWaitingForSearching &&
-        _activeRideId != null) {
+        !_isCompleted) {
       debugPrint(
-          '[PaymentModal] 📱 App revenue au premier plan, vérification immédiate du statut pour $_activeRideId');
-      _checkRideStatusImmediate(_activeRideId!);
+          '[PaymentModal] 📱 Retour de Wave / premier plan détecté, vérification contrôlée du paiement et de la course');
+      if (!RealtimeService().isConnected) {
+        RealtimeService().connect();
+      }
+      if (_activeRideId != null && _activeRideId!.isNotEmpty) {
+        RealtimeService().joinRide(_activeRideId!);
+      }
+      _triggerControlledStatusVerification(force: true);
     }
   }
 
-  Future<void> _checkRideStatusImmediate(String rideId) async {
-    if (!mounted || !_isWaitingForSearching) return;
+  /// Lance une vérification immédiate suivie d'un unique contrôle différé (à +3s)
+  /// au cas où le webhook Wave met 1 à 2 secondes à notifier le backend après le retour dans l'app,
+  /// sans jamais faire d'appels en boucle.
+  void _triggerControlledStatusVerification({bool force = false}) {
+    _verifyRideAndPaymentStatus(force: force);
+    _resumeFollowUpTimer?.cancel();
+    _resumeFollowUpTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _isWaitingForSearching && !_isCompleted) {
+        _verifyRideAndPaymentStatus(force: true);
+      }
+    });
+  }
+
+  bool _isRidePaidOrActive(Map<String, dynamic> rawData) {
+    final rideObj = rawData['ride'] is Map<String, dynamic>
+        ? rawData['ride'] as Map<String, dynamic>
+        : rawData;
+    final currentStatus =
+        (rideObj['status'] as String? ?? rawData['status'] as String? ?? '')
+            .toUpperCase()
+            .trim();
+
+    final paymentObj = (rideObj['payment'] is Map<String, dynamic>
+            ? rideObj['payment']
+            : rawData['payment']) as Map<String, dynamic>?;
+    final paymentStatus = (paymentObj?['status'] as String? ??
+            rideObj['paymentStatus'] as String? ??
+            rawData['paymentStatus'] as String? ??
+            '')
+        .toUpperCase()
+        .trim();
+    final isPaidFlag = rideObj['isPaid'] == true ||
+        rawData['isPaid'] == true ||
+        paymentObj?['paid'] == true ||
+        paymentObj?['isPaid'] == true;
+
+    final hasValidRideStatus = currentStatus == 'SEARCHING' ||
+        currentStatus == 'PAID' ||
+        currentStatus == 'ACCEPTED' ||
+        currentStatus == 'DRIVER_ACCEPTED' ||
+        currentStatus == 'DRIVER_ASSIGNED' ||
+        currentStatus == 'CONFIRMED' ||
+        currentStatus == 'APPROACHING' ||
+        currentStatus == 'EN_ROUTE' ||
+        currentStatus == 'ASSIGNED' ||
+        currentStatus == 'IN_PROGRESS' ||
+        currentStatus == 'DRIVER_ARRIVED' ||
+        rawData['driver'] != null ||
+        rideObj['driver'] != null;
+
+    final hasValidPaymentStatus = paymentStatus == 'SUCCESS' ||
+        paymentStatus == 'PAID' ||
+        paymentStatus == 'COMPLETED' ||
+        paymentStatus == 'SUCCEEDED' ||
+        paymentStatus == 'CONFIRMED' ||
+        isPaidFlag;
+
+    return hasValidRideStatus || hasValidPaymentStatus;
+  }
+
+  bool _isRideCancelledOrFailed(Map<String, dynamic> rawData) {
+    final rideObj = rawData['ride'] is Map<String, dynamic>
+        ? rawData['ride'] as Map<String, dynamic>
+        : rawData;
+    final currentStatus =
+        (rideObj['status'] as String? ?? rawData['status'] as String? ?? '')
+            .toUpperCase()
+            .trim();
+    return currentStatus == 'CANCELLED' ||
+        currentStatus.startsWith('CANCEL') ||
+        currentStatus == 'REJECTED' ||
+        currentStatus == 'NO_DRIVER';
+  }
+
+  /// Vérifie l'état de la course sur l'API avec anti-rebond (debounce) strict
+  /// pour ne jamais saturer le backend.
+  Future<void> _verifyRideAndPaymentStatus({bool force = false}) async {
+    if (!mounted || !_isWaitingForSearching || _isCompleted || _isCheckingStatus) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!force &&
+        now.difference(_lastApiCheckTime) < const Duration(seconds: 4)) {
+      return;
+    }
+
+    _isCheckingStatus = true;
+    _lastApiCheckTime = now;
+
     try {
-      final details = await _rideService.getRideDetails(rideId);
-      if (details != null && mounted && _isWaitingForSearching) {
-        final rideObj = details['ride'] is Map<String, dynamic>
-            ? details['ride'] as Map<String, dynamic>
-            : details;
-        final currentStatus =
-            (rideObj['status'] as String? ?? details['status'] as String? ?? '').toUpperCase().trim();
-        debugPrint(
-            '[PaymentModal] 🔍 Statut immédiat au retour de l\'application: $currentStatus');
-        if (currentStatus == 'SEARCHING' ||
-            currentStatus == 'ACCEPTED' ||
-            currentStatus == 'DRIVER_ACCEPTED' ||
-            currentStatus == 'DRIVER_ASSIGNED' ||
-            currentStatus == 'CONFIRMED' ||
-            currentStatus == 'APPROACHING' ||
-            currentStatus == 'EN_ROUTE' ||
-            currentStatus == 'ASSIGNED' ||
-            currentStatus == 'IN_PROGRESS' ||
-            currentStatus == 'DRIVER_ARRIVED' ||
-            details['driver'] != null ||
-            rideObj['driver'] != null) {
-          _completePaymentAndProceed(details);
-        } else if (currentStatus == 'CANCELLED' ||
-            currentStatus.startsWith('CANCEL') ||
-            currentStatus == 'REJECTED' ||
-            currentStatus == 'NO_DRIVER') {
-          _statusPollTimer?.cancel();
-          _devSimulateTimer?.cancel();
-          _connectivityPollTimer?.cancel();
-          _wsStatusSub?.cancel();
-          if (mounted) {
-            Navigator.of(context).pop(OrangeMoneyPaymentResult.cancelled);
+      Map<String, dynamic>? details;
+      final rideId = _activeRideId;
+
+      if (rideId != null && rideId.isNotEmpty) {
+        details = await _rideService.getRideDetails(rideId);
+      }
+
+      // Si getRideDetails n'a pas encore reflété le statut ou si rideId était absent,
+      // vérifier via GET /v1/rides/current (qui renvoie la course active envoyée aux chauffeurs)
+      if ((details == null || !_isRidePaidOrActive(details)) &&
+          mounted &&
+          _isWaitingForSearching &&
+          !_isCompleted) {
+        final currentRes = await _rideService.getCurrentRide();
+        if (currentRes != null && currentRes['ride'] is Map<String, dynamic>) {
+          details = currentRes;
+          final currentRide = currentRes['ride'] as Map<String, dynamic>;
+          final currentId = currentRide['id']?.toString();
+          if (currentId != null && currentId.isNotEmpty) {
+            _activeRideId = currentId;
+            RideService.lastCreatedRideId = currentId;
           }
         }
       }
+
+      if (details != null && mounted && _isWaitingForSearching && !_isCompleted) {
+        if (_isRidePaidOrActive(details)) {
+          _completePaymentAndProceed(details);
+          return;
+        } else if (_isRideCancelledOrFailed(details)) {
+          _stopAllListeners();
+          if (mounted) {
+            Navigator.of(context).pop(OrangeMoneyPaymentResult.cancelled);
+          }
+          return;
+        }
+      }
     } catch (e) {
-      debugPrint('[PaymentModal] ⚠️ Erreur vérification statut au retour: $e');
+      debugPrint('[PaymentModal] ⚠️ Erreur vérification statut: $e');
+    } finally {
+      _isCheckingStatus = false;
     }
+  }
+
+  void _stopAllListeners() {
+    _statusPollTimer?.cancel();
+    _resumeFollowUpTimer?.cancel();
+    _devSimulateTimer?.cancel();
+    _connectivityPollTimer?.cancel();
+    _wsStatusSub?.cancel();
+    _wsPaymentSub?.cancel();
+    _wsReconnectSub?.cancel();
+    _appLinksSub?.cancel();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _statusPollTimer?.cancel();
-    _devSimulateTimer?.cancel();
-    _connectivityPollTimer?.cancel();
-    _wsStatusSub?.cancel();
+    _stopAllListeners();
     super.dispose();
   }
 
   void _completePaymentAndProceed(Map<String, dynamic> data) {
-    _statusPollTimer?.cancel();
-    _devSimulateTimer?.cancel();
-    _wsStatusSub?.cancel();
-    RideService.lastCreatedRideData = data;
+    if (_isCompleted) return;
+    _isCompleted = true;
+    _stopAllListeners();
+
+    final normalized = Map<String, dynamic>.from(data);
+    final rideObj = normalized['ride'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(normalized['ride'] as Map<String, dynamic>)
+        : normalized;
+    final rawStatus =
+        (rideObj['status'] as String? ?? normalized['status'] as String? ?? '')
+            .toUpperCase()
+            .trim();
+    if (rawStatus.isEmpty ||
+        rawStatus == 'PAYMENT_PENDING' ||
+        rawStatus == 'PENDING' ||
+        rawStatus == 'PAID') {
+      rideObj['status'] = 'SEARCHING';
+      normalized['status'] = 'SEARCHING';
+      if (normalized['ride'] is Map) {
+        normalized['ride'] = rideObj;
+      }
+    }
+
+    final rideId = (rideObj['id'] ?? normalized['id'] ?? _activeRideId)?.toString();
+    if (rideId != null && rideId.isNotEmpty) {
+      RideService.lastCreatedRideId = rideId;
+    }
+    RideService.lastCreatedRideData = normalized;
+
     if (mounted) {
       Navigator.of(context).pop(OrangeMoneyPaymentResult.success);
     }
   }
 
   Future<void> _cancelOrder() async {
-    _statusPollTimer?.cancel();
-    _devSimulateTimer?.cancel();
-    _wsStatusSub?.cancel();
+    _stopAllListeners();
     if (_activeRideId != null) {
       final rideIdToCancel = _activeRideId!;
       _activeRideId = null;
@@ -276,15 +432,39 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
     _activeRideId = rideId;
     _statusPollTimer?.cancel();
     _wsStatusSub?.cancel();
+    _wsPaymentSub?.cancel();
+    _wsReconnectSub?.cancel();
 
     // Connexion et adhésion au canal de la course par WebSocket
     RealtimeService().connect();
-    RealtimeService().joinRide(rideId);
+    if (rideId.isNotEmpty) {
+      RealtimeService().joinRide(rideId);
+    }
 
-    // 1. Écoute temps réel via WebSocket (rideStatusStream)
+    // Vérifier immédiatement si un événement WebSocket est déjà arrivé en cache
+    final cachedStatus = RealtimeService().lastRideStatusEvent;
+    if (cachedStatus != null) {
+      final matchesRide = rideId.isEmpty ||
+          cachedStatus.rideId.isEmpty ||
+          cachedStatus.rideId == rideId ||
+          cachedStatus.rideId.endsWith(rideId) ||
+          rideId.endsWith(cachedStatus.rideId);
+      if (matchesRide && _isRidePaidOrActive(cachedStatus.raw)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_isCompleted) {
+            _completePaymentAndProceed(cachedStatus.raw);
+          }
+        });
+        return;
+      }
+    }
+
+    // 1. Écoute temps réel du statut de la course via WebSocket (rideStatusStream)
     try {
       _wsStatusSub = RealtimeService().rideStatusStream.listen((event) {
-        final matchesRide = event.rideId.isEmpty ||
+        if (!mounted || _isCompleted) return;
+        final matchesRide = rideId.isEmpty ||
+            event.rideId.isEmpty ||
             event.rideId == rideId ||
             event.rideId.endsWith(rideId) ||
             rideId.endsWith(event.rideId);
@@ -292,9 +472,10 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
         if (matchesRide) {
           final status = event.status.toUpperCase().trim();
           debugPrint(
-              '[PaymentModal] ⚡ WebSocket a reçu statut $status pour course $rideId');
+              '[PaymentModal] ⚡ WebSocket rideStatusStream reçu: $status pour course $rideId');
 
           if (status == 'SEARCHING' ||
+              status == 'PAID' ||
               status == 'ACCEPTED' ||
               status == 'DRIVER_ACCEPTED' ||
               status == 'DRIVER_ASSIGNED' ||
@@ -304,13 +485,17 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
               status == 'ASSIGNED' ||
               status == 'IN_PROGRESS' ||
               status == 'DRIVER_ARRIVED' ||
-              event.driver != null) {
-            _completePaymentAndProceed(event.raw);
+              event.driver != null ||
+              _isRidePaidOrActive(event.raw)) {
+            _completePaymentAndProceed(
+              event.raw.isNotEmpty
+                  ? event.raw
+                  : {'id': rideId, 'status': status},
+            );
           } else if (status.startsWith('CANCEL') ||
               status == 'REJECTED' ||
               status == 'NO_DRIVER') {
-            _statusPollTimer?.cancel();
-            _wsStatusSub?.cancel();
+            _stopAllListeners();
             if (mounted) {
               Navigator.of(context).pop(OrangeMoneyPaymentResult.cancelled);
             }
@@ -319,43 +504,66 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
       });
     } catch (_) {}
 
-    // 2. Polling actif toutes les 2.5 secondes sur GET /v1/rides/{id} (TOUJOURS en fallback)
-    _statusPollTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) async {
-      if (!mounted) return;
-      final details = await _rideService.getRideDetails(rideId);
-      if (details != null && mounted) {
-        final rideObj = details['ride'] is Map<String, dynamic>
-            ? details['ride'] as Map<String, dynamic>
-            : details;
-        final currentStatus =
-            (rideObj['status'] as String? ?? details['status'] as String? ?? '').toUpperCase().trim();
-        debugPrint(
-            '[PaymentModal] 🔍 Polling statut course $rideId -> $currentStatus');
+    // 2. Écoute temps réel de la confirmation de paiement via WebSocket (paymentStatusStream)
+    try {
+      _wsPaymentSub = RealtimeService().paymentStatusStream.listen((event) {
+        if (!mounted || _isCompleted) return;
+        final matchesRide = rideId.isEmpty ||
+            event.rideId == null ||
+            event.rideId!.isEmpty ||
+            event.rideId == rideId ||
+            event.rideId!.endsWith(rideId) ||
+            rideId.endsWith(event.rideId!);
 
-        if (currentStatus == 'SEARCHING' ||
-            currentStatus == 'ACCEPTED' ||
-            currentStatus == 'DRIVER_ACCEPTED' ||
-            currentStatus == 'DRIVER_ASSIGNED' ||
-            currentStatus == 'CONFIRMED' ||
-            currentStatus == 'APPROACHING' ||
-            currentStatus == 'EN_ROUTE' ||
-            currentStatus == 'ASSIGNED' ||
-            currentStatus == 'IN_PROGRESS' ||
-            currentStatus == 'DRIVER_ARRIVED' ||
-            details['driver'] != null ||
-            rideObj['driver'] != null) {
-          _completePaymentAndProceed(details);
-        } else if (currentStatus == 'CANCELLED' ||
-            currentStatus.startsWith('CANCEL') ||
-            currentStatus == 'REJECTED' ||
-            currentStatus == 'NO_DRIVER') {
-          _statusPollTimer?.cancel();
-          _wsStatusSub?.cancel();
-          if (mounted) {
-            Navigator.of(context).pop(OrangeMoneyPaymentResult.cancelled);
+        if (matchesRide) {
+          final pStatus = event.status.toUpperCase().trim();
+          debugPrint(
+              '[PaymentModal] ⚡ WebSocket paymentStatusStream reçu: $pStatus pour course $rideId');
+          if (pStatus == 'SUCCESS' ||
+              pStatus == 'PAID' ||
+              pStatus == 'COMPLETED' ||
+              pStatus == 'SUCCEEDED' ||
+              pStatus == 'CONFIRMED') {
+            _completePaymentAndProceed({
+              if (RideService.lastCreatedRideData != null)
+                ...RideService.lastCreatedRideData!,
+              'id': rideId,
+              'status': 'SEARCHING',
+              'payment': {
+                'status': 'SUCCESS',
+                'method': widget.paymentMethod.apiValue,
+              },
+            });
+          } else if (pStatus == 'FAILED' ||
+              pStatus == 'CANCELLED' ||
+              pStatus == 'DECLINED' ||
+              pStatus == 'REJECTED') {
+            _stopAllListeners();
+            if (mounted) {
+              Navigator.of(context).pop(OrangeMoneyPaymentResult.cancelled);
+            }
           }
         }
-      }
+      });
+    } catch (_) {}
+
+    // 3. Resynchronisation unique si le WebSocket se reconnecte au retour dans l'app
+    try {
+      _wsReconnectSub = RealtimeService().onReconnect.listen((_) {
+        if (mounted && _isWaitingForSearching && !_isCompleted) {
+          if (rideId.isNotEmpty) {
+            RealtimeService().joinRide(rideId);
+          }
+          _triggerControlledStatusVerification(force: true);
+        }
+      });
+    } catch (_) {}
+
+    // 4. Fallback léger et espacé (toutes les 8 secondes au lieu d'une boucle rapide)
+    // pour ne jamais surcharger le backend tout en garantissant la détection si un événement WS est manqué
+    _statusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!mounted || !_isWaitingForSearching || _isCompleted) return;
+      _verifyRideAndPaymentStatus();
     });
   }
 
@@ -415,14 +623,30 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
     );
 
     if (rideData != null) {
-      final payment = rideData['payment'] as Map<String, dynamic>?;
-      final orderId = payment?['orderId'] as String?;
-      final paymentUrl = payment?['paymentUrl'] as String?;
-      final payToken = payment?['payToken']?.toString();
       final rideObj = rideData['ride'] is Map<String, dynamic>
           ? rideData['ride'] as Map<String, dynamic>
           : rideData;
-      final rideId = (rideObj['id'] ?? rideData['id'])?.toString() ?? '';
+      final payment = (rideData['payment'] is Map<String, dynamic>
+              ? rideData['payment']
+              : rideObj['payment']) as Map<String, dynamic>?;
+      final orderId = (payment?['orderId'] ?? rideObj['orderId'] ?? rideData['orderId'])?.toString();
+      final paymentUrl = (payment?['paymentUrl'] ??
+              payment?['waveLaunchUrl'] ??
+              payment?['checkoutUrl'] ??
+              payment?['url'] ??
+              rideObj['paymentUrl'] ??
+              rideData['paymentUrl'])
+          ?.toString();
+      final payToken = payment?['payToken']?.toString();
+      final rideId = (rideObj['id'] ??
+              rideObj['_id'] ??
+              rideObj['rideId'] ??
+              rideData['id'] ??
+              rideData['_id'] ??
+              rideData['rideId'] ??
+              payment?['rideId'])
+          ?.toString() ??
+          '';
       if (rideId.isNotEmpty) {
         RideService.lastCreatedRideId = rideId;
       }
@@ -433,17 +657,9 @@ class _OrangeMoneyPaymentSheetState extends State<OrangeMoneyPaymentSheet>
       debugPrint(
           '[PaymentModal] 💳 Paiement (${payment?['method']}) URL: $paymentUrl - Token: $payToken');
 
-      // Si le statut est DÉJÀ SEARCHING ou ACCEPTÉ (ex: Espèces/CASH ou déjà validé)
-      if (status == 'SEARCHING' ||
-          status == 'ACCEPTED' ||
-          status == 'DRIVER_ACCEPTED' ||
-          status == 'DRIVER_ASSIGNED' ||
-          status == 'CONFIRMED' ||
-          status == 'APPROACHING' ||
-          status == 'IN_PROGRESS') {
-        if (mounted) {
-          Navigator.of(context).pop(OrangeMoneyPaymentResult.success);
-        }
+      // Si le statut est DÉJÀ SEARCHING ou PAYÉ ou ACCEPTÉ (ex: Espèces/CASH ou déjà validé)
+      if (_isRidePaidOrActive(rideData)) {
+        _completePaymentAndProceed(rideData);
         return;
       }
 

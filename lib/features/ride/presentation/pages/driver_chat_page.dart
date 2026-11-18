@@ -7,6 +7,7 @@ import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/ride/data/models/chat_message_model.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/presentation/widgets/driver_avatar_widget.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
 import 'package:seddo/features/ride/presentation/widgets/realtime_status_indicator.dart';
@@ -193,7 +194,11 @@ class _DriverChatPageState extends State<DriverChatPage> {
   }
 
   Future<void> _makePhoneCall() async {
-    await InAppCallPage.show(context, driver: widget.driver);
+    await InAppCallPage.show(
+      context,
+      driver: widget.driver,
+      rideId: widget.rideId ?? _effectiveRideId,
+    );
   }
 
   @override
@@ -218,29 +223,14 @@ class _DriverChatPageState extends State<DriverChatPage> {
             // Driver Initials Avatar with Verified Status Dot
             Stack(
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: const BoxDecoration(
-                    color: AppColors.avatarBeige,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    widget.driver.name.isNotEmpty
-                        ? widget.driver.name
-                            .split(' ')
-                            .map((e) => e.isNotEmpty ? e[0] : '')
-                            .take(2)
-                            .join()
-                            .toUpperCase()
-                        : 'MS',
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
+                DriverAvatarWidget(
+                  photoUrl: widget.driver.photoUrl,
+                  rideId: widget.rideId ?? _effectiveRideId,
+                  name: widget.driver.name,
+                  size: 42,
+                  backgroundColor: AppColors.avatarBeige,
+                  initialsColor: AppColors.textPrimary,
+                  rideService: _rideService,
                 ),
                 Positioned(
                   right: 0,

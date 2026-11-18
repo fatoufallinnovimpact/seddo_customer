@@ -9,6 +9,7 @@ import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/activity/data/models/activity_item_model.dart';
 import 'package:seddo/features/activity/presentation/utils/ride_status_style_helper.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/presentation/widgets/driver_avatar_widget.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
@@ -921,9 +922,6 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
     final driverName = hasDriver ? _driver!.name : '';
     final carModel = hasDriver ? _driver!.carModel : '';
     final plate = hasDriver ? _driver!.licensePlate : '';
-    final initials = hasDriver && driverName.length >= 2
-        ? driverName.substring(0, 2).toUpperCase()
-        : 'MD';
 
     return Container(
       decoration: BoxDecoration(
@@ -1031,23 +1029,13 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
           if (hasDriver)
             Row(
               children: [
-                Container(
-                  width: AppConstants.circularAvatarSize,
-                  height: AppConstants.circularAvatarSize,
-                  decoration: const BoxDecoration(
-                    color: AppColors.avatarBeige,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      initials,
-                      style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontBase,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.slateDark,
-                      ),
-                    ),
-                  ),
+                DriverAvatarWidget(
+                  photoUrl: _driver?.photoUrl,
+                  rideId: widget.rideId,
+                  name: driverName,
+                  size: AppConstants.circularAvatarSize,
+                  backgroundColor: AppColors.avatarBeige,
+                  initialsColor: AppColors.slateDark,
                 ),
                 const SizedBox(width: AppConstants.spacingUnitLg),
                 Expanded(

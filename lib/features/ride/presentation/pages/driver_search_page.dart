@@ -50,6 +50,7 @@ class DriverSearchPage extends StatefulWidget {
   final String? rideId;
   final RideService? rideService;
   final PaymentMethodType? paymentMethod;
+  final String? departureCode;
 
   const DriverSearchPage({
     super.key,
@@ -63,6 +64,7 @@ class DriverSearchPage extends StatefulWidget {
     this.rideId,
     this.rideService,
     this.paymentMethod,
+    this.departureCode,
   });
 
   @override
@@ -72,6 +74,7 @@ class DriverSearchPage extends StatefulWidget {
 class _DriverSearchPageState extends State<DriverSearchPage>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final RideService _rideService;
+  late String _departureCode;
   GoogleMapController? _mapController;
   Timer? _autoMatchTimer;
   Timer? _nearbyPollTimer;
@@ -131,6 +134,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _rideService = widget.rideService ?? RideService();
+    _departureCode = widget.departureCode ??
+        DriverModel.extractDepartureCode(
+          RideService.lastCreatedRideData ?? {},
+        );
 
     _traffic = widget.traffic.isNotEmpty
         ? List<TrafficSegmentModel>.from(widget.traffic)
@@ -378,42 +385,40 @@ class _DriverSearchPageState extends State<DriverSearchPage>
       RealtimeService().joinRide(effectiveRideId);
       // Vérifier et appliquer immédiatement le dernier statut en mémoire WebSocket sans attendre
       final cachedEvent = RealtimeService().lastRideStatusEvent;
-      if (cachedEvent != null) {
-        final matchesRide = cachedEvent.rideId.isEmpty ||
-            cachedEvent.rideId == effectiveRideId ||
-            cachedEvent.rideId.endsWith(effectiveRideId) ||
-            effectiveRideId.endsWith(cachedEvent.rideId);
-        if (matchesRide) {
-          final s = cachedEvent.status.toUpperCase();
-          if (s == 'ACCEPTED' ||
-              s == 'DRIVER_ACCEPTED' ||
-              s == 'DRIVER_ASSIGNED' ||
-              s == 'ASSIGNED' ||
-              s == 'CONFIRMED' ||
-              s == 'APPROACHING' ||
-              s == 'EN_ROUTE' ||
-              s == 'DRIVER_ARRIVED' ||
-              s == 'IN_PROGRESS' ||
-              cachedEvent.driver != null) {
-            _onPaymentConfirmed();
-            final driver = cachedEvent.driver ??
-                DriverModel.fromRideJson(
-                  cachedEvent.raw,
-                  defaultRideType: widget.rideOption.type,
-                );
-            final code = cachedEvent.departureCode ??
-                DriverModel.extractDepartureCode(cachedEvent.raw);
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && !_isTransitioningToApproaching) {
-                onDriverFound(driver, code, effectiveRideId);
-              }
-            });
-          }
+      if (cachedEvent != null &&
+          cachedEvent.rideId.isNotEmpty &&
+          (cachedEvent.rideId == effectiveRideId ||
+              cachedEvent.rideId.endsWith(effectiveRideId) ||
+              effectiveRideId.endsWith(cachedEvent.rideId))) {
+        final s = cachedEvent.status.toUpperCase();
+        if (s == 'ACCEPTED' ||
+            s == 'DRIVER_ACCEPTED' ||
+            s == 'DRIVER_ASSIGNED' ||
+            s == 'ASSIGNED' ||
+            s == 'CONFIRMED' ||
+            s == 'APPROACHING' ||
+            s == 'EN_ROUTE' ||
+            s == 'DRIVER_ARRIVED' ||
+            s == 'IN_PROGRESS' ||
+            cachedEvent.driver != null) {
+          _onPaymentConfirmed();
+          final driver = cachedEvent.driver ??
+              DriverModel.fromRideJson(
+                cachedEvent.raw,
+                defaultRideType: widget.rideOption.type,
+              );
+          final code = cachedEvent.departureCode ??
+              DriverModel.extractDepartureCode(cachedEvent.raw, fallback: _departureCode);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && !_isTransitioningToApproaching) {
+              onDriverFound(driver, code, effectiveRideId);
+            }
+          });
         }
       }
 
-      // Filet de sécurité actif : polling toutes les 3s pour ne jamais rater l'acceptation du chauffeur
-      _rideStatusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      // Filet de sécurité espacé : polling toutes les 8s (au lieu de 3s) uniquement si le WebSocket n'a pas encore notifié
+      _rideStatusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
         if (mounted &&
             !_isTransitioningToApproaching &&
             !_hasHandledNoDriver) {
@@ -427,10 +432,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             _hasHandledNoDriver) {
           return;
         }
-        final matchesRide = event.rideId.isEmpty ||
-            event.rideId == effectiveRideId ||
-            event.rideId.endsWith(effectiveRideId) ||
-            effectiveRideId.endsWith(event.rideId);
+        final matchesRide = event.rideId.isNotEmpty &&
+            (event.rideId == effectiveRideId ||
+                event.rideId.endsWith(effectiveRideId) ||
+                effectiveRideId.endsWith(event.rideId));
         if (matchesRide) {
           final s = event.status.toUpperCase();
           if (s == 'SEARCHING') {
@@ -453,7 +458,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                   defaultRideType: widget.rideOption.type,
                 );
             final code = event.departureCode ??
-                DriverModel.extractDepartureCode(event.raw);
+                DriverModel.extractDepartureCode(event.raw, fallback: _departureCode);
             onDriverFound(driver, code, effectiveRideId);
           } else if (s.startsWith('CANCEL') ||
               s == 'NO_DRIVER') {
@@ -588,16 +593,20 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             ? data['ride'] as Map<String, dynamic>
             : data;
         final status = (rideObj['status'] as String? ?? data['status'] as String? ?? '').toUpperCase();
-        if (status == 'SEARCHING') {
-          _onPaymentConfirmed();
-        } else if (status == 'PAYMENT_PENDING' || status == 'PENDING') {
-          if (mounted) {
-            setState(() {
-              _paymentStatus = 'PENDING';
-              _currentRideStatus = status;
-            });
-          }
-        } else if (status == 'ACCEPTED' ||
+        final payment = (rideObj['payment'] is Map<String, dynamic>
+                ? rideObj['payment']
+                : data['payment']) as Map<String, dynamic>?;
+        final pStatus = (payment?['status'] as String? ??
+                rideObj['paymentStatus'] as String? ??
+                data['paymentStatus'] as String? ??
+                '')
+            .toUpperCase();
+        final isPaidFlag = rideObj['isPaid'] == true ||
+            data['isPaid'] == true ||
+            payment?['paid'] == true ||
+            payment?['isPaid'] == true;
+
+        if (status == 'ACCEPTED' ||
             status == 'DRIVER_ACCEPTED' ||
             status == 'DRIVER_ASSIGNED' ||
             status == 'ASSIGNED' ||
@@ -613,7 +622,8 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             data,
             defaultRideType: widget.rideOption.type,
           );
-          final code = DriverModel.extractDepartureCode(data);
+          final code = DriverModel.extractDepartureCode(data, fallback: _departureCode);
+          _departureCode = code;
           List<LatLng>? updatedTripPolyline;
           final plannedPolyStr = rideObj['plannedPolyline'] as String?;
           if (plannedPolyStr != null && plannedPolyStr.isNotEmpty) {
@@ -648,6 +658,21 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             rideId,
             updatedTripPolyline,
           );
+        } else if (status == 'SEARCHING' ||
+            status == 'PAID' ||
+            pStatus == 'SUCCESS' ||
+            pStatus == 'PAID' ||
+            pStatus == 'COMPLETED' ||
+            pStatus == 'SUCCEEDED' ||
+            isPaidFlag) {
+          _onPaymentConfirmed();
+        } else if (status == 'PAYMENT_PENDING' || status == 'PENDING') {
+          if (mounted) {
+            setState(() {
+              _paymentStatus = 'PENDING';
+              _currentRideStatus = status;
+            });
+          }
         } else if (status.startsWith('CANCELLED') || status == 'NO_DRIVER') {
           if (!_hasHandledNoDriver) {
             onNoDriverAvailable();
@@ -655,19 +680,16 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           return;
         }
 
-        final payment = (data['ride'] is Map<String, dynamic>
-                ? (data['ride'] as Map<String, dynamic>)['payment']
-                : data['payment']) as Map<String, dynamic>?;
         if (payment != null) {
-          final pStatus = payment['status'] as String?;
-          if (pStatus != null && pStatus.isNotEmpty && mounted) {
-            if (pStatus.toUpperCase() == 'SUCCESS' ||
-                pStatus.toUpperCase() == 'PAID' ||
-                pStatus.toUpperCase() == 'COMPLETED') {
+          if (pStatus.isNotEmpty && mounted) {
+            if (pStatus == 'SUCCESS' ||
+                pStatus == 'PAID' ||
+                pStatus == 'COMPLETED' ||
+                pStatus == 'SUCCEEDED') {
               _onPaymentConfirmed();
             } else {
               setState(() {
-                _paymentStatus = pStatus.toUpperCase();
+                _paymentStatus = pStatus;
               });
             }
           }
@@ -763,7 +785,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     List<LatLng>? tripPolyline,
   ]) {
     _autoMatchTimer?.cancel();
-    final driver = matchedDriver ??
+    DriverModel driver = matchedDriver ??
         DriverModel.mockDakarDriver(
           rideType: widget.rideOption.type,
           location: LatLng(
@@ -771,6 +793,24 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             widget.departure.longitude + 0.0030,
           ),
         );
+
+    // Extraction proactive et immédiate des infos du chauffeur (couleur véhicule et photoUrl) depuis les caches
+    final cachedRaw = RealtimeService().lastRideStatusEvent?.raw ??
+        RideService.lastCreatedRideData;
+    if (cachedRaw != null && cachedRaw.isNotEmpty) {
+      final parsed = DriverModel.fromRideJson(
+        cachedRaw,
+        defaultRideType: widget.rideOption.type,
+        fallbackPhotoUrl: driver.photoUrl,
+      );
+      driver = driver.copyWith(
+        photoUrl: parsed.photoUrl ?? driver.photoUrl,
+        carColor: parsed.carColor.isNotEmpty && !parsed.carColor.toLowerCase().contains('gris')
+            ? parsed.carColor
+            : driver.carColor,
+        carModel: parsed.carModel.isNotEmpty ? parsed.carModel : driver.carModel,
+      );
+    }
 
     final effectiveRideId =
         rideId ?? widget.rideId ?? RideService.lastCreatedRideId;
@@ -785,7 +825,9 @@ class _DriverSearchPageState extends State<DriverSearchPage>
           rideOption: widget.rideOption,
           driver: driver,
           polylinePoints: tripPolyline ?? widget.polylinePoints,
-          departureCode: code ?? '4821',
+          departureCode: (code != null && code.isNotEmpty)
+              ? code
+              : (_departureCode.isNotEmpty ? _departureCode : '4821'),
           rideId: effectiveRideId,
           rideService: widget.rideService,
           autoStartSimulation: false,
@@ -1093,10 +1135,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
 
   Widget _buildChevronButton({required bool isExpanded}) {
     return Container(
-      width: 28,
-      height: 28,
+      width: 30,
+      height: 30,
       decoration: const BoxDecoration(
-        color: AppColors.surfaceGrey,
+        color: AppColors.accountScaffoldBg,
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
@@ -1110,7 +1152,6 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     );
   }
 
-
   Widget _buildVehicleImage({required double width, required double height}) {
     final isConfort = widget.rideOption.type == RideType.confort;
     if (isConfort) {
@@ -1122,22 +1163,29 @@ class _DriverSearchPageState extends State<DriverSearchPage>
         fit: BoxFit.contain,
       );
     }
-    return SvgPicture.asset(
-      'assets/icons/vectoreco.svg',
-      key: const Key('driver_search_eco_vehicle_image'),
+    return SizedBox(
       width: width,
       height: height,
-      fit: BoxFit.contain,
+      child: Transform.scale(
+        scale: 1.24,
+        child: SvgPicture.asset(
+          'assets/icons/vectoreco.svg',
+          key: const Key('driver_search_eco_vehicle_image'),
+          width: width,
+          height: height,
+          fit: BoxFit.contain,
+        ),
+      ),
     );
   }
 
   Widget _buildProgressBar() {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(2),
+      borderRadius: BorderRadius.circular(AppConstants.radiusPill),
       child: const LinearProgressIndicator(
         color: AppColors.primary,
-        backgroundColor: AppColors.surfaceGrey,
-        minHeight: 3.5,
+        backgroundColor: AppColors.peachLight,
+        minHeight: 5.0,
       ),
     );
   }
@@ -1354,7 +1402,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                         ),
                         const SizedBox(height: 10),
 
-                        // Search Header (tap to toggle collapse / expand)
+                        // Search Header (Dribbble-inspired modern header with live pill, single-line title & vehicle pedestal)
                         GestureDetector(
                           onTap: _toggleSheet,
                           behavior: HitTestBehavior.opaque,
@@ -1363,37 +1411,106 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
                                       children: [
                                         Expanded(
-                                          child: FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            alignment: Alignment.centerLeft,
-                                            child: Text(
-                                              _isPaymentConfirmed
-                                                  ? 'ride.searching'.tr()
-                                                  : 'En attente du paiement...',
-                                              maxLines: 1,
-                                              style: GoogleFonts.inter(
-                                                fontSize: AppConstants.fontXl,
-                                                fontWeight: FontWeight.w900,
-                                                color: AppColors.textPrimary,
-                                                letterSpacing: -0.4,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                alignment: Alignment.centerLeft,
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                    horizontal: 9,
+                                                    vertical: 3.5,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        AppColors.orangeLightBg,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      AppConstants.radiusPill,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Container(
+                                                        width: 6.5,
+                                                        height: 6.5,
+                                                        decoration:
+                                                            const BoxDecoration(
+                                                          color:
+                                                              AppColors.primary,
+                                                          shape: BoxShape.circle,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        'Seddo $rideTypeLabel · ${widget.rideOption.capacity} places',
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 11.5,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color:
+                                                              AppColors.primary,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
                                               ),
-                                            ),
+                                              const SizedBox(height: 6),
+                                              FittedBox(
+                                                fit: BoxFit.scaleDown,
+                                                alignment: Alignment.centerLeft,
+                                                child: Text(
+                                                  _isPaymentConfirmed
+                                                      ? 'ride.searching'.tr()
+                                                      : 'En attente du paiement...',
+                                                  maxLines: 1,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize:
+                                                        AppConstants.fontXl,
+                                                    fontWeight: FontWeight.w900,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                    letterSpacing: -0.4,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         const SizedBox(
                                             width: AppConstants.spacingSm),
-                                        _buildVehicleImage(
-                                            width: 68, height: 44),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.accountScaffoldBg,
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                          ),
+                                          child: _buildVehicleImage(
+                                            width: 72,
+                                            height: 44,
+                                          ),
+                                        ),
                                         const SizedBox(
-                                            width: AppConstants.spacingSm),
-                                        _buildChevronButton(
-                                            isExpanded: true),
+                                            width: AppConstants.spacingXs),
+                                        _buildChevronButton(isExpanded: true),
                                       ],
                                     ),
-                                    const SizedBox(
-                                        height: AppConstants.spacingUnitLg),
+                                    const SizedBox(height: 12),
                                     _buildProgressBar(),
                                   ],
                                 )
@@ -1422,7 +1539,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                         const SizedBox(
                                             width: AppConstants.spacingSm),
                                         _buildVehicleImage(
-                                            width: 52, height: 34),
+                                            width: 56, height: 34),
                                         const SizedBox(
                                             width: AppConstants.spacingSm),
                                         _buildChevronButton(
@@ -1436,7 +1553,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                 ),
                         ),
 
-                        // Expandable Content: Payment Info, Drivers Around & Cancel Button
+                        // Expandable Content: Route + Fare Card, Payment & Nearby Drivers Card, and Cancel Button
                         ClipRect(
                           child: Align(
                             alignment: Alignment.topCenter,
@@ -1448,141 +1565,193 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const SizedBox(height: 18),
+                                  const SizedBox(height: 14),
 
-                                  // Tile 1: Paiement reçu ou en espèces
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: const BoxDecoration(
-                                          color: AppColors.refundContainerBg,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Icon(
-                                          widget.paymentMethod ==
-                                                  PaymentMethodType.cash
-                                              ? Icons.payments_outlined
-                                              : Icons.check_rounded,
-                                          color: AppColors.refundGreen,
-                                          size: 22,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                  // Card 1 (Dribbble-style): Résumé du trajet (Départ -> Destination) + Tarif mis en exergue
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accountScaffoldBg,
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Column(
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              widget.paymentMethod ==
-                                                      PaymentMethodType.cash
-                                                  ? 'ride.payment_cash_due'.tr(
-                                                      args: [
-                                                          widget.rideOption
-                                                              .formattedPrice
-                                                        ])
-                                                  : 'ride.payment_received'.tr(
-                                                      args: [
-                                                          widget.rideOption
-                                                              .formattedPrice
-                                                        ]),
-                                              style: GoogleFonts.inter(
-                                                fontSize: 14.5,
-                                                fontWeight: FontWeight.w800,
-                                                color: AppColors.textPrimary,
+                                            Container(
+                                              width: 8,
+                                              height: 8,
+                                              decoration: const BoxDecoration(
+                                                color:
+                                                    AppColors.yangoRouteGreen,
+                                                shape: BoxShape.circle,
                                               ),
                                             ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              widget.paymentMethod ==
-                                                      PaymentMethodType.cash
-                                                  ? 'Vous paierez ${widget.rideOption.formattedPrice} en espèces au chauffeur à l\'arrivée.'
-                                                  : 'ride.refund_guarantee'.tr(),
-                                              style: GoogleFonts.inter(
-                                                fontSize: 12.5,
-                                                color: AppColors.textSecondary,
+                                            Container(
+                                              width: 1.5,
+                                              height: 14,
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                vertical: 2,
+                                              ),
+                                              color: AppColors.grayBorderMedium,
+                                            ),
+                                            Container(
+                                              width: 8,
+                                              height: 8,
+                                              decoration: const BoxDecoration(
+                                                color: AppColors.primary,
+                                                shape: BoxShape.circle,
                                               ),
                                             ),
                                           ],
                                         ),
-                                      ),
-                                    ],
-                                  ),
-
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 12),
-                                    child: Divider(
-                                        height: 1, color: AppColors.cardBorder),
-                                  ),
-
-                                  // Tile 2: X chauffeurs Eco autour de vous
-                                  Row(
-                                    children: [
-                                      Container(
-                                        width: 40,
-                                        height: 40,
-                                        decoration: const BoxDecoration(
-                                          color: AppColors.surfaceGrey,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: SvgPicture.asset(
-                                          widget.rideOption.type ==
-                                                  RideType.eco
-                                              ? 'assets/icons/ecocar.svg'
-                                              : 'assets/icons/confortcar.svg',
-                                          width: 22,
-                                          height: 22,
-                                          colorFilter: const ColorFilter.mode(
-                                            AppColors.textPrimary,
-                                            BlendMode.srcIn,
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                widget.departure.mainText,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                widget.destination.mainText,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w700,
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 14),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              _nearbyDriversCount != null
-                                                  ? (_nearbyDriversCount! > 0
-                                                      ? 'ride.drivers_around_count'
-                                                          .tr(args: [
-                                                          '$_nearbyDriversCount',
-                                                          rideTypeLabel
-                                                        ])
-                                                      : 'ride.searching_drivers_type'
-                                                          .tr(args: [
-                                                          rideTypeLabel
-                                                        ]))
-                                                  : 'ride.drivers_around_type'
-                                                      .tr(args: [rideTypeLabel]),
-                                              style: GoogleFonts.inter(
-                                                fontSize: 14.5,
-                                                fontWeight: FontWeight.w800,
-                                                color: AppColors.textPrimary,
+                                        const SizedBox(width: 10),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 7,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            boxShadow: const [
+                                              BoxShadow(
+                                                color:
+                                                    AppColors.shadowSubtleBlack,
+                                                blurRadius: 6,
+                                                offset: Offset(0, 2),
                                               ),
+                                            ],
+                                          ),
+                                          child: Text(
+                                            widget.rideOption.formattedPrice,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w900,
+                                              color: AppColors.primary,
                                             ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'ride.offer_closest_first'.tr(),
-                                              style: GoogleFonts.inter(
-                                                fontSize: 12.5,
-                                                color: AppColors.textSecondary,
-                                              ),
-                                            ),
-                                          ],
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
 
-                                  const SizedBox(height: 20),
+                                  const SizedBox(height: 10),
+
+                                  // Card 2 (Dribbble-style): Chauffeurs à proximité sans bordure
+                                  Container(
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accountScaffoldBg,
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: const BoxDecoration(
+                                            color: AppColors.peachContainer,
+                                            shape: BoxShape.circle,
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: SvgPicture.asset(
+                                            widget.rideOption.type ==
+                                                    RideType.eco
+                                                ? 'assets/icons/ecocar.svg'
+                                                : 'assets/icons/confortcar.svg',
+                                            width: 21,
+                                            height: 21,
+                                            colorFilter:
+                                                const ColorFilter.mode(
+                                              AppColors.primary,
+                                              BlendMode.srcIn,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _nearbyDriversCount != null
+                                                    ? (_nearbyDriversCount! > 0
+                                                        ? 'ride.drivers_around_count'
+                                                            .tr(args: [
+                                                            '$_nearbyDriversCount',
+                                                            rideTypeLabel
+                                                          ])
+                                                        : 'ride.searching_drivers_type'
+                                                            .tr(args: [
+                                                            rideTypeLabel
+                                                          ]))
+                                                    : 'ride.drivers_around_type'
+                                                        .tr(args: [
+                                                        rideTypeLabel
+                                                      ]),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'ride.offer_closest_first'.tr(),
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 16),
 
                                   // Button: Annuler la course
                                   SizedBox(
@@ -1604,7 +1773,7 @@ class _DriverSearchPageState extends State<DriverSearchPage>
                                       child: Text(
                                         'ride.cancel_ride'.tr(),
                                         style: GoogleFonts.inter(
-                                          fontSize: 16,
+                                          fontSize: 15.5,
                                           fontWeight: FontWeight.w800,
                                         ),
                                       ),
