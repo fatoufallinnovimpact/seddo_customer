@@ -51,12 +51,12 @@ void main() {
       expect(find.text('2527 Rue DD 98, Dakar'), findsOneWidget);
       expect(find.text('Rue PE 24, Dakar'), findsOneWidget);
 
-      // 7. Icônes de pin de localisation avec couleur gris sombre darkPinGrey
-      final pinIcons = tester.widgetList<Icon>(
-        find.byIcon(Icons.location_on_rounded),
+      // 7. Icônes d'historique avec couleur grise douce (pas trop foncée)
+      final historyIcons = tester.widgetList<Icon>(
+        find.byIcon(Icons.history_rounded),
       );
-      expect(pinIcons.isNotEmpty, isTrue);
-      expect(pinIcons.first.color, equals(AppColors.darkPinGrey));
+      expect(historyIcons.isNotEmpty, isTrue);
+      expect(historyIcons.first.color, equals(AppColors.recentTripIconGrey));
     });
 
     testWidgets(

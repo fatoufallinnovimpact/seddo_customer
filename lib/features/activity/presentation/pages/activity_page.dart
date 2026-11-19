@@ -1022,191 +1022,279 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
   }
 
   // ==========================================
-  // REMBOURSEMENTS TAB
+  // REMBOURSEMENTS TAB (Design Sobre Blanc, Gris, Noir inspiré Dribbble & Figma)
   // ==========================================
 
   Widget _buildRefundsTabContent(ActivityLoadedState state) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Hero Dark Card with Orange Curve
-        _buildRefundHeroCard(state.summary),
+        const SizedBox(height: 6),
 
-        const SizedBox(height: AppConstants.spacingLg),
+        // 1. Nouvelle Carte Héro Sobre, Aérée & Statutaire (Blanc, Gris, Noir)
+        _buildRefundHeroCard(state.summary, state.refunds.length),
+
+        const SizedBox(height: 28),
 
         // 2. Section "HISTORIQUE"
-        Text(
-          'activity.history'.tr(),
-          style: GoogleFonts.inter(
-            fontSize: AppConstants.fontSm,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textSecondary,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: AppConstants.spacingUnitLg),
-
-        // 3. Refunds list
-        ...state.refunds.map((refund) => Padding(
-              padding: const EdgeInsets.only(
-                bottom: AppConstants.spacingUnitLg,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'activity.history'.tr(),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF9CA3AF),
+                letterSpacing: 1.0,
               ),
+            ),
+            Text(
+              '${state.refunds.length} transactions',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF9CA3AF),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // 3. Liste des remboursements
+        ...state.refunds.map((refund) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
               child: _buildRefundItemCard(refund),
             )),
 
         // Loader during pagination
         if (state.isLoadingMoreRefunds)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: AppConstants.spacingMd,
-            ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
               child: SizedBox(
-                width: AppConstants.iconSizeXl,
-                height: AppConstants.iconSizeXl,
-                child: const CircularProgressIndicator(
-                  strokeWidth: AppConstants.strokeWidthSelected,
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF111827)),
                 ),
               ),
             ),
           ),
 
-        const SizedBox(height: AppConstants.spacingLg),
+        const SizedBox(height: 16),
 
-        // 4. Footnote text
-        Center(
-          child: Text(
-            'activity.footnote'.tr(),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: AppConstants.fontSm,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
-              height: 1.4,
+        // 4. Footnote text élégante avec icône info
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: const Color(0xFFE5E7EB),
+              width: 1.0,
             ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 18,
+                color: Color(0xFF9CA3AF),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'activity.footnote'.tr(),
+                  style: GoogleFonts.inter(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF6B7280),
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
 
-        const SizedBox(height: AppConstants.spacingXl),
+        const SizedBox(height: 36),
       ],
     );
   }
 
-  Widget _buildRefundHeroCard(ActivitySummary summary) {
+  Widget _buildRefundHeroCard(ActivitySummary summary, int refundsCount) {
+    final amountNumber = summary.totalRefundedFormatted
+        .replaceAll(' F', '')
+        .replaceAll('F', '')
+        .trim();
+
     return Container(
-      height: AppConstants.activityRefundCardHeight,
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.drawerDark,
-        borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(24.0),
+        border: Border.all(
+          color: const Color(0xFFE5E7EB),
+          width: 1.0,
+        ),
         boxShadow: const [
           BoxShadow(
-            color: AppColors.shadowDarkBlack,
-            blurRadius: AppConstants.spacingUnit,
-            offset: Offset(0, AppConstants.spacingXs),
+            color: Color(0x06000000),
+            blurRadius: 20,
+            offset: Offset(0, 8),
+            spreadRadius: -2,
           ),
         ],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          // Orange circle accent positioned strictly in the top-right corner
-          Positioned(
-            top: AppConstants.activityCircleAccentTop,
-            right: AppConstants.activityCircleAccentRight,
-            child: Container(
-              width: AppConstants.activityCircleAccentSize,
-              height: AppConstants.activityCircleAccentSize,
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22.0, vertical: 24.0),
+        child: Column(
+          children: [
+            // 1. Badge supérieur sobre avec icône
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.arrow_downward_rounded,
+                    size: 14,
+                    color: Color(0xFF111827),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'activity.total_refunded'.tr().toUpperCase(),
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF6B7280),
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
 
-          // Card contents
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spacingMd,
-              vertical: AppConstants.spacingUnitLg,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            const SizedBox(height: 16),
+
+            // 2. Montant imposant et raffiné
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'activity.total_refunded'.tr(),
-                      style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontSm,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: AppConstants.spacingXxs),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          summary.totalRefundedFormatted
-                              .replaceAll(' F', '')
-                              .replaceAll('F', '')
-                              .trim(),
-                          style: GoogleFonts.inter(
-                            fontSize: AppConstants.fontHero,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.white,
-                            letterSpacing: -1.0,
-                          ),
-                        ),
-                        const SizedBox(width: AppConstants.spacingXs),
-                        Text(
-                          'F',
-                          style: GoogleFonts.inter(
-                            fontSize: AppConstants.fontTitle,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                Text(
+                  amountNumber,
+                  style: GoogleFonts.inter(
+                    fontSize: 44,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF111827),
+                    letterSpacing: -1.6,
+                  ),
                 ),
-
-                // Orange Money account indicator with official logo
-                Row(
-                  children: [
-                    ClipRRect(
-                      borderRadius:
-                          BorderRadius.circular(AppConstants.radiusXs),
-                      child: Image.asset(
-                        AppConstants.assetOrangeMoneyLogo,
-                        width: AppConstants.iconSizeMd,
-                        height: AppConstants.iconSizeMd,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    const SizedBox(width: AppConstants.spacingSm),
-                    Expanded(
-                      child: Text(
-                        'Sur ${summary.refundPaymentAccount}',
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontSm,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.white,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 6),
+                Text(
+                  'F',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF9CA3AF),
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
+
+            const SizedBox(height: 20),
+
+            // 3. Séparateur très discret
+            const Divider(
+              height: 1,
+              thickness: 0.8,
+              color: Color(0xFFF3F4F6),
+            ),
+
+            const SizedBox(height: 16),
+
+            // 4. Ligne statutaire sobre avec 2 indicateurs clés (sans carte Orange Money encombrante)
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Transactions',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF9CA3AF),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$refundsCount reçues',
+                        style: GoogleFonts.inter(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 28,
+                  color: const Color(0xFFE5E7EB),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Délai moyen',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF9CA3AF),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Instantané',
+                            style: GoogleFonts.inter(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111827),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1222,37 +1310,46 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
             _openReceiptForRefund(refund);
           }
         },
-        borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(AppConstants.spacingMd),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.grayBgLight,
-            borderRadius: BorderRadius.circular(AppConstants.radiusCard),
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE5E7EB),
+              width: 1.0,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x04000000),
+                blurRadius: 10,
+                offset: Offset(0, 3),
+              ),
+            ],
           ),
           child: Row(
             children: [
-              // Icon container
+              // Conteneur circulaire sobre en gris doux avec icône anthracite
               Container(
-                width: AppConstants.circularAvatarSize,
-                height: AppConstants.circularAvatarSize,
-                decoration: const BoxDecoration(
-                  color: AppColors.white,
-                  shape: BoxShape.circle,
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
                 child: Icon(
                   refund.isPending
-                      ? Icons.access_time_rounded
-                      : Icons.refresh_rounded,
-                  size: AppConstants.iconSizeLg,
-                  color: refund.isPending
-                      ? AppColors.primary
-                      : AppColors.greenSuccess,
+                      ? Icons.hourglass_top_rounded
+                      : Icons.arrow_downward_rounded,
+                  size: 20,
+                  color: const Color(0xFF111827),
                 ),
               ),
-              const SizedBox(width: AppConstants.spacingUnitLg),
+              const SizedBox(width: 14),
 
-              // Title and description
+              // Titre et sous-titre
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1260,59 +1357,65 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                     Text(
                       refund.title,
                       style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontBase,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.slateDark,
+                        color: const Color(0xFF111827),
+                        letterSpacing: -0.2,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: AppConstants.spacingXxs),
+                    const SizedBox(height: 3),
                     Text(
                       refund.subtitle,
                       style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontSm,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF6B7280),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
 
-              // Amount & Badge
+              const SizedBox(width: 12),
+
+              // Montant et capsule de statut sobre
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
                     refund.amountText,
                     style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontLg,
-                      fontWeight: FontWeight.w900,
-                      color: refund.isPending
-                          ? AppColors.primary
-                          : AppColors.greenSuccess,
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111827),
                     ),
                   ),
-                  const SizedBox(height: AppConstants.spacingXs),
+                  const SizedBox(height: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: AppConstants.spacingUnit,
-                      vertical: AppConstants.spacingXxs,
+                      horizontal: 8,
+                      vertical: 2.5,
                     ),
                     decoration: BoxDecoration(
-                      color: refund.isPending
-                          ? AppColors.orangeLightBg
-                          : AppColors.refundPillBg,
-                      borderRadius:
-                          BorderRadius.circular(AppConstants.radiusFull),
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: const Color(0xFFE5E7EB),
+                        width: 0.8,
+                      ),
                     ),
                     child: Text(
                       refund.status,
                       style: GoogleFonts.inter(
-                        fontSize: AppConstants.fontXs,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                         color: refund.isPending
-                            ? AppColors.primary
-                            : AppColors.greenSuccess,
+                            ? const Color(0xFF6B7280)
+                            : const Color(0xFF111827),
                       ),
                     ),
                   ),

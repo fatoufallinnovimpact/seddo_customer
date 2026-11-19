@@ -979,12 +979,8 @@ class _DestinationSearchBottomSheetState
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       itemCount: _suggestions.length,
-                      separatorBuilder: (context, index) => const Divider(
-                        height: 1,
-                        indent: 72,
-                        thickness: 0.8,
-                        color: AppColors.subtleDivider,
-                      ),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 2),
                       itemBuilder: (context, index) {
                         final item = _suggestions[index];
                         final rawTitle = item.mainText ?? item.description;
@@ -998,29 +994,66 @@ class _DestinationSearchBottomSheetState
                         final title = hierarchy.title;
                         final subtitle = hierarchy.subtitle;
 
+                        final isHome = title.trim().toLowerCase() == 'maison' ||
+                            title.trim().toLowerCase().startsWith('maison ') ||
+                            subtitle.trim().toLowerCase() == 'maison';
+                        final isWork = title.trim().toLowerCase() == 'travail' ||
+                            title.trim().toLowerCase().startsWith('travail ') ||
+                            subtitle.trim().toLowerCase() == 'travail';
+
                         return InkWell(
                           onTap: () => _onSelectSuggestionItem(item),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16,
-                              vertical: 12,
+                              vertical: 10,
                             ),
                             child: Row(
                               children: [
-                                // Cercle gris avec icône pin de localisation en gris sombre
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.serviceCardBg,
-                                    shape: BoxShape.circle,
+                                if (isHome)
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.home_outlined,
+                                      color: AppColors.textPrimary,
+                                      size: 22,
+                                    ),
+                                  )
+                                else if (isWork)
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.work_outline_rounded,
+                                      color: AppColors.textPrimary,
+                                      size: 22,
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFF3F4F6),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.location_on_outlined,
+                                      color: AppColors.recentTripIconGrey,
+                                      size: 22,
+                                    ),
                                   ),
-                                  child: const Icon(
-                                    Icons.location_on_rounded,
-                                    color: AppColors.darkPinGrey,
-                                    size: 22,
-                                  ),
-                                ),
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: Column(
@@ -1071,12 +1104,8 @@ class _DestinationSearchBottomSheetState
                               _departureController.text.isEmpty
                           ? _recentDestinations.length + 1
                           : _recentDestinations.length,
-                      separatorBuilder: (context, index) => const Divider(
-                        height: 1,
-                        indent: 72,
-                        thickness: 0.8,
-                        color: AppColors.subtleDivider,
-                      ),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 2),
                       itemBuilder: (context, index) {
                         // Si le point de départ a été effacé : afficher la tuile "Votre position actuelle" en premier
                         if (_isEditingDeparture &&
@@ -1098,29 +1127,66 @@ class _DestinationSearchBottomSheetState
                         final title = hierarchy.title;
                         final subtitle = hierarchy.subtitle;
 
+                        final isHome = title.trim().toLowerCase() == 'maison' ||
+                            title.trim().toLowerCase().startsWith('maison ') ||
+                            subtitle.trim().toLowerCase() == 'maison';
+                        final isWork = title.trim().toLowerCase() == 'travail' ||
+                            title.trim().toLowerCase().startsWith('travail ') ||
+                            subtitle.trim().toLowerCase() == 'travail';
+
                         return InkWell(
                           onTap: () => _onSelectRecentItem(item),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16,
-                              vertical: 12,
+                              vertical: 10,
                             ),
                             child: Row(
                               children: [
-                                // Cercle gris avec icône pin de localisation en gris sombre
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.serviceCardBg,
-                                    shape: BoxShape.circle,
+                                if (isHome)
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.home_outlined,
+                                      color: AppColors.textPrimary,
+                                      size: 22,
+                                    ),
+                                  )
+                                else if (isWork)
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.work_outline_rounded,
+                                      color: AppColors.textPrimary,
+                                      size: 22,
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFF3F4F6),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.history_rounded,
+                                      color: AppColors.recentTripIconGrey,
+                                      size: 22,
+                                    ),
                                   ),
-                                  child: const Icon(
-                                    Icons.location_on_rounded,
-                                    color: AppColors.darkPinGrey,
-                                    size: 22,
-                                  ),
-                                ),
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: Column(

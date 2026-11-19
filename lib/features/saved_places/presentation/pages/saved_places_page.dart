@@ -206,99 +206,137 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AppConstants.radiusSheet),
+          top: Radius.circular(24),
         ),
       ),
       builder: (bottomSheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spacingMd,
-              vertical: AppConstants.spacingUnitXl,
+              horizontal: 20,
+              vertical: 16,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
                   child: Container(
-                    width: AppConstants.handleWidth,
-                    height: AppConstants.handleHeight,
+                    width: 38,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.dragHandle,
-                      borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
                 ),
-                const SizedBox(height: AppConstants.spacingMd),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    width: AppConstants.circularPickerSize,
-                    height: AppConstants.circularPickerSize,
-                    decoration: BoxDecoration(
-                      color: _getIconBackgroundColor(place.iconType),
-                      borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.center,
+                      child: _buildIcon(place.iconType),
                     ),
-                    alignment: Alignment.center,
-                    child: _buildIcon(place.iconType),
-                  ),
-                  title: Text(
-                    place.name,
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontLg,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            place.name,
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            place.address,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  subtitle: Text(
-                    place.address,
-                    style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontSm,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  ],
                 ),
-                const Divider(color: AppColors.divider),
+                const SizedBox(height: 18),
+                const Divider(color: Color(0xFFF1F3F5), height: 1),
+                const SizedBox(height: 12),
                 ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  tileColor: const Color(0xFFF8F9FA),
                   leading: const Icon(
                     Icons.edit_outlined,
                     color: AppColors.textPrimary,
-                    size: AppConstants.iconSizeLg,
+                    size: 20,
                   ),
                   title: Text(
                     'saved_places.edit'.tr(),
                     style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontBase,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textPrimary,
                     ),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFF9CA3AF),
+                    size: 20,
                   ),
                   onTap: () {
                     Navigator.of(bottomSheetContext).pop();
                     _editPlace(place);
                   },
                 ),
+                const SizedBox(height: 8),
                 ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  tileColor: const Color(0xFFFEF2F2),
                   leading: const Icon(
                     Icons.delete_outline_rounded,
                     color: AppColors.deleteRed,
-                    size: AppConstants.iconSizeLg,
+                    size: 20,
                   ),
                   title: Text(
                     'saved_places.delete_action'.tr(),
                     style: GoogleFonts.inter(
-                      fontSize: AppConstants.fontBase,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
                       color: AppColors.deleteRed,
                     ),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Color(0xFFF87171),
+                    size: 20,
                   ),
                   onTap: () {
                     Navigator.of(bottomSheetContext).pop();
                     _deletePlace(place);
                   },
                 ),
+                const SizedBox(height: 4),
               ],
             ),
           ),
@@ -308,77 +346,51 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
   }
 
   Color _getIconBackgroundColor(String iconType) {
-    switch (iconType) {
-      case 'home':
-        return AppColors.peachContainer;
-      case 'work':
-        return AppColors.greyContainer;
-      case 'airport':
-        return AppColors.savedPlaceAirportBg;
-      case 'heart':
-        return AppColors.savedPlaceHeartBg;
-      case 'gym':
-        return AppColors.savedPlaceGymBg;
-      case 'star':
-      default:
-        return AppColors.savedPlaceStarBg;
-    }
+    return const Color(0xFFF3F4F6);
   }
 
   Widget _buildIcon(String iconType) {
+    IconData iconData;
     switch (iconType) {
       case 'home':
-        return const Icon(
-          Icons.home_outlined,
-          size: AppConstants.iconSizeXl,
-          color: AppColors.primary,
-        );
+        iconData = Icons.home_outlined;
+        break;
       case 'work':
-        return const Icon(
-          Icons.work_outline_rounded,
-          size: AppConstants.iconSizeLg,
-          color: AppColors.textPrimary,
-        );
+        iconData = Icons.work_outline_rounded;
+        break;
       case 'airport':
-        return const Icon(
-          Icons.flight_rounded,
-          size: AppConstants.iconSizeLg,
-          color: AppColors.savedPlaceAirportIcon,
-        );
+        iconData = Icons.flight_rounded;
+        break;
       case 'heart':
-        return const Icon(
-          Icons.favorite_outline_rounded,
-          size: AppConstants.iconSizeLg,
-          color: AppColors.savedPlaceHeartIcon,
-        );
+        iconData = Icons.favorite_border_rounded;
+        break;
       case 'gym':
-        return const Icon(
-          Icons.fitness_center_rounded,
-          size: AppConstants.iconSizeLg,
-          color: AppColors.savedPlaceGymIcon,
-        );
+        iconData = Icons.fitness_center_rounded;
+        break;
       case 'star':
       default:
-        return const Icon(
-          Icons.star_outline_rounded,
-          size: AppConstants.iconSizeLg,
-          color: AppColors.primary,
-        );
+        iconData = Icons.star_border_rounded;
+        break;
     }
+    return Icon(
+      iconData,
+      size: 22,
+      color: AppColors.textPrimary,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final _ = context.locale;
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: const Color(0xFFF8F9FA),
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => FocusScope.of(context).unfocus(),
         child: SafeArea(
           child: Column(
             children: [
-              // 1. Top Bar: Back Circle + Two-line Title + "+ Ajouter" Capsule
+              // 1. Top Bar: Bouton retour circulaire + Titre épuré + Capsule "+ Ajouter"
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppConstants.spacingMd,
@@ -389,40 +401,59 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                   children: [
                     // Back circular button
                     Container(
-                      width: AppConstants.circularPickerSize,
-                      height: AppConstants.circularPickerSize,
-                      decoration: const BoxDecoration(
-                        color: AppColors.white,
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
                         shape: BoxShape.circle,
-                        boxShadow: [
+                        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                        boxShadow: const [
                           BoxShadow(
-                            color: AppColors.shadowSoftBlack,
-                            blurRadius: AppConstants.spacingSm,
+                            color: Color(0x06000000),
+                            blurRadius: 8,
                             offset: Offset(0, 2),
                           ),
                         ],
                       ),
                       child: IconButton(
+                        padding: EdgeInsets.zero,
                         icon: const Icon(
-                          Icons.arrow_back,
+                          Icons.arrow_back_ios_new_rounded,
                           color: AppColors.textPrimary,
-                          size: AppConstants.iconSizeMd,
+                          size: 18,
                         ),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ),
                     const SizedBox(width: AppConstants.spacingMd),
-                    // Large Two-Line Title
+                    // Large Two-Line Title with subtitle count
                     Expanded(
-                      child: Text(
-                        'saved_places.title_caps'.tr(),
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontTitleLarge,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.textPrimary,
-                          height: AppConstants.titleLineHeight,
-                          letterSpacing: AppConstants.titleLetterSpacing,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'saved_places.title_caps'.tr(),
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.textPrimary,
+                              height: 1.15,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          if (_savedPlaces.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '${_savedPlaces.length} lieu${_savedPlaces.length > 1 ? 'x' : ''} enregistré${_savedPlaces.length > 1 ? 's' : ''}',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     const SizedBox(width: AppConstants.spacingSm),
@@ -431,15 +462,22 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                       color: AppColors.transparent,
                       child: InkWell(
                         onTap: _addNewPlace,
-                        borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+                        borderRadius: BorderRadius.circular(24),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppConstants.spacingUnitXl,
-                            vertical: AppConstants.spacingUnit,
+                            horizontal: 16,
+                            vertical: 10,
                           ),
                           decoration: BoxDecoration(
                             color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(AppConstants.radiusFull),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.28),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -447,13 +485,13 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                               const Icon(
                                 Icons.add_rounded,
                                 color: AppColors.white,
-                                size: AppConstants.iconSizeDefault,
+                                size: 18,
                               ),
-                              const SizedBox(width: AppConstants.spacingXs),
+                              const SizedBox(width: 5),
                               Text(
                                 'saved_places.add'.tr(),
                                 style: GoogleFonts.inter(
-                                  fontSize: AppConstants.fontMd,
+                                  fontSize: 13.5,
                                   fontWeight: FontWeight.w700,
                                   color: AppColors.white,
                                 ),
@@ -467,35 +505,58 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                 ),
               ),
 
-              const SizedBox(height: AppConstants.spacingSm),
+              const SizedBox(height: AppConstants.spacingXs),
 
-              // 2. Banner info card (Touchez un lieu pour l'utiliser...)
+              // 2. Banner info card épurée et moderne
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppConstants.spacingMd,
                 ),
                 child: Container(
-                  padding: const EdgeInsets.all(AppConstants.spacingMd),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.peachContainer,
-                    borderRadius: BorderRadius.circular(AppConstants.radiusDialog),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFE5E7EB),
+                      width: 1.0,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x04000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.star_outline_rounded,
-                        color: AppColors.primary,
-                        size: AppConstants.iconSizeLg,
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.touch_app_outlined,
+                          color: AppColors.primary,
+                          size: 17,
+                        ),
                       ),
-                      const SizedBox(width: AppConstants.spacingUnitLg),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           'saved_places.tap_hint'.tr(),
                           style: GoogleFonts.inter(
-                            fontSize: AppConstants.fontMd,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primaryDark,
-                            height: AppConstants.bannerLineHeight,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                            height: 1.3,
                           ),
                         ),
                       ),
@@ -504,7 +565,7 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                 ),
               ),
 
-              const SizedBox(height: AppConstants.spacingUnitXl),
+              const SizedBox(height: AppConstants.spacingMd),
 
               // 3. List of saved places
               Expanded(
@@ -519,163 +580,203 @@ class _SavedPlacesPageState extends State<SavedPlacesPage> {
                             ? SingleChildScrollView(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 60),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 60,
+                                    horizontal: 32,
+                                  ),
                                   alignment: Alignment.center,
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const Icon(
-                                        Icons.star_outline_rounded,
-                                        size: AppConstants.iconSizeHuge,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      const SizedBox(height: AppConstants.spacingUnitLg),
-                                      Text(
-                                        'saved_places.empty_title'.tr(),
-                                        style: GoogleFonts.inter(
-                                          fontSize: AppConstants.fontLg,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary,
+                                      Container(
+                                        width: 80,
+                                        height: 80,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF3F4F6),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: const Color(0xFFE5E7EB),
+                                            width: 1,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: AppConstants.spacingXs),
-                                      Text(
-                                        'saved_places.empty_subtitle'.tr(),
-                                        style: GoogleFonts.inter(
-                                          fontSize: AppConstants.fontSm,
+                                        alignment: Alignment.center,
+                                        child: const Icon(
+                                          Icons.bookmark_outline_rounded,
+                                          size: 38,
                                           color: AppColors.textSecondary,
                                         ),
                                       ),
-                                      const SizedBox(height: AppConstants.spacingMd),
+                                      const SizedBox(height: 20),
+                                      Text(
+                                        'saved_places.empty_title'.tr(),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'saved_places.empty_subtitle'.tr(),
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13.5,
+                                          height: 1.4,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 24),
                                       ElevatedButton.icon(
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: AppColors.primary,
                                           foregroundColor: AppColors.white,
+                                          elevation: 0,
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              AppConstants.radiusLg,
-                                            ),
+                                            borderRadius: BorderRadius.circular(24),
                                           ),
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: AppConstants.spacingTwenty,
-                                            vertical: AppConstants.spacingUnitLg,
+                                            horizontal: 24,
+                                            vertical: 14,
                                           ),
                                         ),
-                                        icon: const Icon(Icons.add_rounded),
-                                        label: Text('saved_places.add_place_button'.tr()),
+                                        icon: const Icon(Icons.add_rounded, size: 20),
+                                        label: Text(
+                                          'saved_places.add_place_button'.tr(),
+                                          style: GoogleFonts.inter(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                          ),
+                                        ),
                                         onPressed: _addNewPlace,
                                       ),
                                     ],
                                   ),
                                 ),
                               )
-                            : ListView.separated(
+                            : ListView.builder(
                                 physics: const AlwaysScrollableScrollPhysics(
                                   parent: BouncingScrollPhysics(),
                                 ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: AppConstants.spacingMd,
-                                  vertical: AppConstants.spacingSm,
+                                  vertical: AppConstants.spacingXs,
                                 ),
                                 itemCount: _savedPlaces.length,
-                                separatorBuilder: (_, index) =>
-                                    const SizedBox(height: AppConstants.spacingUnitLg),
                                 itemBuilder: (context, index) {
                                   final place = _savedPlaces[index];
 
-                                  return Material(
-                                    color: AppColors.grayBgLight,
-                                    borderRadius: BorderRadius.circular(
-                                      AppConstants.radiusDialog,
-                                    ),
-                                    child: InkWell(
-                                      onTap: () => _selectPlace(place),
-                                      borderRadius: BorderRadius.circular(
-                                        AppConstants.radiusDialog,
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: const Color(0xFFEAEBED),
+                                        width: 1.0,
                                       ),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(
-                                          AppConstants.spacingUnitXl,
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color(0x05000000),
+                                          blurRadius: 10,
+                                          offset: Offset(0, 2),
                                         ),
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            AppConstants.radiusDialog,
+                                      ],
+                                    ),
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () => _selectPlace(place),
+                                        borderRadius: BorderRadius.circular(18),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 14,
                                           ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            // Themed Icon Squircle
-                                            Container(
-                                              width: AppConstants
-                                                  .savedPlaceIconContainerSize,
-                                              height: AppConstants
-                                                  .savedPlaceIconContainerSize,
-                                              decoration: BoxDecoration(
-                                                color: _getIconBackgroundColor(
-                                                  place.iconType,
+                                          child: Row(
+                                            children: [
+                                              // Themed Neutral Icon Squircle
+                                              Container(
+                                                width: 48,
+                                                height: 48,
+                                                decoration: BoxDecoration(
+                                                  color: _getIconBackgroundColor(
+                                                    place.iconType,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(14),
                                                 ),
-                                                borderRadius:
-                                                    BorderRadius.circular(
-                                                  AppConstants.radiusLg,
+                                                alignment: Alignment.center,
+                                                child: _buildIcon(place.iconType),
+                                              ),
+                                              const SizedBox(width: 14),
+
+                                              // Name & Address
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Text(
+                                                      place.name,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 15.5,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color:
+                                                            AppColors.textPrimary,
+                                                        letterSpacing: -0.2,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                    const SizedBox(height: 3),
+                                                    Text(
+                                                      place.address,
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 13,
+                                                        fontWeight:
+                                                            FontWeight.w400,
+                                                        color: AppColors
+                                                            .textSecondary,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
-                                              alignment: Alignment.center,
-                                              child: _buildIcon(place.iconType),
-                                            ),
-                                            const SizedBox(
-                                              width: AppConstants.spacingUnitXl,
-                                            ),
+                                              const SizedBox(width: 8),
 
-                                            // Name & Address
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    place.name,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize:
-                                                          AppConstants.fontLg,
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                      color:
-                                                          AppColors.textPrimary,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
+                                              // Vertical Three-Dots Menu Button in soft round target
+                                              Container(
+                                                width: 36,
+                                                height: 36,
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF9FAFB),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: const Color(0xFFF1F3F5),
+                                                    width: 1,
                                                   ),
-                                                  const SizedBox(
-                                                    height: AppConstants.spacingXs,
+                                                ),
+                                                child: IconButton(
+                                                  padding: EdgeInsets.zero,
+                                                  icon: const Icon(
+                                                    Icons.more_vert_rounded,
+                                                    size: 19,
+                                                    color: Color(0xFF6B7280),
                                                   ),
-                                                  Text(
-                                                    place.address,
-                                                    style: GoogleFonts.inter(
-                                                      fontSize: AppConstants.fontMd,
-                                                      fontWeight: FontWeight.w500,
-                                                      color:
-                                                          AppColors.textSecondary,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ],
+                                                  tooltip: 'saved_places.more_options'
+                                                      .tr(),
+                                                  onPressed: () =>
+                                                      _showPlaceOptionsMenu(place),
+                                                ),
                                               ),
-                                            ),
-
-                                            // Vertical Three-Dots Menu Button
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.more_vert_rounded,
-                                                size: AppConstants.iconSizeLg,
-                                                color: AppColors.textPrimary,
-                                              ),
-                                              tooltip: 'saved_places.more_options'
-                                                  .tr(),
-                                              onPressed: () =>
-                                                  _showPlaceOptionsMenu(place),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),

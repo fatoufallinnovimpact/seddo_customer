@@ -169,11 +169,11 @@ void main() {
     // Suggestions section header removed
     expect(find.text('Suggestions'), findsNothing);
 
-    // Three recent trip cards should be visible
+    // Three recent trip cards should be visible with refined history icon
     expect(find.text('Liberté 6 Extension'), findsOneWidget);
     expect(find.text('Place 116'), findsOneWidget);
     expect(find.text('Grand Yoff'), findsOneWidget);
-    expect(find.byIcon(Icons.location_on_rounded), findsAtLeastNWidgets(3));
+    expect(find.byIcon(Icons.history_rounded), findsAtLeastNWidgets(3));
   });
 
   testWidgets('HomePage renders Livraison, Transport and Courses 2+1 service cards layout at top',
@@ -203,6 +203,27 @@ void main() {
 
     // TCU Banner is completely removed
     expect(find.byKey(const ValueKey('home_tcu_banner_card')), findsNothing);
+  });
+
+  testWidgets('HomePage allows free vertical scrolling and drag gestures',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(createHomeScreen());
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(seconds: 1));
+
+    // Drag down (scroll down / pull to refresh gesture)
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 300));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Drag up (scroll up)
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
   testWidgets('Tapping menu icon opens endDrawer from right to left',

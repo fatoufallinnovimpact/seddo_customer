@@ -41,43 +41,49 @@ class _SplashPageState extends State<SplashPage>
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1300),
+      duration: const Duration(milliseconds: 1400),
     );
 
-    // Fade in animation dès le début
+    // Fade in animation clair et progressif
     _fadeAnimation = CurvedAnimation(
       parent: _animationController,
-      curve: const Interval(0.0, 0.60, curve: Curves.easeIn),
+      curve: const Interval(0.0, 0.65, curve: Curves.easeIn),
     );
 
-    // Effet d'échelle bien visible avec rebond élégant (de 55% à 100%)
-    _scaleAnimation = Tween<double>(begin: 0.55, end: 1.0).animate(
+    // Effet d'échelle très visible : part de 40% et s'étend jusqu'à 100% avec rebond dynamique
+    _scaleAnimation = Tween<double>(begin: 0.40, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.0, 0.85, curve: Curves.easeOutBack),
+        curve: const Interval(0.0, 0.90, curve: Curves.easeOutBack),
       ),
     );
 
-    // Montée dynamique bien visible (slide up)
+    // Montée dynamique bien visible (slide up) depuis le bas
     _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.18),
+      begin: const Offset(0.0, 0.22),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: const Interval(0.0, 0.80, curve: Curves.easeOutCubic),
+        curve: const Interval(0.0, 0.85, curve: Curves.easeOutCubic),
       ),
     );
 
     // Lancer la résolution de la page cible en arrière-plan pendant l'animation
     _destinationFuture = _resolveTargetPage();
 
-    // Démarrer l'animation immédiatement
-    _animationController.forward();
+    // Démarrer l'animation une fois le premier frame affiché pour garantir une visibilité totale de l'effet
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted) {
+          _animationController.forward();
+        }
+      });
+    });
 
     // Naviguer après l'animation complète et bien visible du logo
     _splashTimer = Timer(
-      const Duration(milliseconds: 2300),
+      const Duration(milliseconds: 2600),
       _navigateToNextScreen,
     );
   }

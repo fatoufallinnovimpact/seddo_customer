@@ -51,7 +51,45 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _firstNameController = TextEditingController(text: _user.firstName ?? '');
     _lastNameController = TextEditingController(text: _user.lastName ?? '');
 
+    _checkLostData();
     _loadTokenAndLatestProfile();
+  }
+
+  Future<void> _checkLostData() async {
+    try {
+      final LostDataResponse response = await _imagePicker.retrieveLostData();
+      if (response.isEmpty) return;
+      final file = response.file;
+      if (file != null && mounted) {
+        setState(() {
+          _localPickedPhoto = File(file.path);
+          _isUploadingPhoto = true;
+        });
+
+        final updated = await _authRepo.uploadProfilePhoto(file.path);
+        try {
+          final bytes = await File(file.path).readAsBytes();
+          AuthRepository.setUserPhotoBytes(bytes);
+        } catch (_) {}
+
+        if (mounted) {
+          setState(() {
+            _user = updated;
+            _isUploadingPhoto = false;
+            _photoVersion = DateTime.now().millisecondsSinceEpoch;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Photo de profil mise à jour avec succès'.tr()),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[EditProfile] retrieveLostData: $e');
+    }
   }
 
   Future<void> _loadTokenAndLatestProfile() async {

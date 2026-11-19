@@ -934,33 +934,47 @@ class _HomePageContentState extends State<_HomePageContent>
         },
         builder: (context, state) {
           return SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.only(bottom: 36.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Top bar aérée : Logo SEDDO à gauche, menu burger à droite
-                  _buildTopBar(context),
-                  const SizedBox(height: 28),
+            child: RefreshIndicator(
+              color: AppColors.primary,
+              backgroundColor: AppColors.white,
+              onRefresh: () async {
+                final loc = _currentUserLocation;
+                if (loc != null) {
+                  _resolveUserLocationAddress(loc);
+                  _fetchNearbyDrivers(loc);
+                }
+                await _fetchSuggestions();
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: const EdgeInsets.only(bottom: 60.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Top bar aérée : Logo SEDDO à gauche, menu burger à droite
+                    _buildTopBar(context),
+                    const SizedBox(height: 28),
 
-                  // Si une course ou recherche est en cours, encart proéminent pour y retourner
-                  if (_activeRideData != null) ...[
-                    _buildActiveRideInlineCard(),
-                    const SizedBox(height: 22),
+                    // Si une course ou recherche est en cours, encart proéminent pour y retourner
+                    if (_activeRideData != null) ...[
+                      _buildActiveRideInlineCard(),
+                      const SizedBox(height: 22),
+                    ],
+
+                    // 2. Services : Livraison & Transport à gauche, Courses à droite
+                    _buildServiceCards(context),
+                    const SizedBox(height: 24),
+
+                    // 3. Search card aérée : "Où allez-vous ?"
+                    _buildSearchBar(context),
+                    const SizedBox(height: 24),
+
+                    // 4. Suggestions section : trajets récents listés par ligne aérée
+                    _buildSuggestionsSection(context),
                   ],
-
-                  // 2. Services : Livraison & Transport à gauche, Courses à droite
-                  _buildServiceCards(context),
-                  const SizedBox(height: 24),
-
-                  // 3. Search card aérée : "Où allez-vous ?"
-                  _buildSearchBar(context),
-                  const SizedBox(height: 24),
-
-                  // 4. Suggestions section : trajets récents listés par ligne aérée
-                  _buildSuggestionsSection(context),
-                ],
+                ),
               ),
             ),
           );
@@ -1161,22 +1175,13 @@ class _HomePageContentState extends State<_HomePageContent>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Trajets récents listés avec espacement généreux et séparateur léger (3 trajets)
+          // Trajets récents listés avec espacement élégant sans trait séparateur
           for (int i = 0; i < displayRecents.length; i++) ...[
             _buildRecentTripCard(
               context: context,
               item: displayRecents[i],
               index: i,
             ),
-            if (i < displayRecents.length - 1 || savedItem != null)
-              const Padding(
-                padding: EdgeInsets.only(left: 56, right: 8),
-                child: Divider(
-                  height: 12,
-                  thickness: 0.8,
-                  color: AppColors.serviceCardBg,
-                ),
-              ),
           ],
 
           // Lieu enregistré si disponible
@@ -1203,6 +1208,13 @@ class _HomePageContentState extends State<_HomePageContent>
     final title = hierarchy.title;
     final subtitle = hierarchy.subtitle;
 
+    final isHome = title.trim().toLowerCase() == 'maison' ||
+        title.trim().toLowerCase().startsWith('maison ') ||
+        subtitle.trim().toLowerCase() == 'maison';
+    final isWork = title.trim().toLowerCase() == 'travail' ||
+        title.trim().toLowerCase().startsWith('travail ') ||
+        subtitle.trim().toLowerCase() == 'travail';
+
     return InkWell(
       key: ValueKey('recent_suggestion_${item.id}_$index'),
       borderRadius: BorderRadius.circular(AppConstants.radiusSm),
@@ -1220,24 +1232,55 @@ class _HomePageContentState extends State<_HomePageContent>
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(
-          vertical: 12,
+          vertical: 10,
           horizontal: AppConstants.spacingXs,
         ),
         child: Row(
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: const BoxDecoration(
-                color: AppColors.serviceCardBg,
-                shape: BoxShape.circle,
+            if (isHome)
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.home_outlined,
+                  color: AppColors.textPrimary,
+                  size: 22,
+                ),
+              )
+            else if (isWork)
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.work_outline_rounded,
+                  color: AppColors.textPrimary,
+                  size: 22,
+                ),
+              )
+            else
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF3F4F6),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.history_rounded,
+                  color: AppColors.recentTripIconGrey,
+                  size: 22,
+                ),
               ),
-              child: const Icon(
-                Icons.location_on_rounded,
-                color: AppColors.darkPinGrey,
-                size: 22,
-              ),
-            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1302,15 +1345,16 @@ class _HomePageContentState extends State<_HomePageContent>
         child: Row(
           children: [
             Container(
-              width: 42,
-              height: 42,
-              decoration: const BoxDecoration(
-                color: AppColors.serviceCardBg,
-                shape: BoxShape.circle,
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
               ),
+              alignment: Alignment.center,
               child: Icon(
-                _iconForPlaceKind(item.kind),
-                color: AppColors.neutralIconGrey,
+                _iconForPlaceKind(item.kind, item.iconType),
+                color: AppColors.textPrimary,
                 size: 22,
               ),
             ),
@@ -1657,18 +1701,24 @@ class _HomePageContentState extends State<_HomePageContent>
     );
   }
 
-  IconData _iconForPlaceKind(String? kindOrIcon) {
-    final norm = (kindOrIcon ?? '').toUpperCase();
+  IconData _iconForPlaceKind(String? kindOrIcon, [String? fallbackIconType]) {
+    final norm = (kindOrIcon ?? fallbackIconType ?? '').toUpperCase();
     if (norm == 'HOME' || norm.contains('MAISON')) {
-      return Icons.home_rounded;
+      return Icons.home_outlined;
     }
     if (norm == 'WORK' || norm.contains('TRAVAIL') || norm.contains('BUREAU')) {
-      return Icons.work_rounded;
+      return Icons.work_outline_rounded;
     }
     if (norm.contains('AIRPORT') || norm.contains('AEROPORT')) {
-      return Icons.flight_takeoff_rounded;
+      return Icons.flight_rounded;
     }
-    return Icons.star_rounded;
+    if (norm.contains('HEART') || norm.contains('FAVORIS')) {
+      return Icons.favorite_border_rounded;
+    }
+    if (norm.contains('GYM') || norm.contains('SPORT')) {
+      return Icons.fitness_center_rounded;
+    }
+    return Icons.star_border_rounded;
   }
 }
 

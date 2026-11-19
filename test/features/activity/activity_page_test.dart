@@ -192,15 +192,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Total refunded hero card
-      expect(find.text('Total remboursé'), findsOneWidget);
-      expect(
-        find.byWidgetPredicate((w) =>
-            w is Image &&
-            w.image is AssetImage &&
-            (w.image as AssetImage).assetName == AppConstants.assetOrangeMoneyLogo),
-        findsWidgets,
-      );
-      expect(find.textContaining('Orange Money'), findsWidgets);
+      expect(find.text('TOTAL REMBOURSÉ'), findsOneWidget);
+      expect(find.text('2 900'), findsOneWidget);
+      expect(find.text('Transactions'), findsOneWidget);
+      expect(find.text('Instantané'), findsOneWidget);
 
       // Historique section
       expect(find.text('HISTORIQUE'), findsOneWidget);

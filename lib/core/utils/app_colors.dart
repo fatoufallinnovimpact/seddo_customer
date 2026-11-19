@@ -428,7 +428,9 @@ abstract class AppColors {
   static const Color subtleDivider = Color(0xFFF4F4F4);
 
   /// Gris sombre pour les icônes de localisation dans les listes de recherche
-  static const Color darkPinGrey = Color(0xFF374151);
+  /// Couleur grise moderne, pas trop foncée, pour les adresses récentes et l'historique
+  static const Color recentTripIconGrey = Color(0xFF8E8E93);
+  static const Color darkPinGrey = Color(0xFF8E8E93);
 
   // Account & Drawer Menu Pastels (Matching Account & Settings Mockups)
   static const Color accountScaffoldBg = Color(0xFFF6F7F9);
