@@ -783,10 +783,16 @@ class _RideBookingPageState extends State<RideBookingPage>
 
     final effectiveRideId = (rideObj['id'] ??
             rideObj['_id'] ??
+            rideObj['rideId'] ??
+            rideObj['ride_id'] ??
             lastData['id'] ??
             lastData['_id'] ??
             RideService.lastCreatedRideId)
         ?.toString();
+
+    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
+      RealtimeService().joinRide(effectiveRideId);
+    }
 
     // Vérifier si un événement WebSocket correspond STRICTEMENT à la nouvelle course
     final rawCached = RealtimeService().lastRideStatusEvent;

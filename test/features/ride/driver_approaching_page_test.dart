@@ -12,6 +12,7 @@ import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_search_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
+import 'package:seddo/services/realtime_service.dart';
 import '../../test_helpers/test_localization_helper.dart';
 
 class MockRideService extends RideService {
@@ -37,6 +38,10 @@ void main() {
 
   setUpAll(() async {
     await initTestLocalization();
+  });
+
+  setUp(() {
+    RealtimeService().clearLastRideStatus();
   });
 
   final departure = PlaceSearchResult(
@@ -99,7 +104,7 @@ void main() {
 
       // Card 1: Driver & Vehicle verification
       expect(find.text('DK 4821 AB'), findsOneWidget);
-      expect(find.text('Toyota Corolla · Gris argent'), findsOneWidget);
+      expect(find.text('Toyota Corolla'), findsOneWidget);
       expect(find.text('Moussa Diop'), findsOneWidget);
       expect(find.text('MD'), findsOneWidget);
 

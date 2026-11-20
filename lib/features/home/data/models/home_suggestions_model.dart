@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
+import 'package:seddo/services/places_service.dart';
 
 /// Response model for GET /v1/users/me/suggestions
 /// Suggestions de l'accueil : lieux enregistrés et destinations récentes.
@@ -106,24 +107,44 @@ class RecentSuggestionModel extends Equatable {
     final labelStr = rawLabel.toString().trim();
     final addressStr = rawAddress.toString().trim();
 
-    String effectiveLabel = labelStr.isNotEmpty
-        ? labelStr
-        : (addressStr.isNotEmpty ? addressStr : 'Destination');
-    String effectiveAddress = addressStr;
+    // Nettoyer les Plus Codes (ex: MGHQ+W85) s'ils sont présents
+    final plusCodeRegex =
+        RegExp(r'\b[A-Z0-9]{4,8}\+[A-Z0-9]{2,4}\b', caseSensitive: false);
+    var cleanLabel = labelStr.replaceAll(plusCodeRegex, '').trim();
+    cleanLabel = cleanLabel
+        .replaceFirst(RegExp(r'^[,;\s\-–—/]+|[,;\s\-–—/]+$'), '')
+        .trim();
 
-    // Si l'adresse est vide mais que le libellé contient des détails (ex: "Grand Yoff, 2527 Rue DD 98, Dakar")
-    final isDakarSenegal = effectiveLabel.toLowerCase() == 'dakar, sénégal' ||
-        effectiveLabel.toLowerCase() == 'dakar, senegal';
+    var cleanAddress = addressStr.replaceAll(plusCodeRegex, '').trim();
+    cleanAddress = cleanAddress
+        .replaceFirst(RegExp(r'^[,;\s\-–—/]+|[,;\s\-–—/]+$'), '')
+        .trim();
 
-    if (effectiveAddress.isEmpty &&
+    String effectiveLabel = cleanLabel.isNotEmpty
+        ? cleanLabel
+        : (cleanAddress.isNotEmpty ? cleanAddress : 'Destination');
+    String effectiveAddress = cleanAddress;
+
+    final isGeneric = effectiveLabel.toLowerCase() == 'dakar, sénégal' ||
+        effectiveLabel.toLowerCase() == 'dakar, senegal' ||
+        effectiveLabel.toLowerCase() == 'dakar';
+
+    if (isGeneric && latVal != 0.0 && lngVal != 0.0) {
+      final fb = PlacesService.getDakarDistrictFallback(latVal, lngVal);
+      effectiveLabel = fb.mainText;
+      if (effectiveAddress.isEmpty ||
+          effectiveAddress.toLowerCase() == 'dakar, sénégal' ||
+          effectiveAddress.toLowerCase() == 'dakar, senegal' ||
+          effectiveAddress.toLowerCase() == 'dakar') {
+        effectiveAddress = fb.secondaryText;
+      }
+    } else if (effectiveAddress.isEmpty &&
         effectiveLabel.contains(',') &&
-        !isDakarSenegal) {
+        !isGeneric) {
       final parts = effectiveLabel.split(',');
       effectiveLabel = parts.first.trim();
       effectiveAddress = parts.sublist(1).join(',').trim();
-    } else if (effectiveAddress.isEmpty &&
-        !isDakarSenegal &&
-        effectiveLabel.toLowerCase() != 'dakar') {
+    } else if (effectiveAddress.isEmpty && !isGeneric) {
       effectiveAddress = 'Dakar, Sénégal';
     }
 

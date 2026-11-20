@@ -8,6 +8,7 @@ import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/activity/data/models/activity_item_model.dart';
+import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_bloc.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_event.dart';
 import 'package:seddo/features/activity/domain/bloc/activity_state.dart';
@@ -138,20 +139,58 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
           distanceText: ride.distanceText,
           dateText: ride.dateText,
           orangeRef: ride.orangeRef,
+          polylinePoints: ride.polylinePoints,
+          trafficSegments: ride.trafficSegments,
+          startCode: ride.startCode,
+          paymentMethod: ride.paymentMethod,
+          paymentPhone: ride.paymentPhone ?? '',
         ),
       ),
     );
   }
 
   void _openReceiptForRefund(ActivityRefundItem refund) {
+    final ride = refund.associatedRide;
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: RideReceiptPage(
           rideId: refund.rideId,
+          departure: ride?.departure ??
+              PlaceSearchResult(
+                id: 'dep_refund',
+                mainText: 'Point E',
+                secondaryText: 'Dakar, Sénégal',
+                fullAddress: 'Point E, Dakar',
+                latitude: 14.6937,
+                longitude: -17.4647,
+              ),
+          destination: ride?.destination ??
+              PlaceSearchResult(
+                id: 'dest_${refund.id}',
+                mainText: refund.title,
+                secondaryText: 'Dakar, Sénégal',
+                fullAddress: refund.title,
+                latitude: 14.6720,
+                longitude: -17.4360,
+              ),
+          driver: ride?.driver,
+          rideOption: ride?.toRideOptionModel(),
           priceText: refund.amountText.replaceAll('+', ''),
-          dateText: refund.subtitle.split('·').first.trim(),
+          dateText: ride?.dateText ?? refund.subtitle.split('·').first.trim(),
+          departureTime: ride?.departureTime ?? '',
+          arrivalTime: ride?.arrivalTime ?? '',
+          durationText: ride?.durationText ?? '',
+          distanceText: ride?.distanceText ?? '',
           statusText: refund.status,
-          orangeRef: refund.providerRef ?? 'CI270415.1819.A3F2',
+          orangeRef: refund.providerRef ?? ride?.orangeRef ?? '',
+          polylinePoints: (ride?.polylinePoints != null && ride!.polylinePoints.length > 2)
+              ? ride.polylinePoints
+              : null,
+          trafficSegments: ride?.trafficSegments,
+          startCode: ride?.startCode,
+          paymentMethod: ride?.paymentMethod ??
+              (refund.providerRef?.startsWith('CI') == true ? 'ORANGE_MONEY' : ''),
+          paymentPhone: ride?.paymentPhone ?? '',
           isRefunded: true,
         ),
       ),
@@ -259,38 +298,42 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
             child: Container(
               width: AppConstants.circularButtonSize,
               height: AppConstants.circularButtonSize,
-              decoration: BoxDecoration(
-                color: AppColors.white,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.grayBorderDivider,
-                  width: AppConstants.strokeWidthBorder,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadowSubtleBlack,
-                    blurRadius: AppConstants.spacingXs,
-                    offset: Offset(0, AppConstants.spacingXxs),
-                  ),
-                ],
               ),
               child: const Icon(
                 Icons.arrow_back_rounded,
-                color: AppColors.slateDark,
+                color: Color(0xFF0F172A),
                 size: AppConstants.iconSizeMd,
               ),
             ),
           ),
           const SizedBox(width: AppConstants.spacingUnitLg),
           Expanded(
-            child: Text(
-              'activity.page_title'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: AppConstants.fontTitleLarge,
-                fontWeight: FontWeight.w900,
-                color: AppColors.slateDark,
-                letterSpacing: -0.5,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'activity.page_title'.tr(),
+                  style: GoogleFonts.inter(
+                    fontSize: AppConstants.fontTitleLarge,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.slateDark,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Suivez vos transactions',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -308,7 +351,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
       ),
       padding: const EdgeInsets.all(AppConstants.spacingXs),
       decoration: BoxDecoration(
-        color: AppColors.grayBgLight,
+        color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(AppConstants.radiusFull),
       ),
       child: Row(
@@ -327,6 +370,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
           Expanded(
             child: _buildTogglePill(
               title: 'activity.tab_refunds'.tr(),
+              icon: Icons.sync_rounded,
               isSelected: currentTab == ActivityTab.remboursements,
               onTap: () {
                 context.read<ActivityBloc>().add(
@@ -343,6 +387,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
 
   Widget _buildTogglePill({
     required String title,
+    IconData? icon,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
@@ -355,17 +400,38 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
           vertical: AppConstants.spacingUnit,
         ),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.drawerDark : AppColors.transparent,
+          color: isSelected ? const Color(0xFF1E1F24) : AppColors.transparent,
           borderRadius: BorderRadius.circular(AppConstants.radiusFull),
         ),
         alignment: Alignment.center,
-        child: Text(
-          title,
-          style: GoogleFonts.inter(
-            fontSize: AppConstants.fontMd,
-            fontWeight: FontWeight.w800,
-            color: isSelected ? AppColors.white : AppColors.slateDark,
-            letterSpacing: 0.3,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 15,
+                  color: isSelected ? AppColors.white : const Color(0xFF475569),
+                ),
+                const SizedBox(width: 5),
+              ],
+              Flexible(
+                child: Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? AppColors.white : const Color(0xFF475569),
+                    letterSpacing: 0.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -681,6 +747,8 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                               color: AppColors.slateDark,
                               letterSpacing: -0.3,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: AppConstants.spacingXs),
                           // Route summary: Departure (silhouette) -> Destination (flag)
@@ -791,6 +859,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                         ],
                       ),
                     ),
+                    const SizedBox(width: AppConstants.spacingUnitXl),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -952,6 +1021,8 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                         fontWeight: FontWeight.w700,
                         color: AppColors.slateDark,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: AppConstants.spacingXxs),
                     Text(
@@ -961,11 +1032,14 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                         fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary,
                       ),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
+
+              const SizedBox(width: AppConstants.spacingUnitLg),
 
               // Price and status badge
               Column(
@@ -1022,7 +1096,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
   }
 
   // ==========================================
-  // REMBOURSEMENTS TAB (Design Sobre Blanc, Gris, Noir inspiré Dribbble & Figma)
+  // REMBOURSEMENTS TAB (Design Fidéle au Mockup Utilisateur sur Fond Blanc)
   // ==========================================
 
   Widget _buildRefundsTabContent(ActivityLoadedState state) {
@@ -1031,38 +1105,63 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
       children: [
         const SizedBox(height: 6),
 
-        // 1. Nouvelle Carte Héro Sobre, Aérée & Statutaire (Blanc, Gris, Noir)
-        _buildRefundHeroCard(state.summary, state.refunds.length),
+        // 1. Carte Héro Sombre "Total remboursé" avec Illustration Portefeuille 3D & Pièce
+        _buildRefundHeroCard(state.summary),
 
-        const SizedBox(height: 28),
+        const SizedBox(height: 26),
 
-        // 2. Section "HISTORIQUE"
+        // 2. Section "Historique" avec icône document & compte de transactions
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(
-              'activity.history'.tr(),
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF9CA3AF),
-                letterSpacing: 1.0,
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.description_rounded,
+                      size: 16,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'activity.history'.tr(),
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                        letterSpacing: -0.2,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               '${state.refunds.length} transactions',
               style: GoogleFonts.inter(
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: const Color(0xFF9CA3AF),
+                color: const Color(0xFF64748B),
               ),
             ),
           ],
         ),
         const SizedBox(height: 14),
 
-        // 3. Liste des remboursements
+        // 3. Liste des cartes de transactions
         ...state.refunds.map((refund) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: _buildRefundItemCard(refund),
@@ -1086,15 +1185,15 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
 
         const SizedBox(height: 16),
 
-        // 4. Footnote text élégante avec icône info
+        // 4. Note d'information de bas de page
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: const Color(0xFFF9FAFB),
+            color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: const Color(0xFFE5E7EB),
-              width: 1.0,
+              color: const Color(0xFFE2E8F0),
+              width: 0.8,
             ),
           ),
           child: Row(
@@ -1103,7 +1202,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
               const Icon(
                 Icons.info_outline_rounded,
                 size: 18,
-                color: Color(0xFF9CA3AF),
+                color: Color(0xFF94A3B8),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1112,7 +1211,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                   style: GoogleFonts.inter(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w400,
-                    color: const Color(0xFF6B7280),
+                    color: const Color(0xFF64748B),
                     height: 1.45,
                   ),
                 ),
@@ -1126,7 +1225,7 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
     );
   }
 
-  Widget _buildRefundHeroCard(ActivitySummary summary, int refundsCount) {
+  Widget _buildRefundHeroCard(ActivitySummary summary) {
     final amountNumber = summary.totalRefundedFormatted
         .replaceAll(' F', '')
         .replaceAll('F', '')
@@ -1134,156 +1233,258 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
 
     return Container(
       width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 22.0),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(24.0),
         border: Border.all(
-          color: const Color(0xFFE5E7EB),
-          width: 1.0,
+          color: AppColors.grayBorderDivider,
+          width: AppConstants.strokeWidthBorder,
         ),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: const Color(0xFF0F172A).withOpacity(0.06),
             blurRadius: 20,
-            offset: Offset(0, 8),
-            spreadRadius: -2,
+            offset: const Offset(0, 6),
+          ),
+          BoxShadow(
+            color: const Color(0xFF0F172A).withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 22.0, vertical: 24.0),
-        child: Column(
-          children: [
-            // 1. Badge supérieur sobre avec icône
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.arrow_downward_rounded,
-                    size: 14,
-                    color: Color(0xFF111827),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'activity.total_refunded'.tr().toUpperCase(),
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF6B7280),
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ],
-              ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Icône circulaire de rafraîchissement à gauche
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(14),
             ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.sync_rounded,
+              size: 22,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 14),
 
-            const SizedBox(height: 16),
-
-            // 2. Montant imposant et raffiné
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
+          // Total remboursé + Montant
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  amountNumber,
+                  'activity.total_refunded'.tr(),
                   style: GoogleFonts.inter(
-                    fontSize: 44,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF111827),
-                    letterSpacing: -1.6,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: -0.1,
                   ),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  'F',
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF9CA3AF),
-                  ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        amountNumber,
+                        style: GoogleFonts.inter(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.primary,
+                          letterSpacing: -1.0,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'F',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
+          ),
 
-            const SizedBox(height: 20),
+          // Illustration Portefeuille 3D + Pièce F à droite
+          const _WalletIllustration(),
+        ],
+      ),
+    );
+  }
 
-            // 3. Séparateur très discret
-            const Divider(
-              height: 1,
-              thickness: 0.8,
-              color: Color(0xFFF3F4F6),
-            ),
+  Widget _buildRefundItemCard(ActivityRefundItem refund) {
+    final cleanAmount = refund.amountText.startsWith('+')
+        ? refund.amountText
+        : '+${refund.amountText}';
 
-            const SizedBox(height: 16),
-
-            // 4. Ligne statutaire sobre avec 2 indicateurs clés (sans carte Orange Money encombrante)
-            Row(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          if (refund.associatedRide != null) {
+            _openReceipt(refund.associatedRide!);
+          } else if (refund.rideId != null && refund.rideId!.isNotEmpty) {
+            _openReceiptForRefund(refund);
+          }
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withOpacity(0.04),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
               children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        'Transactions',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF9CA3AF),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '$refundsCount reçues',
-                        style: GoogleFonts.inter(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF111827),
-                        ),
-                      ),
-                    ],
+                // Effet de bordure en croissant effilé épousant le flanc gauche et s'amincissant en pointe dans les coins
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: const _LeftCornerCrescentPainter(
+                      color: Color(0xFF0F172A),
+                      thickness: 5.5,
+                      radius: 20.0,
+                    ),
                   ),
                 ),
-                Container(
-                  width: 1,
-                  height: 28,
-                  color: const Color(0xFFE5E7EB),
-                ),
-                Expanded(
-                  child: Column(
+
+                // Contenu de la carte
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
+                  child: Row(
                     children: [
-                      Text(
-                        'Délai moyen',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF9CA3AF),
+                      // Conteneur circulaire de remboursement
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF1F5F9),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.currency_exchange_rounded,
+                          size: 20,
+                          color: Color(0xFF0F172A),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      const SizedBox(width: 14),
+
+                      // Titre et sous-titre
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              refund.title,
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0F172A),
+                                letterSpacing: -0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.access_time_rounded,
+                                  size: 13,
+                                  color: Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    refund.subtitle,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w400,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // Montant et capsule de statut
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
+                          Text(
+                            cleanAmount,
+                            style: GoogleFonts.inter(
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                              letterSpacing: -0.3,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Instantané',
-                            style: GoogleFonts.inter(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF111827),
+                          const SizedBox(height: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  refund.isPending
+                                      ? Icons.access_time_rounded
+                                      : Icons.check_circle_outline_rounded,
+                                  size: 11,
+                                  color: const Color(0xFF475569),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  refund.status,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
@@ -1293,137 +1494,271 @@ class _ActivityPageViewState extends State<_ActivityPageView> {
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildRefundItemCard(ActivityRefundItem refund) {
-    return Material(
-      color: AppColors.transparent,
-      child: InkWell(
-        onTap: () {
-          if (refund.associatedRide != null) {
-            _openReceipt(refund.associatedRide!);
-          } else if (refund.rideId != null && refund.rideId!.isNotEmpty) {
-            _openReceiptForRefund(refund);
-          }
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFFE5E7EB),
-              width: 1.0,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x04000000),
-                blurRadius: 10,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Conteneur circulaire sobre en gris doux avec icône anthracite
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  refund.isPending
-                      ? Icons.hourglass_top_rounded
-                      : Icons.arrow_downward_rounded,
-                  size: 20,
-                  color: const Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(width: 14),
+/// Dessine l'effet d'accentuation en croissant effilé : épouse le flanc gauche à épaisseur constante
+/// et s'amincit en pointe douce et fluide dans les arrondis des coins (haut et bas) exactement comme sur la photo de référence.
+class _LeftCornerCrescentPainter extends CustomPainter {
+  final Color color;
+  final double thickness;
+  final double radius;
 
-              // Titre et sous-titre
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      refund.title,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF111827),
-                        letterSpacing: -0.2,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      refund.subtitle,
-                      style: GoogleFonts.inter(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w400,
-                        color: const Color(0xFF6B7280),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
+  const _LeftCornerCrescentPainter({
+    required this.color,
+    this.thickness = 5.5,
+    this.radius = 20.0,
+  });
 
-              const SizedBox(width: 12),
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
 
-              // Montant et capsule de statut sobre
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    refund.amountText,
-                    style: GoogleFonts.inter(
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF111827),
+    final path = Path();
+
+    // 1. Point de départ : apex du coin supérieur gauche (se termine en pointe effilée)
+    path.moveTo(radius, 0);
+
+    // 2. Arc extérieur du coin supérieur gauche suivant la courbure de la carte
+    path.arcToPoint(
+      Offset(0, radius),
+      radius: Radius.circular(radius),
+      clockwise: false,
+    );
+
+    // 3. Ligne extérieure droite du flanc gauche
+    path.lineTo(0, size.height - radius);
+
+    // 4. Arc extérieur du coin inférieur gauche jusqu'à l'apex inférieur
+    path.arcToPoint(
+      Offset(radius, size.height),
+      radius: Radius.circular(radius),
+      clockwise: false,
+    );
+
+    // 5. Courbe intérieure qui s'amincit progressivement vers la pointe inférieure
+    path.quadraticBezierTo(
+      thickness,
+      size.height,
+      thickness,
+      size.height - radius,
+    );
+
+    // 6. Ligne intérieure longeant le flanc gauche à épaisseur constante
+    path.lineTo(thickness, radius);
+
+    // 7. Courbe intérieure qui s'amincit progressivement vers la pointe supérieure
+    path.quadraticBezierTo(
+      thickness,
+      0,
+      radius,
+      0,
+    );
+
+    path.close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LeftCornerCrescentPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.thickness != thickness ||
+      oldDelegate.radius != radius;
+}
+
+/// Illustration 3D élégante de portefeuille avec cartes et pièce en argent "F"
+class _WalletIllustration extends StatelessWidget {
+  const _WalletIllustration();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 76,
+      height: 64,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          // Rayons d'éclat / étincelles en haut à droite
+          Positioned(
+            top: 2,
+            right: 6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Transform.rotate(
+                  angle: -0.3,
+                  child: Container(
+                    width: 2.2,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2.5,
-                    ),
+                ),
+                const SizedBox(width: 3),
+                Container(
+                  width: 2.2,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Transform.rotate(
+                  angle: 0.3,
+                  child: Container(
+                    width: 2.2,
+                    height: 7,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: const Color(0xFFE5E7EB),
-                        width: 0.8,
-                      ),
+                      color: const Color(0xFFF59E0B),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    child: Text(
-                      refund.status,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: refund.isPending
-                            ? const Color(0xFF6B7280)
-                            : const Color(0xFF111827),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Carte bleue qui dépasse
+          Positioned(
+            top: 8,
+            right: 18,
+            child: Container(
+              width: 34,
+              height: 14,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF93C5FD), Color(0xFF3B82F6)],
+                ),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          // Carte blanche qui dépasse
+          Positioned(
+            top: 11,
+            right: 22,
+            child: Container(
+              width: 28,
+              height: 12,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+
+          // Corps principal du portefeuille en cuir sombre
+          Positioned(
+            top: 15,
+            right: 10,
+            child: Container(
+              width: 54,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF3D414D),
+                    Color(0xFF262830),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.35),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  // Languette / fermoir du portefeuille
+                  Positioned(
+                    right: 0,
+                    top: 13,
+                    child: Container(
+                      width: 17,
+                      height: 14,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF1E2026),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(5),
+                          bottomLeft: Radius.circular(5),
+                        ),
+                      ),
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.only(left: 3),
+                      child: Container(
+                        width: 5,
+                        height: 5,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFCBD5E1),
+                          shape: BoxShape.circle,
+                        ),
                       ),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+
+          // Pièce métallique en argent avec "F" au premier plan
+          Positioned(
+            bottom: 2,
+            right: 4,
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const RadialGradient(
+                  center: Alignment(-0.2, -0.3),
+                  radius: 0.9,
+                  colors: [
+                    Color(0xFFFFFFFF),
+                    Color(0xFFCBD5E1),
+                    Color(0xFF94A3B8),
+                  ],
+                ),
+                border: Border.all(
+                  color: const Color(0xFFF8FAFC),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.35),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                'F',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF334155),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

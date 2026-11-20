@@ -173,6 +173,36 @@ void main() {
       );
       expect(res8.title, equals('Almadies'));
       expect(res8.subtitle, equals('Dakar, Sénégal'));
+
+      // Cas 9 : Plus Code Google Maps (MGHQ+W85, Dakar, Sénégal) avec coordonnées -> résout le vrai quartier (Sacré-Cœur)
+      final res9 = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
+        'MGHQ+W85, Dakar, Sénégal',
+        'Dakar, Sénégal',
+        lat: 14.7167,
+        lng: -17.4677,
+      );
+      expect(res9.title, equals('Sacré-Cœur'));
+      expect(res9.subtitle, equals('Dakar, Sénégal'));
+
+      // Cas 10 : Plus Code avec nom de rue réel (MGHQ+W85, Rue 10, Dakar) -> extrait le nom de rue
+      final res10 = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
+        'MGHQ+W85, Rue 10, Dakar',
+        'Dakar, Sénégal',
+        lat: 14.7167,
+        lng: -17.4677,
+      );
+      expect(res10.title, equals('Rue 10'));
+      expect(res10.subtitle, equals('Dakar'));
+
+      // Cas 11 : Titre générique "Dakar, Sénégal" avec coordonnées aux Almadies -> résout "Les Almadies"
+      final res11 = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
+        'Dakar, Sénégal',
+        'Dakar, Sénégal',
+        lat: 14.7450,
+        lng: -17.5200,
+      );
+      expect(res11.title, equals('Les Almadies'));
+      expect(res11.subtitle, equals('Dakar, Sénégal'));
     });
 
     test('refineDakarDistrict transforms Fann-Point E-Amitie into Point E when at Point E', () {

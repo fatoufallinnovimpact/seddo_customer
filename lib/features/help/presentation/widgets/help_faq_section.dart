@@ -43,10 +43,13 @@ class HelpFaqSection extends StatelessWidget {
                   color: AppColors.white,
                   borderRadius:
                       BorderRadius.circular(AppConstants.radiusCardContainer),
-                  border: Border.all(
-                    color: const Color(0xFFE5E7EB),
-                    width: 1,
-                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -74,19 +77,15 @@ class HelpFaqSection extends StatelessWidget {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(AppConstants.radiusCardContainer),
-        border: Border.all(
-          color: isExpanded ? const Color(0xFFD1D5DB) : const Color(0xFFE5E7EB),
-          width: 1,
-        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -99,7 +98,7 @@ class HelpFaqSection extends StatelessWidget {
             context.read<HelpBloc>().add(HelpFaqToggled(item.id));
           },
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -107,19 +106,15 @@ class HelpFaqSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 38,
+                      height: 38,
                       decoration: BoxDecoration(
                         color: meta.bgColor,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: meta.borderColor,
-                          width: 1,
-                        ),
+                        borderRadius: BorderRadius.circular(11),
                       ),
                       child: Icon(
                         meta.icon,
-                        size: 18,
+                        size: 19,
                         color: meta.iconColor,
                       ),
                     ),
@@ -207,14 +202,10 @@ class HelpFaqSection extends StatelessWidget {
   Widget _buildResponseTimeNote() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0xFFE5E7EB),
-          width: 1,
-        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,

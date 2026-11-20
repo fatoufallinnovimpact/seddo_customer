@@ -4,6 +4,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:share_plus/share_plus.dart';
@@ -17,12 +18,14 @@ import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
 import 'package:seddo/features/ride/data/services/ride_eta_calculator.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
 import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
 import 'package:seddo/features/ride/presentation/widgets/active_ride_offline_banner.dart';
 import 'package:seddo/services/network_connectivity_service.dart';
+import 'package:seddo/services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/data/services/ride_service.dart';
@@ -93,6 +96,149 @@ class _ActiveRidePageState extends State<ActiveRidePage>
   BitmapDescriptor? _carMarkerIcon;
   BitmapDescriptor? _pickupBadgeIcon;
   BitmapDescriptor? _destBadgeIcon;
+
+  bool _isCancelledHandling = false;
+
+  void _onDriverCancelled(RealtimeRideStatusEvent? event) {
+    if (_isCancelledHandling || !mounted) return;
+    _isCancelledHandling = true;
+
+    _cleanupRealtime();
+    HapticFeedback.heavyImpact();
+
+    NotificationService().showDriverCancelledNotification(
+      reason: event?.cancellationReason ?? 'Le chauffeur a annulé la course.',
+    );
+
+    final reasonText = event?.cancellationReason ??
+        (event?.raw['reason'] as String?) ??
+        (event?.raw['cancelReason'] as String?) ??
+        'Annulée par le chauffeur en cours de route';
+
+    // Fermer tout dialogue ou sheet actuellement ouvert
+    Navigator.of(context, rootNavigator: true)
+        .popUntil((route) => route.isFirst || route is! PopupRoute);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEE2E2),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.cancel_rounded,
+                    size: 38,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Course annulée par le chauffeur',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF0F172A),
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Le chauffeur a annulé la course. Vous êtes intégralement remboursé sur Orange Money sans aucun frais.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF64748B),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogCtx).pop();
+                      Navigator.of(context).pushReplacement(
+                        SlideRightToLeftRoute(
+                          page: RideBookingPage(
+                            departure: widget.departure,
+                            destination: widget.destination,
+                          ),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      'Commander un autre chauffeur',
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogCtx).pop();
+                      Navigator.of(context).pushReplacement(
+                        SlideRightToLeftRoute(
+                          page: RideCancelledPage(
+                            rideOption: widget.rideOption,
+                            departure: widget.departure,
+                            destination: widget.destination,
+                            refundAmount: widget.rideOption.price,
+                            cancellationFee: 0,
+                            reason: reasonText,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Voir le remboursement',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   // Route & Realtime Tracking State
   AnimationController? _smoothCarController;
@@ -267,88 +413,101 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       });
 
     // Connexion WebSocket en direct pour suivre la course (PDF Seddo)
-    if (effectiveRideId.isNotEmpty) {
+    if (!RealtimeService().isConnected) {
       RealtimeService().connect();
+    }
+    if (effectiveRideId.isNotEmpty) {
       RealtimeService().joinRide(effectiveRideId);
+    }
 
-      // Appliquer immédiatement le dernier statut en mémoire WebSocket
-      final cachedStatus = RealtimeService().lastRideStatusEvent;
-      if (cachedStatus != null) {
-        final matchesRide = cachedStatus.rideId.isEmpty ||
-            cachedStatus.rideId == effectiveRideId ||
-            cachedStatus.rideId.endsWith(effectiveRideId) ||
-            effectiveRideId.endsWith(cachedStatus.rideId);
-        if (matchesRide) {
-          final s = cachedStatus.status.toUpperCase();
-          if (s == 'COMPLETED' || s == 'FINISHED' || s == 'DONE' || s == 'RIDE_COMPLETED') {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _cleanupRealtime();
-                _onTripCompleted();
-              }
-            });
-          }
+    // Appliquer immédiatement le dernier statut en mémoire WebSocket
+    final cachedStatus = RealtimeService().lastRideStatusEvent;
+    if (cachedStatus != null) {
+      final matchesRide = effectiveRideId.isEmpty ||
+          cachedStatus.rideId.isEmpty ||
+          cachedStatus.rideId == effectiveRideId ||
+          cachedStatus.rideId.endsWith(effectiveRideId) ||
+          effectiveRideId.endsWith(cachedStatus.rideId);
+      if (matchesRide) {
+        final s = cachedStatus.status.toUpperCase();
+        if (s == 'COMPLETED' ||
+            s == 'FINISHED' ||
+            s == 'DONE' ||
+            s == 'RIDE_COMPLETED' ||
+            s.contains('COMPLET') ||
+            s.contains('FINISH')) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _cleanupRealtime();
+              _onTripCompleted();
+            }
+          });
         }
       }
+    }
 
-      _realtimeStatusSub =
-          RealtimeService().rideStatusStream.listen((event) {
-        if (!mounted) return;
-        final matchesRide = event.rideId.isEmpty ||
-            event.rideId == effectiveRideId ||
-            event.rideId.endsWith(effectiveRideId) ||
-            effectiveRideId.endsWith(event.rideId);
-        if (matchesRide) {
-          // Si l'événement statut ou mise à jour de course inclut un nouvel itinéraire
-          final raw = event.raw;
-          final rideObj = raw['ride'] is Map<String, dynamic>
-              ? raw['ride'] as Map<String, dynamic>
-              : (raw['data'] is Map<String, dynamic>
-                  ? raw['data'] as Map<String, dynamic>
-                  : raw);
-          // Prioriser les tracés dynamiques recalculés par rapport au plannedPolyline initial
-          final rawPoly = (rideObj['polyline'] as String?) ??
-              (rideObj['activePolyline'] as String?) ??
-              (rideObj['currentPolyline'] as String?) ??
-              (rideObj['route'] is Map ? (rideObj['route']['polyline'] as String?) : null) ??
-              (_effectiveRoute.isEmpty ? (rideObj['plannedPolyline'] as String?) : null);
-          final statusVer = (rideObj['routeVersion'] ??
-                  rideObj['version'] ??
-                  (rideObj['route'] is Map ? rideObj['route']['version'] : null) as num?)
-              ?.toInt() ?? 0;
-          if (rawPoly is String && rawPoly.isNotEmpty) {
-            final pts = RouteService.decodePolyline(rawPoly);
-            if (pts.length >= 2 && pts != _effectiveRoute) {
-              debugPrint('[ActiveRide] 🔄 Nouvel itinéraire reçu dans le statut/raw: ${pts.length} pts (v$statusVer)');
-              _setNewRoute(pts, version: statusVer);
-            }
-          }
-
-          final s = event.status.toUpperCase();
-          if (s == 'ARRIVED' || s == 'DRIVER_ARRIVED' || s == 'DRIVER_AT_DESTINATION') {
-            setState(() {
-              _driverArrivedAtDestination = true;
-            });
-          } else if (s == 'COMPLETED' ||
-              s == 'FINISHED' ||
-              s == 'DONE' ||
-              s == 'RIDE_COMPLETED') {
-            _cleanupRealtime();
-            _onTripCompleted();
-          } else if (s.startsWith('CANCEL')) {
-            _cleanupRealtime();
-            Navigator.of(context).pushReplacement(
-              SlideRightToLeftRoute(
-                page: RideCancelledPage(
-                  rideOption: widget.rideOption,
-                  departure: widget.departure,
-                  destination: widget.destination,
-                ),
-              ),
-            );
+    _realtimeStatusSub =
+        RealtimeService().rideStatusStream.listen((event) {
+      if (!mounted) return;
+      final curRideId = widget.rideId ?? RideService.lastCreatedRideId ?? effectiveRideId;
+      final matchesRide = curRideId.isEmpty ||
+          event.rideId.isEmpty ||
+          event.rideId == curRideId ||
+          event.rideId.endsWith(curRideId) ||
+          curRideId.endsWith(event.rideId);
+      if (matchesRide) {
+        // Si l'événement statut ou mise à jour de course inclut un nouvel itinéraire
+        final raw = event.raw;
+        final rideObj = raw['ride'] is Map<String, dynamic>
+            ? raw['ride'] as Map<String, dynamic>
+            : (raw['data'] is Map<String, dynamic>
+                ? raw['data'] as Map<String, dynamic>
+                : raw);
+        // Prioriser les tracés dynamiques recalculés par rapport au plannedPolyline initial
+        final rawPoly = (rideObj['polyline'] as String?) ??
+            (rideObj['activePolyline'] as String?) ??
+            (rideObj['currentPolyline'] as String?) ??
+            (rideObj['route'] is Map ? (rideObj['route']['polyline'] as String?) : null) ??
+            (_effectiveRoute.isEmpty ? (rideObj['plannedPolyline'] as String?) : null);
+        final statusVer = (rideObj['routeVersion'] ??
+                rideObj['version'] ??
+                (rideObj['route'] is Map ? rideObj['route']['version'] : null) as num?)
+            ?.toInt() ?? 0;
+        if (rawPoly is String && rawPoly.isNotEmpty) {
+          final pts = RouteService.decodePolyline(rawPoly);
+          if (pts.length >= 2 && pts != _effectiveRoute) {
+            debugPrint('[ActiveRide] 🔄 Nouvel itinéraire reçu dans le statut/raw: ${pts.length} pts (v$statusVer)');
+            _setNewRoute(pts, version: statusVer);
           }
         }
-      });
+
+        final s = event.status.toUpperCase();
+        if (s == 'ARRIVED' ||
+            s == 'DRIVER_ARRIVED' ||
+            s == 'DRIVER_AT_DESTINATION' ||
+            s.contains('DESTINATION')) {
+          setState(() {
+            _driverArrivedAtDestination = true;
+          });
+        } else if (s == 'COMPLETED' ||
+            s == 'FINISHED' ||
+            s == 'DONE' ||
+            s == 'RIDE_COMPLETED' ||
+            s.contains('COMPLET') ||
+            s.contains('FINISH')) {
+          _cleanupRealtime();
+          _onTripCompleted();
+        } else if (s.contains('CANCEL') ||
+            s.contains('REJECT') ||
+            s.contains('DECLIN') ||
+            s.contains('ABORT') ||
+            s == 'NO_DRIVER' ||
+            s == 'NO_SHOW') {
+          _onDriverCancelled(event);
+          return;
+        }
+      }
+    });
 
       _realtimeLocationSub =
           RealtimeService().driverLocationStream.listen((event) {
@@ -537,14 +696,13 @@ class _ActiveRidePageState extends State<ActiveRidePage>
       });
 
       // Filet de sécurité actif : vérification périodique (toutes les 6s)
-      if (!isTest) {
+      if (!isTest && effectiveRideId.isNotEmpty) {
         _pollTimer = Timer.periodic(const Duration(seconds: 6), (_) {
           if (mounted) {
             _fetchRideDetails(effectiveRideId);
           }
         });
       }
-    }
   }
 
   /// Récupère l'état actuel de la course via REST pour garantir l'actualisation en temps réel
@@ -597,19 +755,22 @@ class _ActiveRidePageState extends State<ActiveRidePage>
     }
 
     // 2. Course annulée
-    if (status.startsWith('CANCELLED') ||
+    final isCancelled = status.contains('CANCEL') ||
+        status.contains('REJECT') ||
+        status.contains('DECLIN') ||
+        status.contains('ABORT') ||
         status == 'NO_DRIVER' ||
-        status == 'NO_SHOW') {
-      _cleanupRealtime();
-      Navigator.of(context).pushReplacement(
-        SlideRightToLeftRoute(
-          page: RideCancelledPage(
-            rideOption: widget.rideOption,
-            departure: widget.departure,
-            destination: widget.destination,
-          ),
-        ),
-      );
+        status == 'NO_SHOW';
+
+    if (isCancelled) {
+      _onDriverCancelled(RealtimeRideStatusEvent(
+        rideId: widget.rideId ?? '',
+        status: status,
+        timestamp: DateTime.now(),
+        cancellationReason: (rideObj['cancelReason'] ?? rideObj['reason'])?.toString() ??
+            'Annulée par le chauffeur en cours de route',
+        raw: rideObj,
+      ));
       return;
     }
 
@@ -841,20 +1002,20 @@ class _ActiveRidePageState extends State<ActiveRidePage>
           if (!mounted) return;
           _onTripCompleted();
           return;
-        } else if (status.startsWith('CANCEL') ||
+        } else if (status.contains('CANCEL') ||
+            status.contains('REJECT') ||
+            status.contains('DECLIN') ||
+            status.contains('ABORT') ||
             status == 'NO_DRIVER' ||
             status == 'NO_SHOW') {
           await ActiveRideOfflineStorage.clearActiveRide();
           if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            SlideRightToLeftRoute(
-              page: RideCancelledPage(
-                rideOption: widget.rideOption,
-                departure: widget.departure,
-                destination: widget.destination,
-              ),
-            ),
-          );
+          _onDriverCancelled(RealtimeRideStatusEvent(
+            rideId: widget.rideId ?? '',
+            status: status,
+            timestamp: DateTime.now(),
+            cancellationReason: 'Annulée par le chauffeur en cours de route',
+          ));
           return;
         }
       }

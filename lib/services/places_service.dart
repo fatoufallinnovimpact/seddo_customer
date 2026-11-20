@@ -897,6 +897,154 @@ class PlacesService {
     if (location == null) return null;
     return await reverseGeocode(location.latitude, location.longitude);
   }
+
+  /// Nettoie le sous-titre d'adresse pour ne jamais répéter le grand titre dans le détail
+  /// et élimine toute répétition accidentelle de "Dakar, Sénégal"
+  static String formatPlaceSubtitle(String title, String rawSubtitle) {
+    final cleanTitle = title.trim();
+    var cleanSub = rawSubtitle.trim();
+
+    if (cleanSub.isEmpty) return '';
+
+    // Si le sous-titre est strictement identique au titre (insensible à la casse)
+    if (cleanSub.toLowerCase() == cleanTitle.toLowerCase()) {
+      return '';
+    }
+
+    // Si le sous-titre commence par le titre (ex: "Liberté 6 Extension, Rue LIB 42, Dakar")
+    if (cleanTitle.length > 5 &&
+        cleanSub.toLowerCase().startsWith(cleanTitle.toLowerCase())) {
+      cleanSub = cleanSub.substring(cleanTitle.length).trim();
+      cleanSub = cleanSub.replaceFirst(RegExp(r'^[,;\s\-–—]+'), '').trim();
+    }
+
+    // Si après nettoyage le sous-titre est vide ou identique au titre
+    if (cleanSub.isEmpty ||
+        cleanSub.toLowerCase() == cleanTitle.toLowerCase()) {
+      return '';
+    }
+
+    // Supprimer toute répétition interne de "Dakar, Sénégal" ou "Dakar, Dakar"
+    cleanSub = cleanSub.replaceAll(
+      RegExp(r'Dakar,\s*Sénégal,\s*Dakar,\s*Sénégal', caseSensitive: false),
+      'Dakar, Sénégal',
+    );
+    cleanSub = cleanSub.replaceAll(
+      RegExp(r'Dakar,\s*Dakar', caseSensitive: false),
+      'Dakar',
+    );
+
+    return cleanSub;
+  }
+
+  /// Retourne le grand titre et le sous-titre d'adresse.
+  /// Nettoie les Plus Codes Google Maps (ex: "MGHQ+W85", "Point E / MHJ3+JXC") et
+  /// résout automatiquement le vrai quartier de Dakar via les coordonnées si le titre est "Dakar, Sénégal"
+  static ({String title, String subtitle}) sanitizePlaceHierarchy(
+    String rawLabel,
+    String rawAddress, {
+    double? lat,
+    double? lng,
+  }) {
+    var title = rawLabel.trim();
+    var subtitle = rawAddress.trim();
+
+    // Expression régulière pour identifier les Plus Codes Google Maps (ex: "MGHQ+W85", "MHJ3+JXC", "8F3CMGHQ+W85")
+    final plusCodeRegex = RegExp(
+      r'\b[23456789CFGHJMPQRVWX0-9]{4,8}\+[23456789CFGHJMPQRVWX0-9]{2,4}\b',
+      caseSensitive: false,
+    );
+
+    // 1. Nettoyer les Plus Codes dans le titre et le sous-titre
+    title = title.replaceAll(RegExp(r'\s*/\s*[A-Z0-9]{4,8}\+[A-Z0-9]{2,4}\b', caseSensitive: false), '').trim();
+    title = title.replaceAll(RegExp(r'^[A-Z0-9]{4,8}\+[A-Z0-9]{2,4}([\s,]+|\s*-\s*)', caseSensitive: false), '').trim();
+    title = title.replaceAll(plusCodeRegex, '').trim();
+    title = title.replaceFirst(RegExp(r'^[,;\s\-–—/]+'), '').trim();
+
+    subtitle = subtitle.replaceAll(RegExp(r'\s*/\s*[A-Z0-9]{4,8}\+[A-Z0-9]{2,4}\b', caseSensitive: false), '').trim();
+    subtitle = subtitle.replaceAll(RegExp(r'^[A-Z0-9]{4,8}\+[A-Z0-9]{2,4}([\s,]+|\s*-\s*)', caseSensitive: false), '').trim();
+    subtitle = subtitle.replaceAll(plusCodeRegex, '').trim();
+    subtitle = subtitle.replaceFirst(RegExp(r'^[,;\s\-–—/]+'), '').trim();
+
+    bool isGeneric(String s) {
+      final l = s.trim().toLowerCase();
+      return l.isEmpty ||
+          l == 'dakar' ||
+          l == 'dakar, sénégal' ||
+          l == 'dakar, senegal' ||
+          l == 'dakar senegal' ||
+          l == 'sénégal' ||
+          l == 'senegal' ||
+          l == 'destination' ||
+          l == 'adresse inconnue';
+    }
+
+    final isDakarSenegalTitle = title.toLowerCase() == 'dakar, sénégal' ||
+        title.toLowerCase() == 'dakar, senegal';
+
+    if (title.contains(',') && !isDakarSenegalTitle) {
+      final parts = title.split(',');
+      title = parts.first.trim();
+      if (subtitle.isEmpty ||
+          subtitle.toLowerCase() == title.toLowerCase() ||
+          subtitle.toLowerCase() == 'dakar, sénégal' ||
+          subtitle.toLowerCase() == 'dakar, senegal' ||
+          subtitle.toLowerCase() == 'dakar') {
+        subtitle = parts.sublist(1).join(',').trim();
+      }
+    } else if (subtitle.contains(',') &&
+        subtitle.toLowerCase() != 'dakar, sénégal' &&
+        subtitle.toLowerCase() != 'dakar, senegal' &&
+        (title.isEmpty || subtitle.toLowerCase().startsWith(title.toLowerCase()))) {
+      final parts = subtitle.split(',');
+      if (title.isEmpty) {
+        title = parts.first.trim();
+      }
+      subtitle = parts.sublist(1).join(',').trim();
+    }
+
+    // Si le titre est vide mais le sous-titre est présent
+    if (title.isEmpty) {
+      if (!isGeneric(subtitle) && subtitle.contains(',')) {
+        final parts = subtitle.split(',');
+        title = parts.first.trim();
+        subtitle = parts.sublist(1).join(',').trim();
+      } else {
+        title = subtitle.isNotEmpty ? subtitle : 'Destination';
+        subtitle = '';
+      }
+    }
+
+    // Résolution intelligente du vrai quartier de Dakar si le titre est générique ("Dakar, Sénégal" ou "Dakar")
+    // et qu'on dispose de coordonnées géographiques
+    if (isGeneric(title) && lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+      final fallback = PlacesService.getDakarDistrictFallback(lat, lng);
+      if (fallback.mainText.isNotEmpty && !isGeneric(fallback.mainText)) {
+        title = fallback.mainText;
+        if (subtitle.isEmpty || isGeneric(subtitle)) {
+          subtitle = fallback.secondaryText;
+        }
+      }
+    }
+
+    // Si le sous-titre est vide ou identique au titre
+    if (subtitle.isEmpty || subtitle.toLowerCase() == title.toLowerCase()) {
+      if (title.toLowerCase() == 'dakar, sénégal' ||
+          title.toLowerCase() == 'dakar, senegal' ||
+          title.toLowerCase() == 'dakar') {
+        subtitle = '';
+      } else {
+        subtitle = 'Dakar, Sénégal';
+      }
+    }
+
+    final cleanSub = formatPlaceSubtitle(title, subtitle);
+
+    return (
+      title: title,
+      subtitle: cleanSub,
+    );
+  }
 }
 
 

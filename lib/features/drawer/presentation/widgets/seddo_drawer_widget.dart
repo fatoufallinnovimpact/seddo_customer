@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -429,7 +430,11 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
         ? user.rating!.toStringAsFixed(1).replaceAll('.', ',')
         : '0';
 
-    final int tripsValue = user?.tripsCount ?? state.tripsCount;
+    final int tripsValue = (user?.tripsCount != null && user!.tripsCount! > 0)
+        ? user.tripsCount!
+        : (state.tripsCount > 0)
+            ? state.tripsCount
+            : (AuthRepository.cachedTripsCount ?? user?.tripsCount ?? state.tripsCount);
 
     final rawTripsLabel = 'drawer.trips_label'.tr();
     final tripsLabel =
@@ -632,6 +637,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     String initials,
     String? accessToken,
   ) {
+    // 1. Rendu instantané depuis la mémoire vive (0ms, zéro temps d'attente, 100% fluide)
     if (AuthRepository.cachedUserPhotoBytes != null &&
         AuthRepository.cachedUserPhotoBytes!.isNotEmpty) {
       return Image.memory(
@@ -639,11 +645,32 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
         fit: BoxFit.cover,
         width: AppConstants.accountAvatarSize,
         height: AppConstants.accountAvatarSize,
+        gaplessPlayback: true,
       );
     }
 
     final photoUrl = user?.photoUrl;
     if (photoUrl != null && photoUrl.isNotEmpty) {
+      // 2. Si le chemin est un fichier local (ex: photo prise par caméra ou galerie)
+      try {
+        final localFile = File(photoUrl);
+        if (localFile.existsSync()) {
+          localFile.readAsBytes().then((bytes) {
+            if (bytes.isNotEmpty) {
+              AuthRepository.setUserPhotoBytes(bytes);
+            }
+          });
+          return Image.file(
+            localFile,
+            fit: BoxFit.cover,
+            width: AppConstants.accountAvatarSize,
+            height: AppConstants.accountAvatarSize,
+            gaplessPlayback: true,
+          );
+        }
+      } catch (_) {}
+
+      // 3. Préchargement silencieux en mémoire pour la prochaine ouverture
       if (AuthRepository.cachedUserPhotoBytes == null) {
         _authRepo.getUserPhotoBytes().then((bytes) {
           if (mounted && bytes != null && bytes.isNotEmpty) {
@@ -670,6 +697,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
         fit: BoxFit.cover,
         width: AppConstants.accountAvatarSize,
         height: AppConstants.accountAvatarSize,
+        gaplessPlayback: true,
         errorBuilder: (context, error, stackTrace) =>
             _buildInitialsText(initials),
       );

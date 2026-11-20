@@ -4,6 +4,7 @@ import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/features/ride/data/models/ride_quote_model.dart';
+import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
 
 /// Type of icon displayed for past rides in Activity history.
@@ -192,24 +193,57 @@ class ActivityRideItem extends Equatable {
     // Departure and Destination
     final pickupRaw = (json['pickupAddress'] ?? 'Dakar, Sénégal').toString();
     final dropoffRaw = (json['dropoffAddress'] ?? 'Almadies').toString();
-    final pickupMain = pickupRaw.split(',').first.trim();
-    final dropoffMain = dropoffRaw.split(',').first.trim();
+
+    final pMap = json['pickup'] is Map ? json['pickup'] as Map : null;
+    final dMap = json['dropoff'] is Map ? json['dropoff'] as Map : null;
+    final pLat = (pMap?['lat'] as num?)?.toDouble() ??
+        (json['pickupLat'] as num?)?.toDouble() ??
+        14.6937;
+    final pLng = (pMap?['lng'] as num?)?.toDouble() ??
+        (json['pickupLng'] as num?)?.toDouble() ??
+        -17.4647;
+    final dLat = (dMap?['lat'] as num?)?.toDouble() ??
+        (json['dropoffLat'] as num?)?.toDouble() ??
+        14.7431;
+    final dLng = (dMap?['lng'] as num?)?.toDouble() ??
+        (json['dropoffLng'] as num?)?.toDouble() ??
+        -17.5186;
+
+    final pickupHierarchy = PlacesService.sanitizePlaceHierarchy(
+      pickupRaw,
+      '',
+      lat: pLat,
+      lng: pLng,
+    );
+    final dropoffHierarchy = PlacesService.sanitizePlaceHierarchy(
+      dropoffRaw,
+      '',
+      lat: dLat,
+      lng: dLng,
+    );
+
+    final pickupMain = pickupHierarchy.title;
+    final dropoffMain = dropoffHierarchy.title;
 
     final departure = PlaceSearchResult(
       id: 'pickup_$id',
       mainText: pickupMain.isNotEmpty ? pickupMain : 'Départ',
-      secondaryText: pickupRaw,
+      secondaryText: pickupHierarchy.subtitle.isNotEmpty
+          ? pickupHierarchy.subtitle
+          : pickupRaw,
       fullAddress: pickupRaw,
-      latitude: 14.6937,
-      longitude: -17.4647,
+      latitude: pLat,
+      longitude: pLng,
     );
     final destination = PlaceSearchResult(
       id: 'dropoff_$id',
       mainText: dropoffMain.isNotEmpty ? dropoffMain : 'Destination',
-      secondaryText: dropoffRaw,
+      secondaryText: dropoffHierarchy.subtitle.isNotEmpty
+          ? dropoffHierarchy.subtitle
+          : dropoffRaw,
       fullAddress: dropoffRaw,
-      latitude: 14.7431,
-      longitude: -17.5186,
+      latitude: dLat,
+      longitude: dLng,
     );
 
     // Icon type
@@ -269,6 +303,28 @@ class ActivityRideItem extends Equatable {
       subtitle = '$dateText · $timeStr · $distanceText';
     }
 
+    final polyStr = (json['plannedPolyline'] ??
+        (json['route'] is Map ? json['route']['polyline'] : null)) as String?;
+    final polylinePoints = (polyStr != null && polyStr.isNotEmpty)
+        ? RouteService.decodePolyline(polyStr)
+        : <LatLng>[];
+
+    final startCode = json['startCode']?.toString();
+    final paymentMap = json['payment'] is Map ? json['payment'] as Map : null;
+    final paymentMethod =
+        (paymentMap?['method'] ?? json['paymentMethod'])?.toString();
+    final paymentPhone =
+        (paymentMap?['phone'] ?? json['paymentPhone'])?.toString();
+    final paymentStatus =
+        (paymentMap?['status'] ?? json['paymentStatus'])?.toString();
+
+    final depTime = created != null
+        ? '${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}'
+        : timeStr;
+    final arrTime = created != null
+        ? '${created.add(Duration(minutes: approxMinutes)).hour.toString().padLeft(2, '0')}:${created.add(Duration(minutes: approxMinutes)).minute.toString().padLeft(2, '0')}'
+        : timeStr;
+
     return ActivityRideItem(
       id: id,
       title: dropoffMain.isNotEmpty ? dropoffMain : 'Course Seddo',
@@ -278,8 +334,8 @@ class ActivityRideItem extends Equatable {
       status: statusText,
       dateTag: dateTag,
       dateText: dateText,
-      departureTime: timeStr,
-      arrivalTime: timeStr,
+      departureTime: depTime,
+      arrivalTime: arrTime,
       durationText: durationText,
       distanceText: distanceText,
       departure: departure,
@@ -291,6 +347,11 @@ class ActivityRideItem extends Equatable {
       isCancelled: isCancelled,
       isRefunded: isRefunded,
       iconType: iconType,
+      polylinePoints: polylinePoints,
+      startCode: startCode,
+      paymentMethod: paymentMethod,
+      paymentPhone: paymentPhone,
+      paymentStatus: paymentStatus,
       createdAt: created,
     );
   }
@@ -489,6 +550,13 @@ class ActivityRideItem extends Equatable {
       subtitle = '$dateText · $timeStr · $distanceText';
     }
 
+    final depTime = created != null
+        ? '${created.hour.toString().padLeft(2, '0')}:${created.minute.toString().padLeft(2, '0')}'
+        : timeStr;
+    final arrTime = created != null
+        ? '${created.add(Duration(minutes: durationMinutes)).hour.toString().padLeft(2, '0')}:${created.add(Duration(minutes: durationMinutes)).minute.toString().padLeft(2, '0')}'
+        : timeStr;
+
     return ActivityRideItem(
       id: id,
       title: dropoffMain.isNotEmpty ? dropoffMain : 'Almadies',
@@ -498,8 +566,8 @@ class ActivityRideItem extends Equatable {
       status: statusText,
       dateTag: dateTag,
       dateText: dateText,
-      departureTime: timeStr,
-      arrivalTime: timeStr,
+      departureTime: depTime,
+      arrivalTime: arrTime,
       durationText: durationText,
       distanceText: distanceText,
       departure: departure,

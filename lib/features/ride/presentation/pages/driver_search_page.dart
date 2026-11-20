@@ -377,21 +377,25 @@ class _DriverSearchPageState extends State<DriverSearchPage>
     );
 
     // Initialisation et écoute temps réel de l'acceptation de la course par WebSocket
-    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId;
-    if (effectiveRideId != null && effectiveRideId.isNotEmpty) {
-      if (!RealtimeService().isConnected) {
-        RealtimeService().connect();
-      }
+    final effectiveRideId = widget.rideId ?? RideService.lastCreatedRideId ?? '';
+    if (!RealtimeService().isConnected) {
+      RealtimeService().connect();
+    }
+    if (effectiveRideId.isNotEmpty) {
       RealtimeService().joinRide(effectiveRideId);
-      // Vérifier et appliquer immédiatement le dernier statut en mémoire WebSocket sans attendre
-      final cachedEvent = RealtimeService().lastRideStatusEvent;
-      if (cachedEvent != null &&
-          cachedEvent.rideId.isNotEmpty &&
-          (cachedEvent.rideId == effectiveRideId ||
-              cachedEvent.rideId.endsWith(effectiveRideId) ||
-              effectiveRideId.endsWith(cachedEvent.rideId))) {
+    }
+
+    // Vérifier et appliquer immédiatement le dernier statut en mémoire WebSocket sans attendre
+    final cachedEvent = RealtimeService().lastRideStatusEvent;
+    if (cachedEvent != null) {
+      final matchesCached = effectiveRideId.isEmpty ||
+          cachedEvent.rideId.isEmpty ||
+          cachedEvent.rideId == effectiveRideId ||
+          cachedEvent.rideId.endsWith(effectiveRideId) ||
+          effectiveRideId.endsWith(cachedEvent.rideId);
+      if (matchesCached) {
         final s = cachedEvent.status.toUpperCase();
-        if (s == 'ACCEPTED' ||
+        final isAcceptedCached = s == 'ACCEPTED' ||
             s == 'DRIVER_ACCEPTED' ||
             s == 'DRIVER_ASSIGNED' ||
             s == 'ASSIGNED' ||
@@ -400,7 +404,10 @@ class _DriverSearchPageState extends State<DriverSearchPage>
             s == 'EN_ROUTE' ||
             s == 'DRIVER_ARRIVED' ||
             s == 'IN_PROGRESS' ||
-            cachedEvent.driver != null) {
+            s.contains('ACCEPT') ||
+            s.contains('ASSIGN') ||
+            cachedEvent.driver != null;
+        if (isAcceptedCached) {
           _onPaymentConfirmed();
           final driver = cachedEvent.driver ??
               DriverModel.fromRideJson(
@@ -409,79 +416,92 @@ class _DriverSearchPageState extends State<DriverSearchPage>
               );
           final code = cachedEvent.departureCode ??
               DriverModel.extractDepartureCode(cachedEvent.raw, fallback: _departureCode);
+          final targetRideId = cachedEvent.rideId.isNotEmpty ? cachedEvent.rideId : effectiveRideId;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_isTransitioningToApproaching) {
-              onDriverFound(driver, code, effectiveRideId);
+              onDriverFound(driver, code, targetRideId);
             }
           });
         }
       }
+    }
 
-      // Filet de sécurité espacé : polling toutes les 8s (au lieu de 3s) uniquement si le WebSocket n'a pas encore notifié
+    // Filet de sécurité espacé : polling toutes les 8s (au lieu de 3s) uniquement si le WebSocket n'a pas encore notifié
+    if (effectiveRideId.isNotEmpty) {
       _rideStatusPollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
         if (mounted &&
             !_isTransitioningToApproaching &&
             !_hasHandledNoDriver) {
-          _checkRideStatus(effectiveRideId);
-        }
-      });
-
-      _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
-        if (!mounted ||
-            _isTransitioningToApproaching ||
-            _hasHandledNoDriver) {
-          return;
-        }
-        final matchesRide = event.rideId.isNotEmpty &&
-            (event.rideId == effectiveRideId ||
-                event.rideId.endsWith(effectiveRideId) ||
-                effectiveRideId.endsWith(event.rideId));
-        if (matchesRide) {
-          final s = event.status.toUpperCase();
-          if (s == 'SEARCHING') {
-            // Confirmation du paiement reçue du backend : début de la recherche
-            _onPaymentConfirmed();
-          } else if (s == 'ACCEPTED' ||
-              s == 'DRIVER_ACCEPTED' ||
-              s == 'DRIVER_ASSIGNED' ||
-              s == 'ASSIGNED' ||
-              s == 'CONFIRMED' ||
-              s == 'APPROACHING' ||
-              s == 'EN_ROUTE' ||
-              s == 'DRIVER_ARRIVED' ||
-              s == 'IN_PROGRESS' ||
-              event.driver != null) {
-            _onPaymentConfirmed();
-            final driver = event.driver ??
-                DriverModel.fromRideJson(
-                  event.raw,
-                  defaultRideType: widget.rideOption.type,
-                );
-            final code = event.departureCode ??
-                DriverModel.extractDepartureCode(event.raw, fallback: _departureCode);
-            onDriverFound(driver, code, effectiveRideId);
-          } else if (s.startsWith('CANCEL') ||
-              s == 'NO_DRIVER') {
-            onNoDriverAvailable();
-          }
-        }
-      });
-
-      // Écoute des événements de statut de paiement via WebSocket
-      _realtimePaymentSub = RealtimeService().paymentStatusStream.listen((event) {
-        if (!mounted) return;
-        if (event.rideId == null || event.rideId!.isEmpty || event.rideId == effectiveRideId) {
-          final pStatus = event.status.toUpperCase();
-          if (pStatus == 'SUCCESS' || pStatus == 'PAID' || pStatus == 'COMPLETED') {
-            _onPaymentConfirmed();
-          } else if (pStatus.isNotEmpty) {
-            setState(() {
-              _paymentStatus = pStatus;
-            });
+          final curId = widget.rideId ?? RideService.lastCreatedRideId ?? effectiveRideId;
+          if (curId.isNotEmpty) {
+            _checkRideStatus(curId);
           }
         }
       });
     }
+
+    _realtimeStatusSub = RealtimeService().rideStatusStream.listen((event) {
+      if (!mounted ||
+          _isTransitioningToApproaching ||
+          _hasHandledNoDriver) {
+        return;
+      }
+      final curId = widget.rideId ?? RideService.lastCreatedRideId ?? effectiveRideId;
+      final matchesRide = curId.isEmpty ||
+          event.rideId.isEmpty ||
+          event.rideId == curId ||
+          event.rideId.endsWith(curId) ||
+          curId.endsWith(event.rideId);
+      if (matchesRide) {
+        final s = event.status.toUpperCase();
+        if (s == 'SEARCHING') {
+          // Confirmation du paiement reçue du backend : début de la recherche
+          _onPaymentConfirmed();
+        } else if (s == 'ACCEPTED' ||
+            s == 'DRIVER_ACCEPTED' ||
+            s == 'DRIVER_ASSIGNED' ||
+            s == 'ASSIGNED' ||
+            s == 'CONFIRMED' ||
+            s == 'APPROACHING' ||
+            s == 'EN_ROUTE' ||
+            s == 'DRIVER_ARRIVED' ||
+            s == 'IN_PROGRESS' ||
+            s.contains('ACCEPT') ||
+            s.contains('ASSIGN') ||
+            event.driver != null) {
+          _onPaymentConfirmed();
+          final driver = event.driver ??
+              DriverModel.fromRideJson(
+                event.raw,
+                defaultRideType: widget.rideOption.type,
+              );
+          final code = event.departureCode ??
+              DriverModel.extractDepartureCode(event.raw, fallback: _departureCode);
+          final targetRideId = event.rideId.isNotEmpty ? event.rideId : curId;
+          onDriverFound(driver, code, targetRideId);
+        } else if (s.contains('CANCEL') ||
+            s == 'NO_DRIVER' ||
+            s.contains('REJECT')) {
+          onNoDriverAvailable();
+        }
+      }
+    });
+
+    // Écoute des événements de statut de paiement via WebSocket
+    _realtimePaymentSub = RealtimeService().paymentStatusStream.listen((event) {
+      if (!mounted) return;
+      final curId = widget.rideId ?? RideService.lastCreatedRideId ?? effectiveRideId;
+      if (curId.isEmpty || event.rideId == null || event.rideId!.isEmpty || event.rideId == curId) {
+        final pStatus = event.status.toUpperCase();
+        if (pStatus == 'SUCCESS' || pStatus == 'PAID' || pStatus == 'COMPLETED') {
+          _onPaymentConfirmed();
+        } else if (pStatus.isNotEmpty) {
+          setState(() {
+            _paymentStatus = pStatus;
+          });
+        }
+      }
+    });
 
     // Resynchronisation REST et WebSocket dès la reconnexion
     _realtimeReconnectSub = RealtimeService().onReconnect.listen((_) {

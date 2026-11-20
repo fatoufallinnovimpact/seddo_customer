@@ -181,9 +181,9 @@ abstract class AppConstants {
   static const double tcuBannerContentRightPadding = 125.0;
 
   // Payment Method Assets
-  static const String assetWaveLogo = 'assets/images/images.png';
-  static const String assetOrangeMoneyLogo = 'assets/images/unnamed.png';
-  static const String assetCashLogo = 'assets/images/cfa.jpg';
+  static const String assetWaveLogo = 'assets/images/wave_logo_sq.png';
+  static const String assetOrangeMoneyLogo = 'assets/images/orange_logo_sq.png';
+  static const String assetCashLogo = 'assets/images/cash_banknotes.png';
 
   // Account / Full-Screen Drawer Design Tokens
   static const double accountAvatarSize = 58.0;

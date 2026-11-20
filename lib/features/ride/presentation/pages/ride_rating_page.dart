@@ -115,6 +115,7 @@ class _RideRatingPageState extends State<RideRatingPage>
   late final AnimationController _sheetAnimationController;
   Animation<double>? _sheetAnimation;
   late String _paymentPhone;
+  late DriverModel _currentDriver;
   bool _isSubmitting = false;
   bool _isDownloadingReceipt = false;
   bool _isSharingReceipt = false;
@@ -154,6 +155,7 @@ class _RideRatingPageState extends State<RideRatingPage>
     _commentController = TextEditingController();
     _rideService = widget.rideService ?? RideService();
     _paymentPhone = widget.paymentPhone;
+    _currentDriver = widget.driver;
     _sheetAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
@@ -204,6 +206,21 @@ class _RideRatingPageState extends State<RideRatingPage>
       try {
         final data = await _rideService.getRideDetails(effectiveRideId);
         if (data != null && mounted) {
+          if (data['driver'] != null || data['vehicle'] != null) {
+            try {
+              final parsed = DriverModel.fromRideJson(
+                data,
+                fallbackCarColor: _currentDriver.carColor,
+                fallbackName: _currentDriver.name,
+                fallbackPhotoUrl: _currentDriver.photoUrl,
+              );
+              if (parsed.name.isNotEmpty && parsed.name != 'Chauffeur Seddo') {
+                setState(() {
+                  _currentDriver = parsed;
+                });
+              }
+            } catch (_) {}
+          }
           final rideObj = data['ride'] is Map<String, dynamic>
               ? data['ride'] as Map<String, dynamic>
               : data;
@@ -475,9 +492,10 @@ class _RideRatingPageState extends State<RideRatingPage>
           priceText: widget.rideOption.formattedPrice,
           rideType: widget.rideOption.title,
           driverName: widget.driver.name.isNotEmpty ? widget.driver.name : 'Moussa',
-          driverCar: widget.driver.carModel,
-          driverPlate: widget.driver.licensePlate,
-          driverRating: '${widget.driver.rating.toInt()}',
+          driverCar: _currentDriver.carModel,
+          driverPlate: _currentDriver.licensePlate,
+          driverRating: ((_currentDriver.rating > 0 ? _currentDriver.rating : 4.9))
+              .toStringAsFixed(1),
           paymentPhone: _paymentPhone,
           orangeRef: effectiveRideId ?? 'SEDDO_${DateTime.now().millisecondsSinceEpoch}',
         );
@@ -587,9 +605,10 @@ class _RideRatingPageState extends State<RideRatingPage>
           priceText: widget.rideOption.formattedPrice,
           rideType: widget.rideOption.title,
           driverName: widget.driver.name.isNotEmpty ? widget.driver.name : 'Moussa',
-          driverCar: widget.driver.carModel,
-          driverPlate: widget.driver.licensePlate,
-          driverRating: '${widget.driver.rating.toInt()}',
+          driverCar: _currentDriver.carModel,
+          driverPlate: _currentDriver.licensePlate,
+          driverRating: ((_currentDriver.rating > 0 ? _currentDriver.rating : 4.9))
+              .toStringAsFixed(1),
           paymentPhone: _paymentPhone,
           orangeRef: effectiveRideId ?? 'SEDDO_${DateTime.now().millisecondsSinceEpoch}',
         );
@@ -672,11 +691,12 @@ class _RideRatingPageState extends State<RideRatingPage>
         page: RideReceiptPage(
           departure: widget.departure,
           destination: widget.destination,
-          driver: widget.driver,
+          driver: _currentDriver,
           rideOption: widget.rideOption,
           arrivalTime: widget.arrivalTime,
           durationText: widget.durationText,
           paymentPhone: widget.paymentPhone,
+          paymentMethod: widget.paymentMethod,
           rideId: widget.rideId ?? RideService.lastCreatedRideId,
           rideService: _rideService,
         ),
@@ -735,11 +755,8 @@ class _RideRatingPageState extends State<RideRatingPage>
                     },
                     onVerticalDragEnd: (details) {
                       final velocity = details.primaryVelocity ?? 0.0;
-                      final collapsedOffset = sheetHeight * 0.58;
-                      if (_dragOffset > sheetHeight * 0.78 || velocity > 650) {
+                      if (_dragOffset > 70 || velocity > 180) {
                         _redirectToHome();
-                      } else if (_dragOffset > collapsedOffset * 0.45 || velocity > 200) {
-                        _animateToOffset(collapsedOffset);
                       } else {
                         _animateToOffset(0.0);
                       }
@@ -802,12 +819,11 @@ class _RideRatingPageState extends State<RideRatingPage>
                                     });
                                   }
                                 } else if (notification is ScrollEndNotification) {
-                                  final collapsedOffset = sheetHeight * 0.58;
-                                  final velocity = notification.dragDetails?.primaryVelocity ?? 0.0;
-                                  if (_dragOffset > sheetHeight * 0.78 || velocity > 650) {
+                                  final velocity =
+                                      notification.dragDetails?.primaryVelocity ??
+                                          0.0;
+                                  if (_dragOffset > 70 || velocity > 180) {
                                     _redirectToHome();
-                                  } else if (_dragOffset > collapsedOffset * 0.45 || velocity > 200) {
-                                    _animateToOffset(collapsedOffset);
                                   } else if (_dragOffset > 0) {
                                     _animateToOffset(0.0);
                                   }
@@ -860,11 +876,19 @@ class _RideRatingPageState extends State<RideRatingPage>
   /// - Bouton "Envoyer"
   Widget _buildFigmaRatingContent() {
     const avatarDiameter = 88.0;
-    final plateStr = widget.driver.licensePlate.trim().replaceAll('-', ' ');
-    final carModel = widget.driver.carModel.trim();
-    final driverFullName = widget.driver.name.isNotEmpty
-        ? widget.driver.name
+    final plateStr = _currentDriver.licensePlate.trim().replaceAll('-', ' ');
+    final carModel = _currentDriver.carModel.trim();
+    final carColor = _currentDriver.carColor.trim();
+    final carWithColor = carColor.isNotEmpty &&
+            !carModel.toLowerCase().contains(carColor.toLowerCase())
+        ? '$carModel $carColor'
+        : carModel;
+    final driverFullName = _currentDriver.name.isNotEmpty
+        ? _currentDriver.name
         : 'Chauffeur Seddo';
+    final vehicleAndPlate = carWithColor.isNotEmpty
+        ? (plateStr.isNotEmpty ? '$carWithColor · $plateStr' : carWithColor)
+        : (plateStr.isNotEmpty ? plateStr : 'DK 482 AB');
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -890,9 +914,7 @@ class _RideRatingPageState extends State<RideRatingPage>
 
         // 2. Plaque d'immatriculation et véhicule
         Text(
-          carModel.isNotEmpty
-              ? '$carModel · ${plateStr.isNotEmpty ? plateStr : "DK 482 AB"}'
-              : (plateStr.isNotEmpty ? plateStr : 'DK 482 AB'),
+          vehicleAndPlate,
           textAlign: TextAlign.center,
           style: GoogleFonts.inter(
             fontSize: 13,
@@ -998,23 +1020,79 @@ class _RideRatingPageState extends State<RideRatingPage>
     );
   }
 
-  /// Avatar rond avec bord blanc 4px et ombre douce
+  /// Avatar rond avec bord blanc 4px et pastille d'étoile / note réelle dans le coin inférieur
   Widget _buildDriverAvatar(double size) {
-    return DriverAvatarWidget(
-      photoUrl: widget.driver.photoUrl,
-      rideId: widget.rideId,
-      name: widget.driver.name,
-      size: size,
-      backgroundColor: AppColors.peachContainer,
-      initialsColor: AppColors.primary,
-      border: Border.all(color: AppColors.white, width: 4),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x1F000000),
-          blurRadius: 16,
-          offset: Offset(0, 6),
-        ),
-      ],
+    final ratingVal = _currentDriver.rating > 0 ? _currentDriver.rating : 4.9;
+    final ratingDisplay = (ratingVal * 10 == (ratingVal * 10).roundToDouble())
+        ? ratingVal.toStringAsFixed(1)
+        : ratingVal.toStringAsFixed(2);
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          DriverAvatarWidget(
+            photoUrl: _currentDriver.photoUrl,
+            rideId: widget.rideId,
+            name: _currentDriver.name,
+            size: size,
+            backgroundColor: AppColors.peachContainer,
+            initialsColor: AppColors.primary,
+            border: Border.all(color: AppColors.white, width: 4),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 16,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          Positioned(
+            bottom: -2,
+            right: -2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFF1F5F9),
+                  width: 1.5,
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x24000000),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.star_rounded,
+                    size: 14,
+                    color: Color(0xFFF59E0B),
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    ratingDisplay,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.slateDark,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

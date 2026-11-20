@@ -9,6 +9,7 @@ import 'package:seddo/features/activity/data/models/activity_item_model.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/ride/data/models/driver_model.dart';
 import 'package:seddo/features/ride/data/models/ride_option_model.dart';
+import 'package:seddo/features/ride/data/services/ride_service.dart';
 
 /// Data service providing activity history for rides and refunds.
 /// Connects to:
@@ -52,6 +53,16 @@ class ActivityService {
           list = response.data as List;
         } else {
           list = const [];
+        }
+
+        for (final item in list) {
+          if (item is Map) {
+            final map = Map<String, dynamic>.from(item);
+            final id = map['id']?.toString();
+            if (id != null && id.isNotEmpty) {
+              RideService.cacheRideDetails(id, map);
+            }
+          }
         }
 
         final items = list

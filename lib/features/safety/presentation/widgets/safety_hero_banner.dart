@@ -11,77 +11,88 @@ class SafetyHeroBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: AppColors.safetyHeroBg,
+        color: AppColors.white,
         borderRadius: BorderRadius.circular(AppConstants.radiusHeroBanner),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
-      child: Stack(
-        children: [
-          // Decorative curved background arc
-          Positioned(
-            right: -30,
-            top: -30,
-            child: Container(
-              width: 160,
-              height: 160,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.safetyHeroArc,
-                  width: 32,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppConstants.radiusHeroBanner),
+        child: Stack(
+          children: [
+            // Decorative curved background arc (discret en gris très doux)
+            Positioned(
+              right: -30,
+              top: -30,
+              child: Container(
+                width: 160,
+                height: 160,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFF1F5F9),
+                    width: 32,
+                  ),
                 ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'safety.hero_title'.tr(),
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.white,
-                          height: 1.25,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'safety.hero_title'.tr(),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            height: 1.25,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'safety.hero_subtitle'.tr(),
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.white90,
-                          height: 1.4,
+                        const SizedBox(height: 8),
+                        Text(
+                          'safety.hero_subtitle'.tr(),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                            height: 1.4,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Container(
-                  width: AppConstants.heroIconContainerSize,
-                  height: AppConstants.heroIconContainerSize,
-                  decoration: BoxDecoration(
-                    color: AppColors.white20,
-                    shape: BoxShape.circle,
+                  const SizedBox(width: 14),
+                  Container(
+                    width: AppConstants.heroIconContainerSize,
+                    height: AppConstants.heroIconContainerSize,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.shield_outlined,
+                      color: AppColors.textPrimary,
+                      size: 28,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.shield_outlined,
-                    color: AppColors.white,
-                    size: 28,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

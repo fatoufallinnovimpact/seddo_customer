@@ -118,24 +118,13 @@ class _HelpPageView extends StatelessWidget {
             child: Container(
               width: AppConstants.circularButtonSize,
               height: AppConstants.circularButtonSize,
-              decoration: BoxDecoration(
-                color: AppColors.white,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.grayBorderDivider,
-                  width: AppConstants.strokeWidthBorder,
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: AppColors.shadowSubtleBlack,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
               ),
               child: const Icon(
                 Icons.arrow_back_rounded,
-                color: AppColors.slateDark,
+                color: Color(0xFF0F172A),
                 size: AppConstants.iconSizeMd,
               ),
             ),

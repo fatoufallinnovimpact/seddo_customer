@@ -543,7 +543,30 @@ class DriverModel {
                 rawJson['rideId'],
               ])}/driver/photo',
       ]),
-      rating: (driverRaw['rating'] as num?)?.toDouble() ?? 4.9,
+      rating: () {
+        double? parseRating(dynamic v) {
+          if (v == null) return null;
+          if (v is num) return v.toDouble();
+          if (v is String) return double.tryParse(v.replaceAll(',', '.'));
+          return null;
+        }
+
+        return parseRating(driverRaw['rating']) ??
+            parseRating(driverRaw['note']) ??
+            parseRating(driverRaw['score']) ??
+            parseRating(driverRaw['evaluation']) ??
+            parseRating(userRaw['rating']) ??
+            parseRating(userRaw['note']) ??
+            parseRating(json['driverRating']) ??
+            parseRating(json['driver_rating']) ??
+            parseRating(json['rating']) ??
+            parseRating(unwrapped['driverRating']) ??
+            parseRating(rawJson['driverRating']) ??
+            parseRating((driverRaw['stats'] is Map)
+                ? (driverRaw['stats'] as Map)['rating']
+                : null) ??
+            4.9;
+      }(),
       totalRides: (driverRaw['totalRides'] as num?)?.toInt() ?? 1250,
       carModel: resolvedCarModel,
       carColor: resolvedCarColor,

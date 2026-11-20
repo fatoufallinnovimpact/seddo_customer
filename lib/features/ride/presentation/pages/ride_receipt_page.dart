@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -48,12 +49,16 @@ class RideReceiptPage extends StatefulWidget {
   final String distanceText;
   final String dateText;
   final String paymentPhone;
+  final String? paymentMethod;
   final String orangeRef;
   final String? priceText;
   final String statusText;
   final bool isRefunded;
   final String? rideId;
   final RideService? rideService;
+  final List<LatLng>? polylinePoints;
+  final List<TrafficSegmentModel>? trafficSegments;
+  final String? startCode;
 
   const RideReceiptPage({
     super.key,
@@ -64,15 +69,19 @@ class RideReceiptPage extends StatefulWidget {
     this.priceText,
     this.statusText = 'Payé',
     this.isRefunded = false,
-    this.departureTime = '18:19',
-    this.arrivalTime = '18:41',
-    this.durationText = '22 min',
-    this.distanceText = '7,8 km',
-    this.dateText = 'Jeudi 15 avril',
-    this.paymentPhone = '77 ••• 45 12',
-    this.orangeRef = 'CI270415.1819.A3F2',
+    this.departureTime = '',
+    this.arrivalTime = '',
+    this.durationText = '',
+    this.distanceText = '',
+    this.dateText = '',
+    this.paymentPhone = '',
+    this.paymentMethod,
+    this.orangeRef = '',
     this.rideId,
     this.rideService,
+    this.polylinePoints,
+    this.trafficSegments,
+    this.startCode,
   });
 
   @override
@@ -93,14 +102,14 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   String? _priceText;
   String _statusText = 'Payé';
   bool _isRefunded = false;
-  String _departureTime = '18:19';
-  String _arrivalTime = '18:41';
-  String _durationText = '22 min';
-  String _distanceText = '7,8 km';
-  String _dateText = 'Jeudi 15 avril';
-  String _paymentPhone = '77 ••• 45 12';
-  String _paymentMethod = 'ORANGE_MONEY';
-  String _orangeRef = 'CI270415.1819.A3F2';
+  String _departureTime = '';
+  String _arrivalTime = '';
+  String _durationText = '';
+  String _distanceText = '';
+  String _dateText = '';
+  String _paymentPhone = '';
+  String _paymentMethod = '';
+  String _orangeRef = '';
   String _category = 'ECO';
   String? _startCode;
   Map<String, dynamic>? _backendRideData;
@@ -129,12 +138,35 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
     _distanceText = widget.distanceText;
     _dateText = widget.dateText;
     _paymentPhone = widget.paymentPhone;
+    if (widget.paymentMethod != null && widget.paymentMethod!.isNotEmpty) {
+      _paymentMethod = widget.paymentMethod!.toUpperCase();
+    }
     _orangeRef = widget.orangeRef;
+    _startCode = widget.startCode;
+    if (widget.polylinePoints != null && widget.polylinePoints!.isNotEmpty) {
+      _polylinePoints = List.from(widget.polylinePoints!);
+    }
+    if (widget.trafficSegments != null && widget.trafficSegments!.isNotEmpty) {
+      _trafficSegments = List.from(widget.trafficSegments!);
+    }
     if (widget.rideOption != null) {
       if (widget.rideOption!.type == RideType.confort ||
           widget.rideOption!.title.toLowerCase().contains('confort')) {
         _category = 'CONFORT';
       }
+    }
+    // Application instantanée des données en cache pour fluidité maximale sans délai
+    if (widget.rideId != null && widget.rideId!.isNotEmpty) {
+      final cached = RideService.getCachedRideDetails(widget.rideId!);
+      if (cached != null) {
+        _applyBackendRideDetails(cached, isSync: true);
+      }
+    }
+    if (_polylinePoints.isEmpty && _departure != null && _destination != null) {
+      _polylinePoints = [
+        LatLng(_departure!.latitude, _departure!.longitude),
+        LatLng(_destination!.latitude, _destination!.longitude),
+      ];
     }
     _loadCustomMarkers();
     _loadRoute();
@@ -158,6 +190,11 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
         final data = await _rideService.getRideDetails(widget.rideId!);
         if (data != null && mounted) {
           _applyBackendRideDetails(data);
+          // Si le backend n'a pas fourni de tracé complet (<= 2 points = vol d'oiseau),
+          // calculer immédiatement l'itinéraire routier réel suivant les rues de Dakar
+          if (_polylinePoints.length <= 2) {
+            await _loadFallbackRoute();
+          }
           return;
         }
       } catch (e) {
@@ -184,23 +221,16 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
         origin: origin,
         destination: destination,
       );
-      if (mounted) {
+      if (mounted && routeDetails.polylinePoints.length > 2) {
         setState(() {
           _polylinePoints = routeDetails.polylinePoints;
         });
         _fitBounds();
       }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _polylinePoints = [origin, destination];
-        });
-        _fitBounds();
-      }
-    }
+    } catch (_) {}
   }
 
-  void _applyBackendRideDetails(Map<String, dynamic> data) {
+  void _applyBackendRideDetails(Map<String, dynamic> data, {bool isSync = false}) {
     _backendRideData = data;
     // Pickup & Dropoff coordinates and addresses
     final pickupMap = data['pickup'] is Map ? data['pickup'] as Map : null;
@@ -272,36 +302,33 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
     // Driver information
     final rawStatus = (data['status'] ?? '').toString().toUpperCase();
     final driverMap = data['driver'] is Map ? data['driver'] as Map : null;
-    if (driverMap != null && rawStatus != 'NO_DRIVER') {
-      final vMap =
-          driverMap['vehicle'] is Map ? driverMap['vehicle'] as Map : null;
-      final fName = (driverMap['firstName'] ?? '').toString().trim();
-      final lName = (driverMap['lastName'] ?? '').toString().trim();
-      final dName = '$fName $lName'.trim();
-      final rating = (driverMap['rating'] as num?)?.toDouble() ?? 4.9;
-      final cModel = (vMap?['model'] != null && vMap?['make'] != null)
-          ? '${vMap!['make']} ${vMap['model']}'
-          : 'Toyota Corolla';
-      final cPlate = (vMap?['plate'] ?? 'DK 4521 AB').toString();
-
-      if (dName.isNotEmpty && dName != 'Chauffeur Seddo') {
-        _driver = DriverModel(
-          id: 'driver_${data['id']}',
-          name: dName,
-          phone: (driverMap['phone'] ?? '+221 77 123 45 67').toString(),
-          rating: rating,
-          totalRides: 480,
-          carModel: cModel,
-          carColor: (vMap?['color'] ?? 'Gris argent').toString(),
-          licensePlate: cPlate,
-          rideType: RideType.eco,
-          currentLocation: LatLng(pickupLat, pickupLng),
-          etaMinutes: 3,
-          distanceKm: 1.2,
+    if ((driverMap != null || data['vehicle'] != null) && rawStatus != 'NO_DRIVER') {
+      try {
+        final parsed = DriverModel.fromRideJson(
+          data,
+          fallbackCarColor: widget.driver?.carColor,
+          fallbackName: widget.driver?.name,
+          fallbackPhotoUrl: widget.driver?.photoUrl,
         );
-      } else {
-        _driver = null;
+        if (parsed.name.isNotEmpty && parsed.name != 'Chauffeur Seddo') {
+          _driver = parsed;
+        } else if (widget.driver != null &&
+            widget.driver!.name.isNotEmpty &&
+            widget.driver!.name != 'Chauffeur Seddo') {
+          _driver = widget.driver;
+        } else {
+          _driver = null;
+        }
+      } catch (_) {
+        if (widget.driver != null) {
+          _driver = widget.driver;
+        }
       }
+    } else if (widget.driver != null &&
+        widget.driver!.name.isNotEmpty &&
+        widget.driver!.name != 'Chauffeur Seddo' &&
+        rawStatus != 'NO_DRIVER') {
+      _driver = widget.driver;
     } else {
       _driver = null;
     }
@@ -361,7 +388,10 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
         final local = created.toLocal();
         _departureTime =
             '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
-        _arrivalTime = _departureTime;
+        final durationMinutes = (durS != null && durS > 0) ? (durS / 60).round() : 15;
+        final arrival = local.add(Duration(minutes: durationMinutes));
+        _arrivalTime =
+            '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
 
         final now = DateTime.now();
         final diffDays = DateTime(now.year, now.month, now.day)
@@ -396,16 +426,25 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
 
     // Payment details
     final pMap = data['payment'] is Map ? data['payment'] as Map : null;
-    if (pMap != null) {
-      _paymentMethod =
-          (pMap['method'] ?? 'ORANGE_MONEY').toString().toUpperCase();
-      if (pMap['phone'] != null) {
-        _paymentPhone = pMap['phone'].toString();
-      }
+    final rawMethod = pMap?['method'] ??
+        pMap?['paymentMethod'] ??
+        data['paymentMethod'] ??
+        data['payment_method'] ??
+        data['method'];
+    if (rawMethod != null && rawMethod.toString().isNotEmpty) {
+      _paymentMethod = rawMethod.toString().toUpperCase();
+    }
+    if (pMap != null && pMap['phone'] != null) {
+      _paymentPhone = pMap['phone'].toString();
     }
 
-    setState(() {});
+    if (!isSync && mounted) {
+      setState(() {});
+    }
     _fitBounds();
+    if (_polylinePoints.length <= 2) {
+      unawaited(_loadFallbackRoute());
+    }
   }
 
   void _fitBounds() {
@@ -518,17 +557,27 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   Future<void> _downloadOrSharePdf() async {
-    final departureName = _departure?.mainText ?? widget.departure?.mainText ?? 'Sacré-Cœur 3';
-    final arrivalName = _destination?.mainText ?? widget.destination?.mainText ?? 'Almadies';
+    final departureName = _departure?.mainText ?? widget.departure?.mainText ?? '';
+    final arrivalName = _destination?.mainText ?? widget.destination?.mainText ?? '';
     final price = _priceText ?? widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F';
     final hasDriver = _driver != null &&
         _driver!.name.isNotEmpty &&
         _driver!.name != 'Chauffeur Seddo' &&
         _statusText != 'Sans chauffeur';
     final driverName = hasDriver ? _driver!.name : '-';
-    final carModel = hasDriver ? _driver!.carModel : '-';
-    final plate = hasDriver ? _driver!.licensePlate : '-';
-    final rating = hasDriver ? '${_driver!.rating.toInt()}' : '-';
+    final carColor = hasDriver ? _driver!.carColor.trim() : '';
+    final rawCarModel = hasDriver ? _driver!.carModel.trim() : '-';
+    final carModel = carColor.isNotEmpty &&
+            !rawCarModel.toLowerCase().contains(carColor.toLowerCase())
+        ? '$rawCarModel $carColor'
+        : rawCarModel;
+    final plate = hasDriver ? _driver!.licensePlate.trim().replaceAll('-', ' ') : '-';
+    final ratingVal = hasDriver && _driver!.rating > 0 ? _driver!.rating : 4.9;
+    final rating = hasDriver
+        ? ((ratingVal * 10 == (ratingVal * 10).roundToDouble())
+            ? ratingVal.toStringAsFixed(1)
+            : ratingVal.toStringAsFixed(2))
+        : '-';
     final rideType = widget.rideOption?.title ?? 'Seddo Eco';
 
     final effectiveRideId = widget.rideId;
@@ -626,6 +675,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
         RideService.lastCreatedRideId;
     final effectiveRideRef =
         _backendRideData?['ref']?.toString() ?? _orangeRef;
+    final effectiveTime = _arrivalTime.isNotEmpty ? _arrivalTime : _departureTime;
     Navigator.of(context).push(
       SlideRightToLeftRoute(
         page: RideHelpPage(
@@ -642,7 +692,8 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
               ),
           priceText:
               widget.priceText ?? widget.rideOption?.formattedPrice ?? '3 500 F',
-          dateText: '${widget.dateText} · ${widget.statusText}',
+          dateText: widget.dateText,
+          timeText: effectiveTime,
         ),
       ),
     );
@@ -720,14 +771,10 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                   decoration: BoxDecoration(
                     color: AppColors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.grayBorderDivider,
-                      width: AppConstants.strokeWidthBorder,
-                    ),
                     boxShadow: const [
                       BoxShadow(
                         color: AppColors.shadowSubtleBlack,
-                        blurRadius: 4,
+                        blurRadius: 6,
                         offset: Offset(0, 2),
                       ),
                     ],
@@ -823,6 +870,29 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
     );
   }
 
+  String _getPaymentAsset() {
+    final method = (_paymentMethod.isNotEmpty
+            ? _paymentMethod
+            : (widget.paymentMethod ?? ''))
+        .toUpperCase();
+    if (method.contains('WAVE')) {
+      return AppConstants.assetWaveLogo;
+    } else if (method.contains('ORANGE') ||
+        method.contains('OM') ||
+        _orangeRef.startsWith('CI') ||
+        widget.orangeRef.startsWith('CI')) {
+      return AppConstants.assetOrangeMoneyLogo;
+    } else if (method.contains('CASH') ||
+        method.contains('ESPECE') ||
+        method.contains('ESPÈCE')) {
+      return AppConstants.assetCashLogo;
+    }
+    if (_orangeRef.isNotEmpty) {
+      return AppConstants.assetOrangeMoneyLogo;
+    }
+    return AppConstants.assetCashLogo;
+  }
+
   Widget _buildHeaderRow() {
     final dateDisplay = _departureTime.isNotEmpty
         ? '$_dateText · $_departureTime'
@@ -845,6 +915,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        const SizedBox(width: AppConstants.spacingMd),
         Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppConstants.spacingUnit,
@@ -913,15 +984,24 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
   }
 
   Widget _buildMainCard() {
-    final departureName = _departure?.mainText ?? widget.departure?.mainText ?? 'Sacré-Cœur 3';
-    final arrivalName = _destination?.mainText ?? widget.destination?.mainText ?? 'Almadies';
+    final departureName = _departure?.mainText ?? widget.departure?.mainText ?? '';
+    final arrivalName = _destination?.mainText ?? widget.destination?.mainText ?? '';
     final hasDriver = _driver != null &&
         _driver!.name.isNotEmpty &&
         _driver!.name != 'Chauffeur Seddo' &&
         _statusText != 'Sans chauffeur';
     final driverName = hasDriver ? _driver!.name : '';
-    final carModel = hasDriver ? _driver!.carModel : '';
-    final plate = hasDriver ? _driver!.licensePlate : '';
+    final rawCarModel = hasDriver ? _driver!.carModel.trim() : '';
+    final rawCarColor = hasDriver ? _driver!.carColor.trim() : '';
+    final carModel = rawCarColor.isNotEmpty &&
+            !rawCarModel.toLowerCase().contains(rawCarColor.toLowerCase())
+        ? '$rawCarModel $rawCarColor'
+        : rawCarModel;
+    final plate = hasDriver ? _driver!.licensePlate.trim().replaceAll('-', ' ') : '';
+    final ratingVal = hasDriver && _driver!.rating > 0 ? _driver!.rating : 4.9;
+    final ratingDisplay = (ratingVal * 10 == (ratingVal * 10).roundToDouble())
+        ? ratingVal.toStringAsFixed(1)
+        : ratingVal.toStringAsFixed(2);
 
     return Container(
       decoration: BoxDecoration(
@@ -980,7 +1060,10 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                 ),
                 const SizedBox(width: AppConstants.spacingUnitLg),
                 Text(
-                  '$_distanceText · $_durationText',
+                  [
+                    if (_distanceText.trim().isNotEmpty) _distanceText.trim(),
+                    if (_durationText.trim().isNotEmpty) _durationText.trim(),
+                  ].join(' · '),
                   style: GoogleFonts.inter(
                     fontSize: AppConstants.fontSm,
                     fontWeight: FontWeight.w500,
@@ -1049,22 +1132,34 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                           fontWeight: FontWeight.w700,
                           color: AppColors.slateDark,
                         ),
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: AppConstants.spacingXs),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Flexible(
                             child: Text(
-                              '$carModel · ',
+                              carModel,
                               style: GoogleFonts.inter(
                                 fontSize: AppConstants.fontSm,
                                 fontWeight: FontWeight.w500,
                                 color: AppColors.textSecondary,
                               ),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            '·',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           const Icon(
                             Icons.star_rounded,
                             size: AppConstants.iconSizeSm,
@@ -1072,7 +1167,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            '${_driver?.rating.toInt() ?? 4}',
+                            ratingDisplay,
                             style: GoogleFonts.inter(
                               fontSize: AppConstants.fontSm,
                               fontWeight: FontWeight.w600,
@@ -1085,7 +1180,8 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                   ),
                 ),
                 // License Plate Badge
-                if (plate.isNotEmpty)
+                if (plate.isNotEmpty) ...[
+                  const SizedBox(width: AppConstants.spacingUnitLg),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppConstants.spacingUnit,
@@ -1106,6 +1202,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                       ),
                     ),
                   ),
+                ],
               ],
             )
           else
@@ -1213,6 +1310,7 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
 
           // 5. Payment Row
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Paiement',
@@ -1222,26 +1320,45 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(width: AppConstants.spacingSm),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (_paymentMethod == 'CASH') ...[
-                      ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(AppConstants.radiusXs),
-                        child: Image.asset(
-                          AppConstants.assetCashLogo,
-                          width: AppConstants.iconSizeLg,
-                          height: AppConstants.iconSizeLg,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.spacingSm),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppConstants.radiusXs),
+                child: Image.asset(
+                  _getPaymentAsset(),
+                  width: AppConstants.iconSizeLg + 4,
+                  height: AppConstants.iconSizeLg + 4,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ],
+          ),
+
+          if (_orangeRef.isNotEmpty) ...[
+            const SizedBox(height: AppConstants.spacingMd),
+            const Divider(
+              height: 1,
+              color: AppColors.grayBorderDivider,
+            ),
+            const SizedBox(height: AppConstants.spacingMd),
+
+            // 6. Reference Row with Working Copy Button
+            Row(
+              children: [
+                Text(
+                  'Référence',
+                  style: GoogleFonts.inter(
+                    fontSize: AppConstants.fontMd,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: AppConstants.spacingSm),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
                       Flexible(
                         child: Text(
-                          'Au chauffeur à l\'arrivée',
+                          _orangeRef,
                           style: GoogleFonts.inter(
                             fontSize: AppConstants.fontMd,
                             fontWeight: FontWeight.w700,
@@ -1250,124 +1367,34 @@ class _RideReceiptPageState extends State<RideReceiptPage> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ] else if (_paymentMethod == 'WAVE') ...[
-                      ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(AppConstants.radiusXs),
-                        child: Image.asset(
-                          AppConstants.assetWaveLogo,
-                          width: AppConstants.iconSizeLg,
-                          height: AppConstants.iconSizeLg,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
                       const SizedBox(width: AppConstants.spacingSm),
-                      Flexible(
-                        child: Text(
-                          _paymentPhone.isNotEmpty
-                              ? 'Wave $_paymentPhone'
-                              : 'Wave',
-                          style: GoogleFonts.inter(
-                            fontSize: AppConstants.fontMd,
-                            fontWeight: FontWeight.w700,
+                      GestureDetector(
+                        onTap: _copyOrangeReference,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            borderRadius:
+                                BorderRadius.circular(AppConstants.radiusSm),
+                            border: Border.all(
+                              color: AppColors.grayBorderDivider,
+                              width: AppConstants.strokeWidthBorder,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.copy_rounded,
+                            size: 15,
                             color: AppColors.slateDark,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ] else ...[
-                      ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(AppConstants.radiusXs),
-                        child: Image.asset(
-                          AppConstants.assetOrangeMoneyLogo,
-                          width: AppConstants.iconSizeLg,
-                          height: AppConstants.iconSizeLg,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.spacingSm),
-                      Flexible(
-                        child: Text(
-                          _paymentPhone.isNotEmpty
-                              ? 'Orange Money $_paymentPhone'
-                              : 'Orange Money',
-                          style: GoogleFonts.inter(
-                            fontSize: AppConstants.fontMd,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.slateDark,
-                          ),
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: AppConstants.spacingMd),
-          const Divider(
-            height: 1,
-            color: AppColors.grayBorderDivider,
-          ),
-          const SizedBox(height: AppConstants.spacingMd),
-
-          // 6. Reference Row with Working Copy Button
-          Row(
-            children: [
-              Text(
-                'Référence',
-                style: GoogleFonts.inter(
-                  fontSize: AppConstants.fontMd,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: AppConstants.spacingSm),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        _orangeRef,
-                        style: GoogleFonts.inter(
-                          fontSize: AppConstants.fontMd,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.slateDark,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: AppConstants.spacingSm),
-                    GestureDetector(
-                      onTap: _copyOrangeReference,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          borderRadius:
-                              BorderRadius.circular(AppConstants.radiusSm),
-                          border: Border.all(
-                            color: AppColors.grayBorderDivider,
-                            width: AppConstants.strokeWidthBorder,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.copy_rounded,
-                          size: 15,
-                          color: AppColors.slateDark,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );

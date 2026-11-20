@@ -43,6 +43,7 @@ class RideHelpPage extends StatefulWidget {
   final PlaceSearchResult? destination;
   final String priceText;
   final String dateText;
+  final String? timeText;
   final HelpRepository? helpRepository;
 
   const RideHelpPage({
@@ -52,6 +53,7 @@ class RideHelpPage extends StatefulWidget {
     this.destination,
     this.priceText = '3 500 F',
     this.dateText = '15 avr. · Course terminée',
+    this.timeText,
     this.helpRepository,
   });
 
@@ -358,9 +360,15 @@ class _RideHelpPageState extends State<RideHelpPage> {
   }
 
   Widget _buildTripSummaryCard(String destinationTitle) {
+    String datePart = widget.dateText;
+    if (widget.timeText != null &&
+        widget.timeText!.isNotEmpty &&
+        !datePart.contains(widget.timeText!)) {
+      datePart = '$datePart à ${widget.timeText}';
+    }
     final dateOrRef = widget.rideRef != null && widget.rideRef!.isNotEmpty
-        ? '${widget.dateText} · Réf. ${widget.rideRef}'
-        : widget.dateText;
+        ? '$datePart · Réf. ${widget.rideRef}'
+        : datePart;
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -388,29 +396,44 @@ class _RideHelpPageState extends State<RideHelpPage> {
           ),
           const SizedBox(width: AppConstants.spacingUnitLg),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text(
-                  destinationTitle,
-                  style: GoogleFonts.inter(
-                    fontSize: AppConstants.fontLg,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.slateDark,
+                Flexible(
+                  child: Text(
+                    destinationTitle,
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontBase,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.slateDark,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(height: AppConstants.spacingXs),
                 Text(
-                  dateOrRef,
+                  ' · ',
                   style: GoogleFonts.inter(
                     fontSize: AppConstants.fontSm,
                     fontWeight: FontWeight.w500,
                     color: AppColors.textSecondary,
                   ),
                 ),
+                Flexible(
+                  child: Text(
+                    dateOrRef,
+                    style: GoogleFonts.inter(
+                      fontSize: AppConstants.fontSm,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Text(
             widget.priceText,
             style: GoogleFonts.inter(

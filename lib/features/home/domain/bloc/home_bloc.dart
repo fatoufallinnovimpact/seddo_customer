@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/ride/data/models/nearby_driver_model.dart';
 import 'home_event.dart';
 import 'home_state.dart';
@@ -25,7 +26,8 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
   }
 
   void _onInit(HomeInitEvent event, Emitter<HomeState> emit) {
-    const center = LatLng(14.6937, -17.4440);
+    final center = UserLocationStorage.cached?.location ??
+        const LatLng(14.6937, -17.4440);
 
     // Initial driver positions around default or current location
     final initialDrivers = _generateDriversAround(center);
@@ -154,6 +156,13 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
 
   Future<LatLng?> _defaultLocationFetcher() async {
     try {
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        return LatLng(lastKnown.latitude, lastKnown.longitude);
+      }
+    } catch (_) {}
+
+    try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return null;
 
@@ -167,17 +176,11 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 5),
+          timeLimit: Duration(seconds: 3),
         ),
       );
       return LatLng(position.latitude, position.longitude);
     } catch (_) {
-      try {
-        final lastKnown = await Geolocator.getLastKnownPosition();
-        if (lastKnown != null) {
-          return LatLng(lastKnown.latitude, lastKnown.longitude);
-        }
-      } catch (_) {}
       return null;
     }
   }

@@ -82,110 +82,24 @@ class DestinationSearchBottomSheet extends StatefulWidget {
 
   /// Nettoie le sous-titre d'adresse pour ne jamais répéter le grand titre dans le détail
   /// et élimine toute répétition accidentelle de "Dakar, Sénégal"
-  static String formatPlaceSubtitle(String title, String rawSubtitle) {
-    final cleanTitle = title.trim();
-    var cleanSub = rawSubtitle.trim();
-
-    if (cleanSub.isEmpty) return '';
-
-    // Si le sous-titre est strictement identique au titre (insensible à la casse)
-    if (cleanSub.toLowerCase() == cleanTitle.toLowerCase()) {
-      return '';
-    }
-
-    // Si le sous-titre commence par le titre (ex: "Liberté 6 Extension, Rue LIB 42, Dakar")
-    if (cleanTitle.length > 5 &&
-        cleanSub.toLowerCase().startsWith(cleanTitle.toLowerCase())) {
-      cleanSub = cleanSub.substring(cleanTitle.length).trim();
-      // Supprimer les virgules, tirets ou espaces au début
-      cleanSub = cleanSub.replaceFirst(RegExp(r'^[,;\s\-–—]+'), '').trim();
-    }
-
-    // Si après nettoyage le sous-titre est vide ou identique au titre, ne rien forcer en doublon
-    if (cleanSub.isEmpty ||
-        cleanSub.toLowerCase() == cleanTitle.toLowerCase()) {
-      return '';
-    }
-
-    // Supprimer toute répétition interne de "Dakar, Sénégal" ou "Dakar, Dakar"
-    cleanSub = cleanSub.replaceAll(
-      RegExp(r'Dakar,\s*Sénégal,\s*Dakar,\s*Sénégal', caseSensitive: false),
-      'Dakar, Sénégal',
-    );
-    cleanSub = cleanSub.replaceAll(
-      RegExp(r'Dakar,\s*Dakar', caseSensitive: false),
-      'Dakar',
-    );
-
-    return cleanSub;
-  }
+  static String formatPlaceSubtitle(String title, String rawSubtitle) =>
+      PlacesService.formatPlaceSubtitle(title, rawSubtitle);
 
   /// Retourne le grand titre et le sous-titre d'adresse.
-  /// Si le titre contient des détails séparés par des virgules (ex: "Grand Yoff, 2527 Rue DD 98, Dakar"),
-  /// le premier segment devient le grand titre et le reste le sous-titre.
-  /// Élimine toute duplication de "Dakar, Sénégal" sur la même carte.
+  /// Nettoie les Plus Codes Google Maps (ex: "MGHQ+W85", "Point E / MHJ3+JXC") et
+  /// résout automatiquement le vrai quartier de Dakar via les coordonnées si le titre est "Dakar, Sénégal"
   static ({String title, String subtitle}) sanitizePlaceHierarchy(
     String rawLabel,
-    String rawAddress,
-  ) {
-    var title = rawLabel.trim();
-    var subtitle = rawAddress.trim();
-
-    // Retirer d'éventuels Plus Codes Google Maps (ex: "Point E / MHJ3+JXC" -> "Point E")
-    title = title.replaceAll(RegExp(r'\s*/\s*[A-Z0-9]{4}\+[A-Z0-9]{2,}\b'), '').trim();
-    title = title.replaceAll(RegExp(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,}\s*'), '').trim();
-
-    // Si le titre contient une virgule et que le sous-titre est vide ou identique au titre
-    // (ex: "Point E, Rue PE 24, Dakar" ou "Grand Yoff, 2527 Rue DD 98, Dakar")
-    // mais ne pas découper "Dakar, Sénégal" qui est le nom complet ville/pays
-    final isDakarSenegalTitle = title.toLowerCase() == 'dakar, sénégal' ||
-        title.toLowerCase() == 'dakar, senegal';
-
-    if ((subtitle.isEmpty || subtitle.toLowerCase() == title.toLowerCase()) &&
-        title.contains(',') &&
-        !isDakarSenegalTitle) {
-      final parts = title.split(',');
-      title = parts.first.trim();
-      subtitle = parts.sublist(1).join(',').trim();
-    } else if (subtitle.contains(',') &&
-        subtitle.toLowerCase() != 'dakar, sénégal' &&
-        subtitle.toLowerCase() != 'dakar, senegal' &&
-        (title.isEmpty || subtitle.toLowerCase().startsWith(title.toLowerCase()))) {
-      // Si l'adresse complète est dans subtitle
-      final parts = subtitle.split(',');
-      if (title.isEmpty) {
-        title = parts.first.trim();
-      }
-      subtitle = parts.sublist(1).join(',').trim();
-    }
-
-    // Si le titre est vide, utiliser l'adresse ou 'Destination'
-    if (title.isEmpty) {
-      title = subtitle.isNotEmpty ? subtitle : 'Destination';
-      subtitle = '';
-    }
-
-    // Si le sous-titre est vide ou identique au titre
-    if (subtitle.isEmpty || subtitle.toLowerCase() == title.toLowerCase()) {
-      // Si le titre est déjà "Dakar, Sénégal" ou "Dakar", ne pas dupliquer en sous-titre
-      if (title.toLowerCase() == 'dakar, sénégal' ||
-          title.toLowerCase() == 'dakar, senegal' ||
-          title.toLowerCase() == 'dakar') {
-        subtitle = '';
-      } else {
-        // Pour tout quartier ou lieu (ex: "Point E", "Almadies"), afficher la ville en sous-titre
-        subtitle = 'Dakar, Sénégal';
-      }
-    }
-
-    // Nettoyer le sous-titre pour éviter les répétitions avec le titre
-    final cleanSub = formatPlaceSubtitle(title, subtitle);
-
-    return (
-      title: title,
-      subtitle: cleanSub,
-    );
-  }
+    String rawAddress, {
+    double? lat,
+    double? lng,
+  }) =>
+      PlacesService.sanitizePlaceHierarchy(
+        rawLabel,
+        rawAddress,
+        lat: lat,
+        lng: lng,
+      );
 
   @override
   State<DestinationSearchBottomSheet> createState() =>
@@ -541,6 +455,8 @@ class _DestinationSearchBottomSheetState
     final hierarchy = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
       item.label,
       item.address,
+      lat: item.lat,
+      lng: item.lng,
     );
     final place = PlaceSearchResult(
       id: item.id.isNotEmpty ? item.id : 'recent_${item.lat}_${item.lng}',
@@ -563,6 +479,8 @@ class _DestinationSearchBottomSheetState
       final hierarchy = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
         rawTitle,
         rawSubtitle,
+        lat: details.lat,
+        lng: details.lng,
       );
 
       final place = PlaceSearchResult(
@@ -1123,6 +1041,8 @@ class _DestinationSearchBottomSheetState
                             DestinationSearchBottomSheet.sanitizePlaceHierarchy(
                           item.label,
                           item.address,
+                          lat: item.lat,
+                          lng: item.lng,
                         );
                         final title = hierarchy.title;
                         final subtitle = hierarchy.subtitle;

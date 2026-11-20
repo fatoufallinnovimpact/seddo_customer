@@ -30,6 +30,8 @@ class RealtimeRideStatusEvent {
   final int version;
   final DateTime timestamp;
   final Map<String, dynamic> raw;
+  final String? cancellationReason;
+  final String? cancelledBy;
 
   const RealtimeRideStatusEvent({
     required this.rideId,
@@ -39,6 +41,8 @@ class RealtimeRideStatusEvent {
     this.version = 0,
     required this.timestamp,
     this.raw = const {},
+    this.cancellationReason,
+    this.cancelledBy,
   });
 
   factory RealtimeRideStatusEvent.fromJson(dynamic json) {
@@ -65,14 +69,45 @@ class RealtimeRideStatusEvent {
         ? map['ride'] as Map<String, dynamic>
         : (dataMap ?? map);
 
-    final rideId = (rideObj['rideId'] ??
+    var rideId = (rideObj['rideId'] ??
             rideObj['id'] ??
+            rideObj['_id'] ??
+            rideObj['ride_id'] ??
             map['rideId'] ??
             map['id'] ??
+            map['_id'] ??
+            map['ride_id'] ??
             dataMap?['rideId'] ??
             dataMap?['id'] ??
+            dataMap?['_id'] ??
+            dataMap?['ride_id'] ??
             '')
         .toString();
+
+    // Si rideId est vide mais qu'on a une course active enregistrée, on l'associe
+    if (rideId.isEmpty &&
+        RealtimeService().currentActiveRideId != null &&
+        RealtimeService().currentActiveRideId!.isNotEmpty) {
+      rideId = RealtimeService().currentActiveRideId!;
+    }
+
+    final rawReason = (rideObj['reason'] ??
+            rideObj['cancelReason'] ??
+            rideObj['cancellationReason'] ??
+            map['reason'] ??
+            map['cancelReason'] ??
+            map['cancellationReason'] ??
+            dataMap?['reason'] ??
+            dataMap?['cancelReason'])
+        ?.toString();
+
+    final rawCancelledBy = (rideObj['cancelledBy'] ??
+            rideObj['cancelled_by'] ??
+            map['cancelledBy'] ??
+            map['cancelled_by'] ??
+            dataMap?['cancelledBy'] ??
+            dataMap?['cancelled_by'])
+        ?.toString();
 
     var status = (rideObj['status'] ??
             map['status'] ??
@@ -86,12 +121,20 @@ class RealtimeRideStatusEvent {
 
     if (status.isEmpty) {
       final evStr = (map['event'] ?? map['type'] ?? '').toString().toLowerCase();
-      if (evStr.contains('accept')) {
+      if (evStr.contains('accept') || evStr.contains('assign') || evStr.contains('confirm')) {
         status = 'ACCEPTED';
-      } else if (evStr.contains('arrive')) {
+      } else if (evStr.contains('arrive') || evStr.contains('pickup') || evStr.contains('reach')) {
         status = 'DRIVER_ARRIVED';
-      } else if (evStr.contains('start') || evStr.contains('progress')) {
+      } else if (evStr.contains('start') || evStr.contains('progress') || evStr.contains('trip') || evStr.contains('begin')) {
         status = 'IN_PROGRESS';
+      } else if (evStr.contains('complet') || evStr.contains('finish')) {
+        status = 'COMPLETED';
+      } else if (evStr.contains('cancel')) {
+        status = 'CANCELLED';
+      } else if (evStr.contains('no_driver')) {
+        status = 'NO_DRIVER';
+      } else if (evStr.contains('reject') || evStr.contains('declin')) {
+        status = 'REJECTED';
       }
     }
 
@@ -143,6 +186,8 @@ class RealtimeRideStatusEvent {
       version: version,
       timestamp: time,
       raw: map,
+      cancellationReason: rawReason,
+      cancelledBy: rawCancelledBy,
     );
   }
 }
@@ -821,6 +866,7 @@ class RealtimeService {
   // Cache du dernier événement de statut pour transmission instantanée aux nouveaux écrans
   RealtimeRideStatusEvent? _lastRideStatusEvent;
   RealtimeRideStatusEvent? get lastRideStatusEvent => _lastRideStatusEvent;
+  String? get currentActiveRideId => _currentActiveRideId;
 
   /// Nettoie le cache du dernier statut WebSocket pour éviter que les données
   /// d'une course précédente terminée (ex: code de départ, chauffeur) ne polluent une nouvelle commande.
@@ -924,7 +970,7 @@ class RealtimeService {
     if (!isConnected && !isConnecting) {
       connect();
     }
-    if (_socket != null && _socket!.connected) {
+    void emitJoin() {
       debugPrint('[RealtimeService] 🚪 Rejoindre canal ride:$rideId');
       _socket?.emit('join', 'ride:$rideId');
       _socket?.emit('join', {'room': 'ride:$rideId', 'rideId': rideId});
@@ -935,6 +981,12 @@ class RealtimeService {
       _socket?.emit('subscribe', {'channel': 'ride:$rideId', 'rideId': rideId});
       _socket?.emit('subscribe', 'ride:$rideId');
       _socket?.emit('subscribe', rideId);
+    }
+
+    if (_socket != null && _socket!.connected) {
+      emitJoin();
+    } else {
+      _socket?.once('connect', (_) => emitJoin());
     }
   }
 
@@ -1069,14 +1121,71 @@ class RealtimeService {
     s.on('driver_arrived', (data) => _dispatchRideStatusFromEvent('driver_arrived', data));
     s.on('ride:arrived', (data) => _dispatchRideStatusFromEvent('ride:arrived', data));
     s.on('ride.arrived', (data) => _dispatchRideStatusFromEvent('ride.arrived', data));
+    s.on('ride_arrived', (data) => _dispatchRideStatusFromEvent('ride_arrived', data));
+    s.on('driver:at_pickup', (data) => _dispatchRideStatusFromEvent('driver:at_pickup', data));
+    s.on('driver.at_pickup', (data) => _dispatchRideStatusFromEvent('driver.at_pickup', data));
+    s.on('driver_at_pickup', (data) => _dispatchRideStatusFromEvent('driver_at_pickup', data));
+    s.on('driver:reached', (data) => _dispatchRideStatusFromEvent('driver:reached', data));
+    s.on('driver.reached', (data) => _dispatchRideStatusFromEvent('driver.reached', data));
+    s.on('driver_reached', (data) => _dispatchRideStatusFromEvent('driver_reached', data));
+    s.on('ride:at_pickup', (data) => _dispatchRideStatusFromEvent('ride:at_pickup', data));
+    s.on('ride.at_pickup', (data) => _dispatchRideStatusFromEvent('ride.at_pickup', data));
+    s.on('ride_at_pickup', (data) => _dispatchRideStatusFromEvent('ride_at_pickup', data));
     s.on('ride:in_progress', (data) => _dispatchRideStatusFromEvent('ride:in_progress', data));
     s.on('ride.in_progress', (data) => _dispatchRideStatusFromEvent('ride.in_progress', data));
+    s.on('ride_in_progress', (data) => _dispatchRideStatusFromEvent('ride_in_progress', data));
     s.on('ride:started', (data) => _dispatchRideStatusFromEvent('ride:started', data));
     s.on('ride.started', (data) => _dispatchRideStatusFromEvent('ride.started', data));
+    s.on('ride_started', (data) => _dispatchRideStatusFromEvent('ride_started', data));
+    s.on('ride:start', (data) => _dispatchRideStatusFromEvent('ride:start', data));
+    s.on('ride.start', (data) => _dispatchRideStatusFromEvent('ride.start', data));
+    s.on('ride_start', (data) => _dispatchRideStatusFromEvent('ride_start', data));
+    s.on('trip:started', (data) => _dispatchRideStatusFromEvent('trip:started', data));
+    s.on('trip.started', (data) => _dispatchRideStatusFromEvent('trip.started', data));
+    s.on('trip_started', (data) => _dispatchRideStatusFromEvent('trip_started', data));
+    s.on('trip:start', (data) => _dispatchRideStatusFromEvent('trip:start', data));
+    s.on('trip.start', (data) => _dispatchRideStatusFromEvent('trip.start', data));
+    s.on('trip_start', (data) => _dispatchRideStatusFromEvent('trip_start', data));
+    s.on('trip:in_progress', (data) => _dispatchRideStatusFromEvent('trip:in_progress', data));
+    s.on('trip.in_progress', (data) => _dispatchRideStatusFromEvent('trip.in_progress', data));
+    s.on('trip_in_progress', (data) => _dispatchRideStatusFromEvent('trip_in_progress', data));
+    s.on('trip:arrived', (data) => _dispatchRideStatusFromEvent('trip:arrived', data));
+    s.on('trip.arrived', (data) => _dispatchRideStatusFromEvent('trip.arrived', data));
+    s.on('trip_arrived', (data) => _dispatchRideStatusFromEvent('trip_arrived', data));
+    s.on('trip:accepted', (data) => _dispatchRideStatusFromEvent('trip:accepted', data));
+    s.on('trip.accepted', (data) => _dispatchRideStatusFromEvent('trip.accepted', data));
+    s.on('trip_accepted', (data) => _dispatchRideStatusFromEvent('trip_accepted', data));
+    s.on('driver:start', (data) => _dispatchRideStatusFromEvent('driver:start', data));
+    s.on('driver.start', (data) => _dispatchRideStatusFromEvent('driver.start', data));
+    s.on('driver_start', (data) => _dispatchRideStatusFromEvent('driver_start', data));
+    s.on('driver:started', (data) => _dispatchRideStatusFromEvent('driver:started', data));
+    s.on('driver.started', (data) => _dispatchRideStatusFromEvent('driver.started', data));
+    s.on('driver_started', (data) => _dispatchRideStatusFromEvent('driver_started', data));
+    s.on('arrived', (data) => _dispatchRideStatusFromEvent('arrived', data));
+    s.on('accepted', (data) => _dispatchRideStatusFromEvent('accepted', data));
+    s.on('started', (data) => _dispatchRideStatusFromEvent('started', data));
+    s.on('completed', (data) => _dispatchRideStatusFromEvent('completed', data));
+    s.on('trip:completed', (data) => _dispatchRideStatusFromEvent('trip:completed', data));
+    s.on('trip.completed', (data) => _dispatchRideStatusFromEvent('trip.completed', data));
+    s.on('trip_completed', (data) => _dispatchRideStatusFromEvent('trip_completed', data));
     s.on('ride:completed', (data) => _dispatchRideStatusFromEvent('ride:completed', data));
     s.on('ride.completed', (data) => _dispatchRideStatusFromEvent('ride.completed', data));
     s.on('ride:cancelled', (data) => _dispatchRideStatusFromEvent('ride:cancelled', data));
     s.on('ride.cancelled', (data) => _dispatchRideStatusFromEvent('ride.cancelled', data));
+    s.on('ride_cancelled', (data) => _dispatchRideStatusFromEvent('ride_cancelled', data));
+    s.on('ride:cancel', (data) => _dispatchRideStatusFromEvent('ride:cancel', data));
+    s.on('ride.cancel', (data) => _dispatchRideStatusFromEvent('ride.cancel', data));
+    s.on('driver:cancelled', (data) => _dispatchRideStatusFromEvent('driver:cancelled', data));
+    s.on('driver.cancelled', (data) => _dispatchRideStatusFromEvent('driver.cancelled', data));
+    s.on('driver_cancelled', (data) => _dispatchRideStatusFromEvent('driver_cancelled', data));
+    s.on('driver:cancel', (data) => _dispatchRideStatusFromEvent('driver:cancel', data));
+    s.on('driver.cancel', (data) => _dispatchRideStatusFromEvent('driver.cancel', data));
+    s.on('driver:rejected', (data) => _dispatchRideStatusFromEvent('driver:rejected', data));
+    s.on('driver.rejected', (data) => _dispatchRideStatusFromEvent('driver.rejected', data));
+    s.on('driver:declined', (data) => _dispatchRideStatusFromEvent('driver:declined', data));
+    s.on('driver.declined', (data) => _dispatchRideStatusFromEvent('driver.declined', data));
+    s.on('ride:rejected', (data) => _dispatchRideStatusFromEvent('ride:rejected', data));
+    s.on('ride.rejected', (data) => _dispatchRideStatusFromEvent('ride.rejected', data));
     s.on('ride:no_driver', (data) => _dispatchRideStatusFromEvent('ride:no_driver', data));
     s.on('ride.no_driver', (data) => _dispatchRideStatusFromEvent('ride.no_driver', data));
 
@@ -1251,15 +1360,15 @@ class RealtimeService {
 
     // Déduire le statut du nom de l'événement si non fourni
     if (map['status'] == null || map['status'].toString().isEmpty) {
-      if (lower.contains('accept') || lower.contains('assign')) {
+      if (lower.contains('accept') || lower.contains('assign') || lower.contains('confirm')) {
         map['status'] = 'ACCEPTED';
-      } else if (lower.contains('arriv')) {
+      } else if (lower.contains('arriv') || lower.contains('pickup') || lower.contains('reach')) {
         map['status'] = 'DRIVER_ARRIVED';
-      } else if (lower.contains('start') || lower.contains('progress') || lower.contains('trip')) {
+      } else if (lower.contains('start') || lower.contains('progress') || lower.contains('trip') || lower.contains('begin')) {
         map['status'] = 'IN_PROGRESS';
       } else if (lower.contains('complet') || lower.contains('finish')) {
         map['status'] = 'COMPLETED';
-      } else if (lower.contains('cancel')) {
+      } else if (lower.contains('cancel') || lower.contains('reject') || lower.contains('declin') || lower.contains('abort')) {
         map['status'] = 'CANCELLED';
       } else if (lower.contains('no_driver')) {
         map['status'] = 'NO_DRIVER';
@@ -1272,7 +1381,27 @@ class RealtimeService {
   void _handleRideStatus(dynamic data) {
     try {
       final event = RealtimeRideStatusEvent.fromJson(data);
-      if (event.rideId.isNotEmpty && event.version > 0) {
+      final s = event.status.toUpperCase();
+      final isCancelStatus = s.contains('CANCEL') ||
+          s.contains('REJECT') ||
+          s.contains('DECLIN') ||
+          s.contains('ABORT') ||
+          s == 'NO_DRIVER' ||
+          s == 'NO_SHOW';
+
+      final isCriticalTransition = isCancelStatus ||
+          s == 'ACCEPTED' ||
+          s == 'DRIVER_ACCEPTED' ||
+          s == 'DRIVER_ASSIGNED' ||
+          s == 'ASSIGNED' ||
+          s == 'DRIVER_ARRIVED' ||
+          s == 'ARRIVED' ||
+          s == 'AT_PICKUP' ||
+          s == 'IN_PROGRESS' ||
+          s == 'STARTED' ||
+          s == 'COMPLETED';
+
+      if (!isCriticalTransition && event.rideId.isNotEmpty && event.version > 0) {
         final last = _lastKnownVersions[event.rideId] ?? 0;
         if (event.version < last) {
           debugPrint('[RealtimeService] Ignoré ride.status périmé (v${event.version} < v$last)');

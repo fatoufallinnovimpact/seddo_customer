@@ -30,11 +30,11 @@ void main() {
       expect(find.text('Confidentialité'), findsOneWidget);
       expect(find.byIcon(Icons.arrow_back), findsOneWidget);
 
-      // 2. Hero Royal Blue Banner
-      expect(find.text('Tes données t\'appartiennent'), findsOneWidget);
+      // 2. Hero White Banner
+      expect(find.text('Données protégées'), findsOneWidget);
       expect(
         find.text(
-          'Tu décides de ce que Seddo collecte et de ce que tu veux effacer.',
+          'Contrôlez vos informations personnelles.',
         ),
         findsOneWidget,
       );
@@ -168,7 +168,7 @@ void main() {
 
       // PrivacyPage is displayed
       expect(find.byType(PrivacyPage), findsOneWidget);
-      expect(find.text('Tes données t\'appartiennent'), findsOneWidget);
+      expect(find.text('Données protégées'), findsOneWidget);
     });
   });
 }

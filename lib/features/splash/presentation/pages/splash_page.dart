@@ -4,6 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/presentation/pages/home_page.dart';
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
 import 'package:seddo/features/ride/data/services/active_ride_offline_storage.dart';
@@ -111,6 +112,10 @@ class _SplashPageState extends State<SplashPage>
         await authRepo.clearIncompleteSession();
         return const OnboardingPage();
       }
+
+      // Préchauffage anticipé de la position utilisateur pendant l'animation du splash
+      // pour que l'arrivée sur HomePage soit 100% instantanée sans attente de GPS
+      unawaited(UserLocationStorage.warmUpLocation());
 
       // 1. Restaurer le dernier ID de course terminée en local
       try {

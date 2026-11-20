@@ -85,6 +85,10 @@ class _HomePageContentState extends State<_HomePageContent>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    // Préchauffage instantané du cache profil, photo et courses en arrière-plan
+    // pour que l'ouverture de "Mon compte" soit 100% instantanée sans attente de chargement
+    AuthRepository().warmUpCache();
+
     // Initialisation instantanée depuis le cache mémoire et local pour un affichage 100% fluide sans délai
     _suggestions = HomeSuggestionsStorage.cachedSuggestions;
     _localRecentTrips = RecentTripStorage.cachedRecentTrips;
@@ -135,8 +139,11 @@ class _HomePageContentState extends State<_HomePageContent>
     _realtimeRideStatusSub = RealtimeService().rideStatusStream.listen((event) {
       if (!mounted) return;
       if (event.status == 'COMPLETED' ||
-          event.status.startsWith('CANCEL') ||
-          event.status == 'NO_DRIVER') {
+          event.status.contains('CANCEL') ||
+          event.status.contains('REJECT') ||
+          event.status.contains('DECLIN') ||
+          event.status == 'NO_DRIVER' ||
+          event.status == 'NO_SHOW') {
         setState(() {
           _activeRideData = null;
         });
@@ -1015,9 +1022,10 @@ class _HomePageContentState extends State<_HomePageContent>
                     fontStyle: FontStyle.italic,
                     color: AppColors.primary,
                     letterSpacing: AppConstants.titleLetterSpacing,
+                    height: 1.0,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 1.5),
 
                 // Ma position actuelle juste en bas du logo SEDDO
                 Row(
@@ -1036,6 +1044,7 @@ class _HomePageContentState extends State<_HomePageContent>
                           fontWeight: FontWeight.w700,
                           color: AppColors.textPrimary,
                           letterSpacing: -0.2,
+                          height: 1.15,
                         ),
                       ),
                     ),
@@ -1204,6 +1213,8 @@ class _HomePageContentState extends State<_HomePageContent>
     final hierarchy = DestinationSearchBottomSheet.sanitizePlaceHierarchy(
       item.label,
       item.address,
+      lat: item.lat,
+      lng: item.lng,
     );
     final title = hierarchy.title;
     final subtitle = hierarchy.subtitle;

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:seddo/features/activity/data/repositories/activity_repository.dart';
 import 'package:seddo/features/auth/data/models/auth_tokens_model.dart';
 import 'package:seddo/features/auth/data/models/otp_request_response_model.dart';
 import 'package:seddo/features/auth/data/models/user_model.dart';
@@ -26,7 +27,29 @@ class AuthRepository {
 
   static Uint8List? _cachedUserPhotoBytes;
   static Uint8List? get cachedUserPhotoBytes => _cachedUserPhotoBytes;
-  static void setUserPhotoBytes(Uint8List bytes) => _cachedUserPhotoBytes = bytes;
+  static void setUserPhotoBytes(Uint8List bytes) {
+    _cachedUserPhotoBytes = bytes;
+    _persistPhotoBytesToDisk(bytes);
+  }
+
+  static Future<void> _persistPhotoBytesToDisk(Uint8List bytes) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('auth_cached_photo_base64', base64Encode(bytes));
+    } catch (_) {}
+  }
+
+  static int? _cachedTripsCount;
+  static int? get cachedTripsCount => _cachedTripsCount;
+  static void setCachedTripsCount(int count) {
+    _cachedTripsCount = count;
+    if (_currentUser != null && _currentUser!.tripsCount != count) {
+      _currentUser = _currentUser!.copyWith(tripsCount: count);
+    }
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setInt('cached_trips_count', count);
+    }).catchError((_) {});
+  }
 
   @visibleForTesting
   void setCurrentUser(UserModel? user) => _currentUser = user;
@@ -244,6 +267,8 @@ class AuthRepository {
 
     // 7. Clear all cached session data
     _currentUser = null;
+    _cachedUserPhotoBytes = null;
+    _cachedTripsCount = null;
     await prefs.remove('auth_access_token');
     await prefs.remove('auth_refresh_token');
     await prefs.remove('auth_user_json');
@@ -254,6 +279,8 @@ class AuthRepository {
     await prefs.remove('user_phone');
     await prefs.remove('onboarding_completed');
     await prefs.remove('fcm_device_token');
+    await prefs.remove('auth_cached_photo_base64');
+    await prefs.remove('cached_trips_count');
   }
 
   /// Clears session when profile was not completed so user can restart cleanly from onboarding
@@ -342,9 +369,14 @@ class AuthRepository {
       if (token == null || token.isEmpty) return cached;
 
       final remoteUser = await _apiService.getMe(accessToken: token);
-      _currentUser = remoteUser;
-      await _persistUser(remoteUser);
-      return remoteUser;
+      final userWithTrips = remoteUser.copyWith(
+        tripsCount: remoteUser.tripsCount ??
+            _currentUser?.tripsCount ??
+            _cachedTripsCount,
+      );
+      _currentUser = userWithTrips;
+      await _persistUser(userWithTrips);
+      return userWithTrips;
     } catch (e) {
       debugPrint('[AuthRepository] ⚠️ Erreur GET /v1/users/me: $e');
       return cached;
@@ -415,18 +447,96 @@ class AuthRepository {
     return updated;
   }
 
-  /// Downloads profile photo bytes with authentication and in-memory cache
+  /// Downloads profile photo bytes with authentication and in-memory + local disk cache
   Future<Uint8List?> getUserPhotoBytes({bool forceRefresh = false}) async {
     if (_isTest) return null;
     if (!forceRefresh && _cachedUserPhotoBytes != null && _cachedUserPhotoBytes!.isNotEmpty) {
       return _cachedUserPhotoBytes;
     }
+
+    // Fast local disk cache read before hitting the network
+    if (!forceRefresh) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final base64Str = prefs.getString('auth_cached_photo_base64');
+        if (base64Str != null && base64Str.isNotEmpty) {
+          final bytes = base64Decode(base64Str);
+          if (bytes.isNotEmpty) {
+            _cachedUserPhotoBytes = bytes;
+            return bytes;
+          }
+        }
+      } catch (_) {}
+    }
+
     final token = await getAccessToken();
     final bytes = await _apiService.getUserPhotoBytes(accessToken: token);
     if (bytes != null && bytes.isNotEmpty) {
-      _cachedUserPhotoBytes = bytes;
+      setUserPhotoBytes(bytes);
     }
     return bytes;
+  }
+
+  /// Pre-warms in-memory cache from persistent disk storage (user, token, photo bytes, trips count)
+  /// for 100% instant, flicker-free rendering of the account page without network delay.
+  Future<void> warmUpCache() async {
+    if (_isTest) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 1. Token
+      if (_cachedAccessToken == null) {
+        final token = prefs.getString('auth_access_token');
+        if (token != null && token.isNotEmpty) {
+          _cachedAccessToken = token;
+        }
+      }
+
+      // 2. User
+      if (_currentUser == null) {
+        final userJson = prefs.getString('auth_user_json');
+        if (userJson != null && userJson.isNotEmpty) {
+          _currentUser = UserModel.fromJson(jsonDecode(userJson));
+        }
+      }
+
+      // 3. Trips count
+      if (_cachedTripsCount == null) {
+        _cachedTripsCount =
+            prefs.getInt('cached_trips_count') ?? _currentUser?.tripsCount;
+      }
+
+      // 4. Photo bytes from disk
+      if (_cachedUserPhotoBytes == null) {
+        final base64Str = prefs.getString('auth_cached_photo_base64');
+        if (base64Str != null && base64Str.isNotEmpty) {
+          _cachedUserPhotoBytes = base64Decode(base64Str);
+        }
+      }
+
+      // 5. If photo is not yet cached on disk, prefetch in background silently
+      if (_cachedUserPhotoBytes == null && _cachedAccessToken != null) {
+        getUserPhotoBytes();
+      }
+
+      // 6. Prefetch rides count silently in background so Mon Compte has it ready on frame 0
+      if (_cachedAccessToken != null) {
+        prefetchTripsCount();
+      }
+    } catch (_) {}
+  }
+
+  /// Prefetches the latest trips count in background and persists to cache
+  Future<int?> prefetchTripsCount() async {
+    if (_isTest) return _cachedTripsCount;
+    try {
+      final history = await ActivityRepositoryImpl().getRidesHistory(limit: 50);
+      final count = history.where((r) => !r.isCancelled).length;
+      setCachedTripsCount(count);
+      return count;
+    } catch (_) {
+      return _cachedTripsCount;
+    }
   }
 
   /// Checks if user has an active access token and has completed profile setup
@@ -489,5 +599,9 @@ class AuthRepository {
     }
     await prefs.setString('user_full_name', user.fullName);
     await prefs.setString('user_phone', user.phone);
+    if (user.tripsCount != null) {
+      await prefs.setInt('cached_trips_count', user.tripsCount!);
+      _cachedTripsCount = user.tripsCount;
+    }
   }
 }

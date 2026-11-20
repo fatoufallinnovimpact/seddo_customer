@@ -40,12 +40,8 @@ class HelpActionButtons extends StatelessWidget {
           child: _buildActionCard(
             svgPath: _whatsappSvg,
             badgeText: 'help.whatsapp_sub'.tr(),
-            badgeBgColor: const Color(0xFFF0FDF4),
-            badgeTextColor: const Color(0xFF16A34A),
-            badgeBorderColor: const Color(0xFFDCFCE7),
             title: 'help.whatsapp'.tr(),
-            iconContainerBg: const Color(0xFFF0FDF4),
-            iconContainerBorder: const Color(0xFFDCFCE7),
+            isWhatsApp: true,
             onTap: _openWhatsApp,
           ),
         ),
@@ -55,12 +51,8 @@ class HelpActionButtons extends StatelessWidget {
           child: _buildActionCard(
             svgPath: _phoneCallSvg,
             badgeText: 'help.call_sub'.tr(),
-            badgeBgColor: const Color(0xFFFFF7ED),
-            badgeTextColor: const Color(0xFFEA580C),
-            badgeBorderColor: const Color(0xFFFFEDD5),
             title: 'help.call'.tr(),
-            iconContainerBg: const Color(0xFFFFF7ED),
-            iconContainerBorder: const Color(0xFFFFEDD5),
+            isWhatsApp: false,
             onTap: _makeCall,
           ),
         ),
@@ -71,35 +63,30 @@ class HelpActionButtons extends StatelessWidget {
   Widget _buildActionCard({
     required String svgPath,
     required String badgeText,
-    required Color badgeBgColor,
-    required Color badgeTextColor,
-    required Color badgeBorderColor,
     required String title,
-    required Color iconContainerBg,
-    required Color iconContainerBorder,
     required VoidCallback onTap,
+    bool isWhatsApp = false,
   }) {
     return Container(
       height: 118,
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Material(
         color: AppColors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(20),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(15),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -108,42 +95,48 @@ class HelpActionButtons extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    // Icône d'action : couleur de base pour WhatsApp, noir sobre pour Appeler
                     Container(
-                      width: 40,
-                      height: 40,
-                      padding: const EdgeInsets.all(7),
+                      width: 42,
+                      height: 42,
+                      padding: EdgeInsets.all(isWhatsApp ? 7.5 : 9),
                       decoration: BoxDecoration(
-                        color: iconContainerBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: iconContainerBorder,
-                          width: 1,
-                        ),
+                        color: isWhatsApp
+                            ? const Color(0xFFF0FDF4)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(13),
                       ),
                       child: SvgPicture.asset(
                         svgPath,
                         fit: BoxFit.contain,
+                        colorFilter: isWhatsApp
+                            ? null
+                            : const ColorFilter.mode(
+                                Color(0xFF0F172A),
+                                BlendMode.srcIn,
+                              ),
                       ),
                     ),
+                    // Badge sans contour
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3.5,
+                        horizontal: 8.5,
+                        vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: badgeBgColor,
+                        color: isWhatsApp
+                            ? const Color(0xFFF0FDF4)
+                            : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: badgeBorderColor,
-                          width: 1,
-                        ),
                       ),
                       child: Text(
                         badgeText,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: badgeTextColor,
+                          color: isWhatsApp
+                              ? const Color(0xFF16A34A)
+                              : const Color(0xFF475569),
                         ),
                       ),
                     ),
@@ -153,8 +146,9 @@ class HelpActionButtons extends StatelessWidget {
                   title,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF111827),
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0F172A),
+                    letterSpacing: -0.2,
                   ),
                 ),
               ],

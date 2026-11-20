@@ -4,9 +4,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/services/notification_service.dart';
 import 'package:seddo/core/navigation/slide_page_route.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/app_constants.dart';
@@ -25,6 +27,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:seddo/features/ride/presentation/pages/active_ride_page.dart';
 import 'package:seddo/features/ride/presentation/pages/driver_chat_page.dart';
 import 'package:seddo/features/ride/presentation/pages/in_app_call_page.dart';
+import 'package:seddo/features/ride/presentation/pages/ride_booking_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_cancelled_page.dart';
 import 'package:seddo/features/ride/presentation/pages/ride_rating_page.dart';
 import 'package:seddo/features/ride/presentation/pages/shared_ride_tracking_page.dart';
@@ -300,11 +303,11 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
       // Traiter immédiatement le dernier statut en mémoire WebSocket
       final cachedStatus = RealtimeService().lastRideStatusEvent;
-      if (cachedStatus != null) {
-        final matchesRide = cachedStatus.rideId.isEmpty ||
-            cachedStatus.rideId == effectiveRideId ||
-            cachedStatus.rideId.endsWith(effectiveRideId) ||
-            effectiveRideId.endsWith(cachedStatus.rideId);
+      if (cachedStatus != null && effectiveRideId.isNotEmpty) {
+        final matchesRide = cachedStatus.rideId.isNotEmpty &&
+            (cachedStatus.rideId == effectiveRideId ||
+                cachedStatus.rideId.endsWith(effectiveRideId) ||
+                effectiveRideId.endsWith(cachedStatus.rideId));
         if (matchesRide) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
@@ -400,22 +403,169 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     });
   }
 
-  void _handleRealtimeRideStatus(RealtimeRideStatusEvent event) {
-    final s = event.status.toUpperCase();
-    if (s.startsWith('CANCEL') ||
-        s == 'NO_DRIVER' ||
-        s == 'NO_SHOW' ||
-        s == 'REJECTED') {
-      _cleanupTimersAndSubs();
-      Navigator.of(context).pushReplacement(
-        SlideRightToLeftRoute(
-          page: RideCancelledPage(
-            rideOption: widget.rideOption,
-            departure: widget.departure,
-            destination: widget.destination,
+  bool _isCancelledHandling = false;
+
+  void _onDriverCancelled(RealtimeRideStatusEvent event) {
+    if (_isCancelledHandling || !mounted) return;
+    _isCancelledHandling = true;
+
+    _cleanupTimersAndSubs();
+    _approachController?.stop();
+    HapticFeedback.heavyImpact();
+
+    // Notification locale en avant-plan et arrière-plan
+    NotificationService().showDriverCancelledNotification(
+      reason: event.cancellationReason ?? 'Le chauffeur a annulé la course en cours de route.',
+    );
+
+    // Mettre à jour l'affichage sur la carte
+    setState(() {
+      _remainingEtaMinutes = 0;
+      _driverArrived = false;
+    });
+
+    final reasonText = event.cancellationReason ??
+        (event.raw['reason'] as String?) ??
+        (event.raw['cancelReason'] as String?) ??
+        'Annulée par le chauffeur en cours de route';
+
+    // Fermer tout dialogue, modal ou sheet actuellement ouvert
+    Navigator.of(context, rootNavigator: true)
+        .popUntil((route) => route.isFirst || route is! PopupRoute);
+
+    // Alerte modale rouge impossible à rater "à l'œil nu"
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEE2E2),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.cancel_rounded,
+                    size: 38,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Course annulée par le chauffeur',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: const Color(0xFF0F172A),
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Le chauffeur a annulé la prise en charge alors qu\'il était en route. Aucun frais ne vous est facturé et votre remboursement intégral à 100% est validé.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF64748B),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogCtx).pop();
+                      Navigator.of(context).pushReplacement(
+                        SlideRightToLeftRoute(
+                          page: RideBookingPage(
+                            departure: widget.departure,
+                            destination: widget.destination,
+                          ),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      'Commander un autre chauffeur',
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogCtx).pop();
+                      Navigator.of(context).pushReplacement(
+                        SlideRightToLeftRoute(
+                          page: RideCancelledPage(
+                            rideOption: widget.rideOption,
+                            departure: widget.departure,
+                            destination: widget.destination,
+                            refundAmount: widget.rideOption.price,
+                            cancellationFee: 0,
+                            reason: reasonText,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Voir le remboursement',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      );
+      ),
+    );
+  }
+
+  void _handleRealtimeRideStatus(RealtimeRideStatusEvent event) {
+    final s = event.status.toUpperCase();
+    final isCancelled = s.contains('CANCEL') ||
+        s.contains('REJECT') ||
+        s.contains('DECLIN') ||
+        s.contains('ABORT') ||
+        s == 'NO_DRIVER' ||
+        s == 'NO_SHOW';
+
+    if (isCancelled) {
+      _onDriverCancelled(event);
       return;
     }
 
@@ -424,7 +574,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
         s == 'RIDE_STARTED' ||
         s == 'TRIP' ||
         s == 'ON_TRIP' ||
-        s == 'INPROGRESS') {
+        s == 'INPROGRESS' ||
+        s.contains('START') ||
+        s.contains('PROGRESS') ||
+        s == 'ONGOING') {
       _cleanupTimersAndSubs();
       startRide();
       return;
@@ -432,7 +585,10 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
 
     if (s == 'DRIVER_ARRIVED' ||
         s == 'ARRIVED' ||
-        s == 'DRIVER_AT_PICKUP') {
+        s == 'DRIVER_AT_PICKUP' ||
+        s == 'AT_PICKUP' ||
+        s == 'PICKUP' ||
+        s.contains('ARRIV')) {
       _onDriverReachedPickup();
     }
 
@@ -552,29 +708,35 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     }
 
     final effectiveEtaS = event.etaS;
-    if (effectiveEtaS != null &&
-        effectiveEtaS > 0 &&
-        !(effectiveEtaS <= 15 && _totalApproachS > 60)) {
-      final mins = (effectiveEtaS / 60.0).ceil();
-      _setEtaLabel('$mins min', mins);
-      _syncLiveUpdate(etaMinutes: mins);
-    } else if (event.etaMinutes != null &&
-        event.etaMinutes! > 0 &&
-        !(event.etaMinutes == 1 && _totalApproachS > 120)) {
-      _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
-      _syncLiveUpdate(etaMinutes: event.etaMinutes!);
-    } else {
-      _syncLiveUpdate(etaMinutes: _remainingEtaMinutes);
+    if (!_driverArrived) {
+      if (effectiveEtaS != null &&
+          effectiveEtaS > 0 &&
+          !(effectiveEtaS <= 15 && _totalApproachS > 60)) {
+        final mins = (effectiveEtaS / 60.0).ceil();
+        _setEtaLabel('$mins min', mins);
+        _syncLiveUpdate(etaMinutes: mins);
+      } else if (event.etaMinutes != null &&
+          event.etaMinutes! > 0 &&
+          !(event.etaMinutes == 1 && _totalApproachS > 120)) {
+        _setEtaLabel('${event.etaMinutes} min', event.etaMinutes!);
+        _syncLiveUpdate(etaMinutes: event.etaMinutes!);
+      } else {
+        _syncLiveUpdate(etaMinutes: _remainingEtaMinutes);
+      }
     }
 
     // 3. phase : APPROACH (vers le client) ou TRIP (vers la destination)
     if (event.phase != null) {
       final p = event.phase!.toUpperCase();
-      if (p == 'TRIP' && !_isNavigatingToActiveRide) {
+      if ((p == 'TRIP' || p == 'IN_PROGRESS' || p == 'STARTED') && !_isNavigatingToActiveRide) {
         _cleanupTimersAndSubs();
         startRide();
         return;
       }
+    }
+
+    if (effectiveRemainingM != null && effectiveRemainingM <= 25 && !_driverArrived) {
+      _onDriverReachedPickup();
     }
 
     // 4. animateMs, lat, lng, heading : animation fluide voiture et caméra
@@ -848,20 +1010,22 @@ class _DriverApproachingPageState extends State<DriverApproachingPage>
     final arrivedAt = rideObj['arrivedAt'];
 
     // 1. Course annulée
-    if (status.startsWith('CANCELLED') ||
+    final isCancelled = status.contains('CANCEL') ||
+        status.contains('REJECT') ||
+        status.contains('DECLIN') ||
+        status.contains('ABORT') ||
         status == 'NO_DRIVER' ||
-        status == 'NO_SHOW') {
-      _ridePollTimer?.cancel();
-      _approachController?.stop();
-      Navigator.of(context).pushReplacement(
-        SlideRightToLeftRoute(
-          page: RideCancelledPage(
-            rideOption: widget.rideOption,
-            departure: widget.departure,
-            destination: widget.destination,
-          ),
-        ),
-      );
+        status == 'NO_SHOW';
+
+    if (isCancelled) {
+      _onDriverCancelled(RealtimeRideStatusEvent(
+        rideId: widget.rideId ?? '',
+        status: status,
+        timestamp: DateTime.now(),
+        cancellationReason: (rideObj['cancelReason'] ?? rideObj['reason'])?.toString() ??
+            'Annulée par le chauffeur en cours de route',
+        raw: rideObj,
+      ));
       return;
     }
 

@@ -782,9 +782,34 @@ class RideService {
     return null;
   }
 
+  static final Map<String, Map<String, dynamic>> _rideDetailsCache = {};
+
+  /// Enregistre les détails d'une course en cache mémoire pour accès instantané sans requête
+  static void cacheRideDetails(String id, Map<String, dynamic> data) {
+    if (id.isNotEmpty) {
+      _rideDetailsCache[id] = data;
+    }
+  }
+
+  /// Récupère les détails synchrones de la course depuis le cache mémoire (0 ms)
+  static Map<String, dynamic>? getCachedRideDetails(String id) {
+    return _rideDetailsCache[id];
+  }
+
   /// GET /v1/rides/{id}
   /// Détail d’une course : vue client (chauffeur, code de départ, paiement, remboursement) ou vue chauffeur (gain net).
   Future<Map<String, dynamic>?> getRideDetails(String id) async {
+    // Si disponible en cache mémoire, renvoyer instantanément pour une réactivité 100% fluide
+    final cached = _rideDetailsCache[id];
+    if (cached != null) {
+      // Rafraîchir en arrière-plan sans bloquer
+      _fetchAndCacheRideDetails(id);
+      return cached;
+    }
+    return _fetchAndCacheRideDetails(id);
+  }
+
+  Future<Map<String, dynamic>?> _fetchAndCacheRideDetails(String id) async {
     try {
       final url = ApiEndpoints.rideDetails(id);
       debugPrint('[RideService] 🚀 GET $url');
@@ -802,6 +827,7 @@ class RideService {
             : response.data as Map<String, dynamic>;
         debugPrint(
             '[RideService] ✅ Détail de la course reçu: id=$id, status=${data['status']}, code=${data['code'] ?? data['startCode'] ?? data['departureCode']}');
+        _rideDetailsCache[id] = data;
         return data;
       }
     } catch (e) {
@@ -812,7 +838,7 @@ class RideService {
         debugPrint('[RideService] ⚠️ Erreur inattendue GET /v1/rides/$id: $e');
       }
     }
-    return null;
+    return _rideDetailsCache[id];
   }
 
   /// POST /v1/rides/{id}/rating

@@ -192,10 +192,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Total refunded hero card
-      expect(find.text('TOTAL REMBOURSÉ'), findsOneWidget);
+      expect(find.text('Total remboursé'), findsOneWidget);
       expect(find.text('2 900'), findsOneWidget);
-      expect(find.text('Transactions'), findsOneWidget);
-      expect(find.text('Instantané'), findsOneWidget);
+      expect(find.byIcon(Icons.sync_rounded), findsWidgets);
 
       // Historique section
       expect(find.text('HISTORIQUE'), findsOneWidget);

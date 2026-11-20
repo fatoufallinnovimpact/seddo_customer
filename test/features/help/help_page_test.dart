@@ -32,10 +32,10 @@ void main() {
       // 2. Mes réclamations card (replaced search bar per user request)
       expect(find.text('Mes réclamations'), findsOneWidget);
       expect(
-        find.text('Suivi de vos demandes et objets perdus'),
+        find.text('Suivez vos demandes et objets perdus'),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.receipt_long_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.chevron_right_rounded), findsOneWidget);
 
       // 3. Contact action cards
       expect(find.text('WhatsApp'), findsOneWidget);

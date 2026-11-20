@@ -105,7 +105,7 @@ class _SelectPaymentMethodSheetState extends State<SelectPaymentMethodSheet> {
             method: PaymentMethodType.wave,
             title: 'payment_sheet.wave_title'.tr(),
             subtitle: 'payment_sheet.wave_sub'.tr(),
-            assetPath: 'assets/images/images.png',
+            assetPath: AppConstants.assetWaveLogo,
           ),
 
           // Option 2 : Orange Money
@@ -113,7 +113,7 @@ class _SelectPaymentMethodSheetState extends State<SelectPaymentMethodSheet> {
             method: PaymentMethodType.orangeMoney,
             title: 'payment_sheet.om_title'.tr(),
             subtitle: 'payment_sheet.om_sub'.tr(),
-            assetPath: 'assets/images/unnamed.png',
+            assetPath: AppConstants.assetOrangeMoneyLogo,
           ),
 
           // Option 3 : Paiement en espèces
@@ -121,7 +121,7 @@ class _SelectPaymentMethodSheetState extends State<SelectPaymentMethodSheet> {
             method: PaymentMethodType.cash,
             title: 'payment_sheet.cash_title'.tr(),
             subtitle: 'payment_sheet.cash_sub'.tr(),
-            assetPath: 'assets/images/cash_banknotes.png',
+            assetPath: AppConstants.assetCashLogo,
           ),
 
           const SizedBox(height: AppConstants.spacingUnitXl),

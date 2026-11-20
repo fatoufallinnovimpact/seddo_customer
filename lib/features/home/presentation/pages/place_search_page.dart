@@ -1296,12 +1296,14 @@ class _PlaceSearchPageState extends State<PlaceSearchPage> {
     RecentSuggestionModel item, {
     bool showDivider = true,
   }) {
-    final title = item.label.isNotEmpty && item.label != 'Destination'
-        ? item.label
-        : (item.address.isNotEmpty ? item.address : 'Destination');
-    final subtitle = item.address.isNotEmpty && item.address != title
-        ? item.address
-        : 'Dakar, Sénégal';
+    final hierarchy = PlacesService.sanitizePlaceHierarchy(
+      item.label,
+      item.address,
+      lat: item.lat,
+      lng: item.lng,
+    );
+    final title = hierarchy.title;
+    final subtitle = hierarchy.subtitle;
 
     String distance = '';
     if (widget.currentUserLocation != null && item.lat != 0.0 && item.lng != 0.0) {

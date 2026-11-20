@@ -209,6 +209,20 @@ class NotificationService {
     );
   }
 
+  /// Show notification when driver cancels while en route
+  Future<void> showDriverCancelledNotification({
+    String? reason,
+  }) async {
+    await _safeShow(
+      id: 1004,
+      title: '❌ Course annulée par le chauffeur',
+      body: reason ??
+          'Le chauffeur a annulé la course en cours de route. Remboursement intégral garanti sans aucun frais.',
+      notificationDetails: _buildRideNotificationDetails(),
+      payload: 'ride_cancelled',
+    );
+  }
+
   /// Show notification when trip has arrived at destination
   Future<void> showRideCompletedNotification({
     required String destinationName,

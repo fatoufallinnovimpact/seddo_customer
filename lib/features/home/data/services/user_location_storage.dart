@@ -1,4 +1,6 @@
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:seddo/services/places_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Modèle léger contenant l'adresse et les coordonnées GPS de l'utilisateur
@@ -180,6 +182,38 @@ class UserLocationStorage {
       }
     } catch (_) {}
     return null;
+  }
+
+  /// Préchauffe et résout la localisation utilisateur en tâche de fond dès le démarrage
+  /// pour que l'arrivée sur l'écran d'accueil soit 100% immédiate et sans attente
+  static Future<void> warmUpLocation() async {
+    try {
+      await loadCachedLocation();
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null) {
+        final loc = LatLng(lastKnown.latitude, lastKnown.longitude);
+        final cachedGeocode = getCachedGeocode(loc);
+        if (cachedGeocode != null) {
+          saveLocation(
+            addressShort: cachedGeocode.short,
+            addressDetails: cachedGeocode.details,
+            location: loc,
+          );
+        } else {
+          final res = await PlacesService().reverseGeocode(
+            loc.latitude,
+            loc.longitude,
+          );
+          if (res.mainText.isNotEmpty && isStreetLevelAddress(res.mainText)) {
+            saveLocation(
+              addressShort: res.mainText,
+              addressDetails: res.secondaryText,
+              location: loc,
+            );
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   /// Sauvegarde la position et l'adresse en cache mémoire et sur disque
