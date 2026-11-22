@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 
 /// User entity model returned by the Seddo authentication API.
 /// Follows Innov & Impact Africa guidelines (data/models/).
@@ -125,6 +126,17 @@ class UserModel extends Equatable {
             : (json['profile'] is Map<String, dynamic>)
                 ? json['profile'] as Map<String, dynamic>
                 : json;
+
+    final rawPaymentMethod = (map['defaultPaymentMethod'] ??
+        map['default_payment_method'] ??
+        map['preferredPaymentMethod'] ??
+        map['preferred_payment_method'] ??
+        map['paymentMethod'] ??
+        map['payment_method'] ??
+        map['payment_code']) as String?;
+    if (rawPaymentMethod != null && rawPaymentMethod.trim().isNotEmpty) {
+      PaymentMethodsService().updateCodeIfValid(rawPaymentMethod);
+    }
 
     final rawRating = map['rating'] ??
         map['averageRating'] ??

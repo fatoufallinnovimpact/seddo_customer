@@ -30,13 +30,33 @@ class PaymentMethodsService {
   /// Current selected payment code: 'CASH', 'WAVE', or 'ORANGE_MONEY'
   String get currentCode => selectedCodeNotifier.value;
 
+  /// Normalize any backend payment method string to 'CASH', 'WAVE', or 'ORANGE_MONEY'
+  static String normalizeCode(String? raw) {
+    if (raw == null) return 'CASH';
+    final upper = raw.toUpperCase().trim();
+    if (upper == 'OM' || upper.contains('ORANGE')) return 'ORANGE_MONEY';
+    if (upper.contains('WAVE')) return 'WAVE';
+    if (upper.contains('CASH') || upper.contains('ESPECE')) return 'CASH';
+    return upper;
+  }
+
+  /// Update the current selected code if [raw] maps to a valid payment method
+  void updateCodeIfValid(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return;
+    final code = normalizeCode(raw);
+    if (code == 'CASH' || code == 'WAVE' || code == 'ORANGE_MONEY') {
+      if (selectedCodeNotifier.value != code) {
+        _updateLocalCode(code);
+      }
+    }
+  }
+
   /// Human-friendly display label for the code
   static String getLabelForCode(String code) {
-    switch (code.toUpperCase().trim()) {
+    switch (normalizeCode(code)) {
       case 'WAVE':
         return 'Wave';
       case 'ORANGE_MONEY':
-      case 'OM':
         return 'Orange Money';
       case 'CASH':
       default:
@@ -46,11 +66,10 @@ class PaymentMethodsService {
 
   /// Asset icon path for the code
   static String getAssetForCode(String code) {
-    switch (code.toUpperCase().trim()) {
+    switch (normalizeCode(code)) {
       case 'WAVE':
         return 'assets/images/images.png';
       case 'ORANGE_MONEY':
-      case 'OM':
         return 'assets/images/unnamed.png';
       case 'CASH':
       default:
@@ -83,21 +102,64 @@ class PaymentMethodsService {
   Future<List<Map<String, dynamic>>> fetchPaymentMethods() async {
     try {
       final response = await _dio.get(ApiEndpoints.paymentMethods);
-      if (response.statusCode == 200 && response.data is List) {
-        final list = List<Map<String, dynamic>>.from(
-          (response.data as List).map((e) => Map<String, dynamic>.from(e as Map)),
-        );
+      if (response.statusCode == 200) {
+        List<dynamic>? rawList;
 
-        // Find which one is marked selected
-        for (final item in list) {
-          final isSelected = item['selected'] == true || item['isSelected'] == true;
-          final code = item['code']?.toString().toUpperCase();
-          if (isSelected && code != null && code.isNotEmpty) {
-            _updateLocalCode(code);
-            break;
+        if (response.data is List) {
+          rawList = response.data as List;
+        } else if (response.data is Map) {
+          final map = response.data as Map;
+          if (map['paymentMethods'] is List) {
+            rawList = map['paymentMethods'] as List;
+          } else if (map['payment_methods'] is List) {
+            rawList = map['payment_methods'] as List;
+          } else if (map['methods'] is List) {
+            rawList = map['methods'] as List;
+          } else if (map['data'] is List) {
+            rawList = map['data'] as List;
+          }
+
+          // Direct selected payment code from map response
+          final directSelected = map['selected'] ??
+              map['selectedCode'] ??
+              map['selectedMethod'] ??
+              map['defaultPaymentMethod'] ??
+              map['default_payment_method'] ??
+              map['paymentMethod'] ??
+              map['payment_method'] ??
+              map['code'];
+          if (directSelected != null && directSelected.toString().isNotEmpty) {
+            updateCodeIfValid(directSelected.toString());
           }
         }
-        return list;
+
+        if (rawList != null) {
+          final list = List<Map<String, dynamic>>.from(
+            rawList.map((e) => Map<String, dynamic>.from(e as Map)),
+          );
+
+          // Find which one is marked selected
+          for (final item in list) {
+            final isSelected = item['selected'] == true ||
+                item['isSelected'] == true ||
+                item['is_selected'] == true ||
+                item['default'] == true ||
+                item['isDefault'] == true ||
+                item['is_default'] == true;
+            final rawCode = (item['code'] ??
+                    item['id'] ??
+                    item['type'] ??
+                    item['method'] ??
+                    item['paymentMethod'] ??
+                    item['payment_method'])
+                ?.toString();
+            if (isSelected && rawCode != null && rawCode.isNotEmpty) {
+              updateCodeIfValid(rawCode);
+              break;
+            }
+          }
+          return list;
+        }
       }
     } catch (e) {
       debugPrint('[PaymentMethodsService] Error fetching payment methods: $e');

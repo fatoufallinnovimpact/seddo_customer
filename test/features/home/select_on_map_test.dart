@@ -202,7 +202,7 @@ void main() {
       expect(result.secondaryText, contains('Dakar'));
     });
 
-    test('reverseGeocode at Fann Hock resolves to Fann Hock and not generic Dakar', () async {
+    test('reverseGeocode at Fann Hock resolves exact street and neighborhood', () async {
       final fannHockDio = Dio()
         ..httpClientAdapter = MockGeocodeAdapter({
           'results': [
@@ -220,8 +220,8 @@ void main() {
       final fannHockService = PlacesService(null, fannHockDio);
       final result = await fannHockService.reverseGeocode(14.6880, -17.4620);
 
-      expect(result.mainText, 'Fann Hock');
-      expect(result.secondaryText, contains('Rue 57'));
+      expect(result.mainText, 'Rue 57');
+      expect(result.secondaryText, contains('Fann Hock'));
       expect(result.secondaryText, contains('Dakar'));
 
       // Test fallback géographique quand aucun nom de rue n'est trouvé

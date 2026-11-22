@@ -83,6 +83,11 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
         _displayMainAddress.toLowerCase() == 'dakar' ||
         _displayMainAddress.toLowerCase() == 'dakar, sénégal' ||
         _displayMainAddress.toLowerCase() == 'dakar, senegal' ||
+        _displayMainAddress.toLowerCase().contains('gy 113') ||
+        _displayMainAddress.toLowerCase().contains('gy-113') ||
+        _displayMainAddress.toLowerCase().contains('voie de degagement') ||
+        _displayMainAddress.toLowerCase().contains('voie de dégagement') ||
+        _displayMainAddress.toLowerCase().contains('vdn') ||
         RegExp(r'^-?\d+\.\d+').hasMatch(_displayMainAddress) ||
         _displaySecondaryAddress.contains(RegExp(r'^-?\d+\.\d+'));
 
@@ -100,29 +105,38 @@ class _UserPositionBottomSheetState extends State<UserPositionBottomSheet> {
   }
 
   Future<void> _resolvePreciseAddressIfNeeded() async {
-    if (!UserLocationStorage.isStreetLevelAddress(_displayMainAddress)) {
-      try {
-        final service = widget.placesService ?? PlacesService();
-        final res = await service.reverseGeocode(
-          widget.userLocation.latitude,
-          widget.userLocation.longitude,
-        );
-        if (mounted &&
-            res.mainText.isNotEmpty &&
-            res.mainText != 'Position sur la carte' &&
-            res.mainText.toLowerCase() != 'dakar' &&
-            res.mainText.toLowerCase() != 'dakar, sénégal' &&
-            res.mainText.toLowerCase() != 'dakar, senegal' &&
-            !RegExp(r'^-?\d+\.\d+').hasMatch(res.mainText)) {
+    try {
+      final service = widget.placesService ?? PlacesService();
+      final res = await service.reverseGeocode(
+        widget.userLocation.latitude,
+        widget.userLocation.longitude,
+      );
+      if (mounted &&
+          res.mainText.isNotEmpty &&
+          res.mainText != 'Position sur la carte' &&
+          res.mainText.toLowerCase() != 'dakar' &&
+          res.mainText.toLowerCase() != 'dakar, sénégal' &&
+          res.mainText.toLowerCase() != 'dakar, senegal' &&
+          !res.mainText.toLowerCase().contains('voie de degagement') &&
+          !res.mainText.toLowerCase().contains('voie de dégagement') &&
+          !res.mainText.toLowerCase().contains('vdn') &&
+          !RegExp(r'^-?\d+\.\d+').hasMatch(res.mainText)) {
+        if (_displayMainAddress != res.mainText ||
+            _displaySecondaryAddress != res.secondaryText) {
           setState(() {
             _displayMainAddress = res.mainText;
             _displaySecondaryAddress = res.secondaryText.isNotEmpty
                 ? res.secondaryText
                 : 'Dakar, Sénégal';
           });
+          UserLocationStorage.saveLocation(
+            addressShort: res.mainText,
+            addressDetails: res.secondaryText,
+            location: widget.userLocation,
+          );
         }
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkIfAlreadySaved() async {

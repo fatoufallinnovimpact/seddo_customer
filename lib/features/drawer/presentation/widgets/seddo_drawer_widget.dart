@@ -58,6 +58,8 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     super.initState();
     _accountBloc = DrawerAccountBloc(authRepository: _authRepo)
       ..add(const DrawerAccountLoadRequested());
+    PaymentMethodsService().init();
+    PaymentMethodsService().refreshFromBackend().ignore();
   }
 
   @override
@@ -201,13 +203,57 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                             valueListenable:
                                 PaymentMethodsService().selectedCodeNotifier,
                             builder: (context, selectedCode, _) {
+                              final assetPath =
+                                  PaymentMethodsService.getAssetForCode(
+                                selectedCode,
+                              );
+                              final isCash =
+                                  selectedCode.toUpperCase().trim() == 'CASH';
+
                               return _buildStyledMenuItem(
                                 context: context,
-                                iconPath: 'assets/icons/wallet-svgrepo-com.svg',
-                                title: 'drawer.payment_methods_title'.tr(),
+                                iconWidget: const Icon(
+                                  Icons.credit_card_rounded,
+                                  size: 22,
+                                  color: Color(0xFF0F172A),
+                                ),
+                                title: 'drawer.payment_modes_title'.tr(),
                                 subtitle: PaymentMethodsService.getLabelForCode(
                                   selectedCode,
                                 ),
+                                trailing: isCash
+                                    ? Image.asset(
+                                        assetPath,
+                                        width: 38,
+                                        height: 26,
+                                        fit: BoxFit.contain,
+                                      )
+                                    : Container(
+                                        width: 30,
+                                        height: 30,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: const Color(0xFF0F172A)
+                                                  .withOpacity(0.06),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                          child: Image.asset(
+                                            assetPath,
+                                            width: 30,
+                                            height: 30,
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
                                 onTap: () {
                                   PaymentMethodModal.show(context);
                                 },
@@ -471,16 +517,9 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                 child: Container(
                   width: AppConstants.accountAvatarSize,
                   height: AppConstants.accountAvatarSize,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: AppColors.primary,
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.25),
-                        blurRadius: AppConstants.spacingSm,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
                   ),
                   clipBehavior: Clip.antiAlias,
                   alignment: Alignment.center,
@@ -749,6 +788,7 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
     Color iconColor = const Color(0xFF0F172A),
     required String title,
     required String subtitle,
+    Widget? trailing,
     required VoidCallback onTap,
   }) {
     return Material(
@@ -813,6 +853,10 @@ class _SeddoDrawerWidgetState extends State<SeddoDrawerWidget> {
                   ],
                 ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(width: AppConstants.spacingMd),
+                trailing,
+              ],
             ],
           ),
         ),

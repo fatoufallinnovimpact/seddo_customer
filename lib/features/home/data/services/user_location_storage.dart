@@ -86,8 +86,31 @@ class UserLocationStorage {
         lower == 'fann residence' ||
         lower == 'dakar' ||
         lower == 'dakar, sénégal' ||
-        lower == 'dakar, senegal') {
+        lower == 'dakar, senegal' ||
+        lower.contains('gy 113') ||
+        lower.contains('gy-113') ||
+        lower.contains('voie de degagement') ||
+        lower.contains('voie de dégagement') ||
+        lower.contains('vdn') ||
+        lower.contains('autoroute')) {
       return false;
+    }
+
+    // Exclure les quartiers numérotés qui ne sont pas des adresses de rue (ex: "Liberté 6 Extension", "Sicap Liberté")
+    if (lower.contains('liberté') ||
+        lower.contains('liberte') ||
+        lower.contains('sicap') ||
+        lower.contains('sacré-cœur') ||
+        lower.contains('sacre-coeur') ||
+        lower.contains('sacre coeur') ||
+        lower.contains('sacré coeur') ||
+        lower.contains('parcelles') ||
+        lower.contains('unité') ||
+        lower.contains('unite')) {
+      final hasRealStreetPrefix = RegExp(r'\b(?:rue|rte|route|av|avenue|bd|boulevard|allée|allee|impasse|voie|villa|lot)\b', caseSensitive: false).hasMatch(lower);
+      if (!hasRealStreetPrefix) {
+        return false;
+      }
     }
 
     // Indicateurs typiques de rue, voie ou numéro
@@ -160,6 +183,18 @@ class UserLocationStorage {
       final details = prefs.getString(_keyAddressDetails);
       final lat = prefs.getDouble(_keyLat);
       final lng = prefs.getDouble(_keyLng);
+
+      if (short != null &&
+          (short.toLowerCase().contains('gy 113') ||
+              short.toLowerCase().contains('gy-113') ||
+              short.toLowerCase().contains('voie de degagement') ||
+              short.toLowerCase().contains('voie de dégagement') ||
+              short.toLowerCase().contains('vdn'))) {
+        await prefs.remove(_keyAddressShort);
+        await prefs.remove(_keyAddressDetails);
+        cached = null;
+        return null;
+      }
 
       if (short != null &&
           short.isNotEmpty &&

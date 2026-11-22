@@ -164,9 +164,17 @@ class _HomePageContentState extends State<_HomePageContent>
       if (mounted) {
         final bloc = context.read<HomeBloc>();
         _currentUserLocation ??= bloc.state.userLocation;
-        // Ne résoudre sur les coordonnées génériques que si aucune adresse n'est connue
-        if (UserLocationStorage.cached == null) {
-          _resolveUserLocationAddress(_currentUserLocation ?? bloc.state.userLocation);
+        // Ne résoudre sur les coordonnées génériques que si aucune adresse valide n'est connue
+        if (UserLocationStorage.cached == null ||
+            !UserLocationStorage.isStreetLevelAddress(_currentAddressShort) ||
+            _currentAddressShort.toLowerCase().contains('gy 113') ||
+            _currentAddressShort.toLowerCase().contains('voie de degagement') ||
+            _currentAddressShort.toLowerCase().contains('voie de dégagement') ||
+            _currentAddressShort.toLowerCase().contains('vdn')) {
+          _resolveUserLocationAddress(
+            _currentUserLocation ?? bloc.state.userLocation,
+            forceRefresh: true,
+          );
         }
         _fetchNearbyDrivers(_currentUserLocation ?? bloc.state.userLocation);
         _fetchSuggestions();
@@ -230,16 +238,21 @@ class _HomePageContentState extends State<_HomePageContent>
           ),
         );
         final currentCached = UserLocationStorage.cached;
-        if (currentCached == null ||
+        final needsRefresh = currentCached == null ||
             !UserLocationStorage.isStreetLevelAddress(_currentAddressShort) ||
+            _currentAddressShort.toLowerCase().contains('gy 113') ||
+            _currentAddressShort.toLowerCase().contains('voie de degagement') ||
+            _currentAddressShort.toLowerCase().contains('voie de dégagement') ||
+            _currentAddressShort.toLowerCase().contains('vdn') ||
             Geolocator.distanceBetween(
                   currentCached.location.latitude,
                   currentCached.location.longitude,
                   loc.latitude,
                   loc.longitude,
                 ) >
-                30) {
-          _resolveUserLocationAddress(loc);
+                30;
+        if (needsRefresh) {
+          _resolveUserLocationAddress(loc, forceRefresh: true);
         }
       }
     } catch (_) {}
@@ -275,16 +288,21 @@ class _HomePageContentState extends State<_HomePageContent>
           ),
         );
         final currentCached = UserLocationStorage.cached;
-        if (currentCached == null ||
+        final needsRefresh = currentCached == null ||
             !UserLocationStorage.isStreetLevelAddress(_currentAddressShort) ||
+            _currentAddressShort.toLowerCase().contains('gy 113') ||
+            _currentAddressShort.toLowerCase().contains('voie de degagement') ||
+            _currentAddressShort.toLowerCase().contains('voie de dégagement') ||
+            _currentAddressShort.toLowerCase().contains('vdn') ||
             Geolocator.distanceBetween(
                   currentCached.location.latitude,
                   currentCached.location.longitude,
                   loc.latitude,
                   loc.longitude,
                 ) >
-                30) {
-          _resolveUserLocationAddress(loc);
+                30;
+        if (needsRefresh) {
+          _resolveUserLocationAddress(loc, forceRefresh: true);
         }
         if (mounted) {
           context.read<HomeBloc>().add(HomeUserLocationUpdatedEvent(loc));
@@ -338,18 +356,23 @@ class _HomePageContentState extends State<_HomePageContent>
   }
 
   /// Résout le vrai nom de rue et le quartier pour la position actuelle
-  Future<void> _resolveUserLocationAddress(LatLng location) async {
+  Future<void> _resolveUserLocationAddress(
+    LatLng location, {
+    bool forceRefresh = false,
+  }) async {
     // 1. Vérifier si l'adresse est déjà en cache mémoire instantané
-    final cachedGeocode = UserLocationStorage.getCachedGeocode(location);
-    if (cachedGeocode != null) {
-      if (mounted) {
-        setState(() {
-          _currentAddressShort = cachedGeocode.short;
-          _currentAddressDetails = cachedGeocode.details;
-          _currentUserLocation = location;
-        });
+    if (!forceRefresh) {
+      final cachedGeocode = UserLocationStorage.getCachedGeocode(location);
+      if (cachedGeocode != null) {
+        if (mounted) {
+          setState(() {
+            _currentAddressShort = cachedGeocode.short;
+            _currentAddressDetails = cachedGeocode.details;
+            _currentUserLocation = location;
+          });
+        }
+        return;
       }
-      return;
     }
 
     try {
@@ -439,6 +462,11 @@ class _HomePageContentState extends State<_HomePageContent>
         mainAddr.toLowerCase() == 'dakar' ||
         mainAddr.toLowerCase() == 'dakar, sénégal' ||
         mainAddr.toLowerCase() == 'dakar, senegal' ||
+        mainAddr.toLowerCase().contains('gy 113') ||
+        mainAddr.toLowerCase().contains('gy-113') ||
+        mainAddr.toLowerCase().contains('voie de degagement') ||
+        mainAddr.toLowerCase().contains('voie de dégagement') ||
+        mainAddr.toLowerCase().contains('vdn') ||
         RegExp(r'^-?\d+\.\d+').hasMatch(mainAddr)) {
       final fallback = PlacesService.getDakarDistrictFallback(
         loc.latitude,
@@ -456,8 +484,20 @@ class _HomePageContentState extends State<_HomePageContent>
       placesService: _placesService,
     );
 
-    if (result != null && mounted) {
-      _applyNewUserPosition(result);
+    if (mounted) {
+      if (result != null) {
+        _applyNewUserPosition(result);
+      } else {
+        final cached = UserLocationStorage.cached;
+        if (cached != null &&
+            UserLocationStorage.isStreetLevelAddress(cached.addressShort) &&
+            cached.addressShort != _currentAddressShort) {
+          setState(() {
+            _currentAddressShort = cached.addressShort;
+            _currentAddressDetails = cached.addressDetails;
+          });
+        }
+      }
     }
   }
 
@@ -489,6 +529,12 @@ class _HomePageContentState extends State<_HomePageContent>
       _currentAddressDetails = details;
       _currentUserLocation = newLoc;
     });
+
+    UserLocationStorage.saveLocation(
+      addressShort: short,
+      addressDetails: details,
+      location: newLoc,
+    );
 
     final bloc = context.read<HomeBloc>();
     bloc.add(HomeUserLocationUpdatedEvent(newLoc));

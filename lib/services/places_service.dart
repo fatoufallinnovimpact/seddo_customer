@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:seddo/core/utils/map_config.dart';
+import 'package:seddo/features/home/data/services/user_location_storage.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 
 class PlaceSuggestion {
@@ -55,15 +56,24 @@ class PlacesService {
   String get effectiveApiKey =>
       _apiKey.isNotEmpty ? _apiKey : MapConfig.apiKey;
 
-  Future<List<PlaceSuggestion>> autocomplete(String input) async {
+  Future<List<PlaceSuggestion>> autocomplete(
+    String input, {
+    LatLng? userLocation,
+  }) async {
     final query = input.trim();
     if (query.isEmpty) {
       return [];
     }
 
     final key = effectiveApiKey;
+    final centerLocation = userLocation ??
+        UserLocationStorage.cached?.location ??
+        const LatLng(MapConfig.dakarCenterLat, MapConfig.dakarCenterLng);
+
     try {
-      debugPrint('[PlacesService] 🔍 Autocomplete Google Places API (New) pour "$query" avec clé: ${key.substring(0, 8)}...');
+      debugPrint(
+        '[PlacesService] 🔍 Autocomplete Google Places API (New) pour "$query" avec proximité: (${centerLocation.latitude}, ${centerLocation.longitude})...',
+      );
       final res = await _dio.post(
         'https://places.googleapis.com/v1/places:autocomplete',
         options: Options(
@@ -82,33 +92,96 @@ class PlacesService {
           'locationBias': {
             'circle': {
               'center': {
-                'latitude': MapConfig.dakarCenterLat,
-                'longitude': MapConfig.dakarCenterLng,
+                'latitude': centerLocation.latitude,
+                'longitude': centerLocation.longitude,
               },
-              'radius': MapConfig.dakarSearchRadiusMeters.toDouble(),
+              'radius': 12000.0,
             }
           },
         },
       );
 
       final suggestions = (res.data['suggestions'] as List?) ?? [];
-      final apiResults = suggestions
-          .where((s) => s['placePrediction'] != null)
-          .map((s) {
-            final pred = s['placePrediction'];
-            final fullText = pred['text']?['text'] ?? '';
-            final structured = pred['structuredFormat'];
-            final main = structured?['mainText']?['text'] ?? fullText;
-            final secondary = structured?['secondaryText']?['text'] ?? 'Dakar, Sénégal';
+      final List<PlaceSuggestion> apiResults = [];
 
-            return PlaceSuggestion(
+      for (final s in suggestions) {
+        if (s['placePrediction'] == null) continue;
+        final pred = s['placePrediction'];
+        final fullText = pred['text']?['text'] ?? '';
+        final structured = pred['structuredFormat'];
+        final main = _cleanAddress(structured?['mainText']?['text'] ?? fullText);
+        final secondary = _cleanAddress(structured?['secondaryText']?['text'] ?? 'Dakar, Sénégal');
+
+        if (main.isNotEmpty && !_isPlusCode(main)) {
+          apiResults.add(
+            PlaceSuggestion(
               pred['placeId'] ?? '',
               fullText,
               mainText: main,
               secondaryText: secondary,
-            );
-          })
-          .toList();
+            ),
+          );
+        }
+      }
+
+      // Si la recherche porte sur un code de rue sénégalais (ex: "LIB", "GY", "FN", "Rue")
+      // ou si les résultats Places sont peu nombreux, enrichir via l'API Geocoding de Dakar (comme Yango)
+      final lowerQuery = query.toLowerCase();
+      final isStreetQuery = lowerQuery.contains('rue') ||
+          lowerQuery.contains('lib') ||
+          lowerQuery.contains('gy') ||
+          lowerQuery.contains('fn') ||
+          lowerQuery.contains('hlm') ||
+          lowerQuery.contains('av') ||
+          lowerQuery.contains('voie') ||
+          lowerQuery.contains('vdn') ||
+          RegExp(r'\d').hasMatch(query);
+
+      if (apiResults.length < 3 || isStreetQuery) {
+        try {
+          final geoRes = await _dio.get(
+            'https://maps.googleapis.com/maps/api/geocode/json',
+            queryParameters: {
+              'address': '$query, Dakar, Sénégal',
+              'components': 'country:SN',
+              'key': key,
+              'language': 'fr',
+            },
+            options: Options(
+              sendTimeout: const Duration(seconds: 3),
+              receiveTimeout: const Duration(seconds: 3),
+            ),
+          );
+
+          if (geoRes.statusCode == 200 && geoRes.data['results'] is List) {
+            final geoResults = geoRes.data['results'] as List;
+            for (final g in geoResults) {
+              final placeId = g['place_id'] as String? ?? '';
+              final formatted = g['formatted_address'] as String? ?? '';
+              final cleaned = _cleanAddress(formatted);
+              final parts = cleaned.split(',').map((p) => p.trim()).toList();
+              if (parts.isEmpty || _isPlusCode(parts.first)) continue;
+
+              final main = parts.first;
+              final sec = parts.length > 1 ? parts.sublist(1).join(', ') : 'Dakar, Sénégal';
+
+              final exists = apiResults.any((p) =>
+                  p.placeId == placeId ||
+                  p.mainText?.toLowerCase() == main.toLowerCase());
+              if (!exists && main.toLowerCase() != 'dakar') {
+                apiResults.add(
+                  PlaceSuggestion(
+                    placeId,
+                    cleaned,
+                    mainText: main,
+                    secondaryText: sec,
+                  ),
+                );
+              }
+            }
+          }
+        } catch (_) {}
+      }
 
       if (apiResults.isNotEmpty) {
         debugPrint('[PlacesService] ✅ Google Places a retourné ${apiResults.length} résultats réels.');
@@ -130,7 +203,7 @@ class PlacesService {
         options: Options(
           headers: {
             'X-Goog-Api-Key': key,
-            'X-Goog-FieldMask': 'formattedAddress,location',
+            'X-Goog-FieldMask': 'displayName,formattedAddress,location',
           },
           sendTimeout: const Duration(seconds: 4),
           receiveTimeout: const Duration(seconds: 4),
@@ -141,18 +214,119 @@ class PlacesService {
       _sessionToken = const Uuid().v4(); // nouvelle session après la sélection
       final lat = (res.data['location']['latitude'] as num).toDouble();
       final lng = (res.data['location']['longitude'] as num).toDouble();
-      final addr = res.data['formattedAddress'] as String? ?? '';
+      final displayName = res.data['displayName']?['text'] as String?;
+      final formatted = res.data['formattedAddress'] as String? ?? '';
+      final addr = (displayName != null && displayName.isNotEmpty)
+          ? '$displayName, $formatted'
+          : formatted;
       debugPrint('[PlacesService] ✅ Coordonnées Google reçues: ($lat, $lng) - $addr');
       return PlaceDetails(addr, lat, lng);
     } catch (e) {
       debugPrint('[PlacesService] ⚠️ Erreur Google Places Details: $e');
       _sessionToken = const Uuid().v4();
+
+      // Repli Geocoding si le placeId était un place_id Geocoding
+      try {
+        final geoRes = await _dio.get(
+          'https://maps.googleapis.com/maps/api/geocode/json',
+          queryParameters: {
+            'place_id': placeId,
+            'key': key,
+            'language': 'fr',
+          },
+        );
+        if (geoRes.statusCode == 200 && geoRes.data['results'] is List) {
+          final results = geoRes.data['results'] as List;
+          if (results.isNotEmpty) {
+            final first = results.first;
+            final lat = (first['geometry']['location']['lat'] as num).toDouble();
+            final lng = (first['geometry']['location']['lng'] as num).toDouble();
+            final formatted = first['formatted_address'] as String? ?? 'Dakar, Sénégal';
+            return PlaceDetails(formatted, lat, lng);
+          }
+        }
+      } catch (_) {}
+
       return PlaceDetails(
         'Dakar, Sénégal',
         MapConfig.dakarCenterLat,
         MapConfig.dakarCenterLng,
       );
     }
+  }
+
+  /// Formate la rue et le numéro selon le standard Yango à Dakar :
+  /// - Codes de rue Dakarois ou adresses : "Rue LIB-24, 289"
+  /// - Numérotation traditionnelle française : "77 Rue 4"
+  /// - Réorganise les préfixes comme "52 Rue GY 113" -> "Rue GY 113, 52"
+  static String formatStreetWithNumber(String route, String? streetNumber) {
+    var cleanRoute = route.trim();
+    var number = streetNumber?.trim();
+
+    // Si cleanRoute commence déjà par un numéro (ex: "52 Rue GY 113" -> number="52", route="Rue GY 113")
+    final prefixMatch = RegExp(r'^(\d+)\s*,?\s*(?:Rue|Av|Avenue|Bd|Boulevard)\b', caseSensitive: false)
+        .firstMatch(cleanRoute);
+    if (prefixMatch != null) {
+      number ??= prefixMatch.group(1);
+      cleanRoute = cleanRoute.substring(prefixMatch.group(1)!.length).trim();
+      if (cleanRoute.startsWith(',')) cleanRoute = cleanRoute.substring(1).trim();
+    }
+
+    if (number != null && number.isNotEmpty) {
+      // Pour les rues traditionnelles numérotées (ex: Rue 4, Rue 10) : "77 Rue 4"
+      if (RegExp(r'^Rue\s+\d+$', caseSensitive: false).hasMatch(cleanRoute)) {
+        return '$number $cleanRoute';
+      }
+      // Pour les codes Dakarois (ex: Rue LIB-24, 289) et autres rues : "Rue LIB-24, 289"
+      return '$cleanRoute, $number';
+    }
+
+    return cleanRoute;
+  }
+
+  /// Détermine si un nom de voie correspond à une voie rapide / autoroute urbaine (ex: VDN, Autoroute)
+  /// qui doit céder la priorité aux rues de quartier intérieures (ex: "Rue LIB 42", "Rue LIB-24")
+  static bool isExpressway(String route) {
+    final lower = route.toLowerCase();
+    return lower.contains('voie de degagement') ||
+        lower.contains('voie de dégagement') ||
+        lower.contains('vdn') ||
+        lower.contains('autoroute') ||
+        lower.contains('voie express');
+  }
+
+  /// Détermine si un nom de voie correspond à une rue locale / résidentielle
+  static bool isLocalStreet(String route) {
+    final lower = route.toLowerCase();
+    if (isExpressway(route)) return false;
+    return lower.startsWith('rue') ||
+        lower.startsWith('allée') ||
+        lower.startsWith('allee') ||
+        lower.startsWith('impasse') ||
+        RegExp(r'\b(?:LIB|GY|PE|FN|HLM|MZ|DK)[ -]?\d+\b', caseSensitive: false).hasMatch(route);
+  }
+
+  /// Vérifie si le nom de rue est cohérent avec le quartier détecté à Dakar
+  /// (ex: évite que Google Maps n'attribue une rue "GY" de Grand Yoff à Sicap-Liberté)
+  static bool isRouteConsistentWithArea({
+    required String route,
+    String? district,
+    String? sublocality,
+    double? lat,
+    double? lng,
+  }) {
+    final lowerRoute = route.toLowerCase();
+    // Le seul cas erroné dans la base Google Maps à Dakar est l'attribution d'une fausse rue "Rue GY 113" dans Sicap-Liberté / Liberté 6
+    if (lowerRoute.contains('gy 113') || lowerRoute.contains('gy-113')) {
+      final isLiberte = (district ?? '').toLowerCase().contains('libert') ||
+          (sublocality ?? '').toLowerCase().contains('libert') ||
+          (district ?? '').toLowerCase().contains('sicap') ||
+          (sublocality ?? '').toLowerCase().contains('sicap') ||
+          (lat != null && lng != null && lat >= 14.710 && lat <= 14.745 && lng >= -17.478 && lng <= -17.445);
+      if (isLiberte) return false;
+    }
+
+    return true;
   }
 
   /// Reverse geocode coordinates (lat, lng) to a clean human-readable exact street address
@@ -180,14 +354,16 @@ class PlacesService {
         String? bestRoute;
         String? bestStreetNumber;
         String? bestPremise;
+        bool bestRouteIsExpressway = false;
         String? bestNeighborhood;
         String? bestSublocality;
+        String? bestAdminArea2;
         String? bestLocality;
         String? bestAdminArea;
         String? bestCountry;
         String? bestEstablishment;
 
-        // Scanner l'ensemble des résultats Google pour trouver la rue et le numéro exacts
+        // Scanner les résultats Google : la première rue rencontrée est la plus proche
         for (final item in results) {
           final components = (item['address_components'] as List?) ?? [];
           final types = (item['types'] as List?) ?? [];
@@ -198,6 +374,7 @@ class PlacesService {
           String? itemSublocality;
           String? itemNeighborhood;
           String? itemLocality;
+          String? itemAdminArea2;
           String? itemAdminArea;
           String? itemCountry;
           String? itemPremise;
@@ -218,6 +395,8 @@ class PlacesService {
             } else if (cTypes.contains('sublocality') ||
                 cTypes.contains('sublocality_level_1')) {
               itemSublocality = longName;
+            } else if (cTypes.contains('administrative_area_level_2')) {
+              itemAdminArea2 = longName;
             } else if (cTypes.contains('locality') ||
                 cTypes.contains('postal_town')) {
               itemLocality = longName;
@@ -229,17 +408,19 @@ class PlacesService {
           }
 
           // Détecter un établissement ou point d'intérêt nommé
-          if (types.contains('point_of_interest') ||
-              types.contains('establishment')) {
+          if ((types.contains('point_of_interest') ||
+                  types.contains('establishment')) &&
+              bestEstablishment == null) {
             final cleaned = _cleanAddress(formatted).split(',').first.trim();
             if (cleaned.isNotEmpty && !_isPlusCode(cleaned)) {
-              bestEstablishment ??= cleaned;
+              bestEstablishment = cleaned;
             }
           }
 
-          // Enregistrer les métadonnées géographiques (quartier, ville, pays)
+          // Enregistrer les métadonnées géographiques (quartier, commune, département, ville, pays)
           bestNeighborhood ??= itemNeighborhood;
           bestSublocality ??= itemSublocality;
+          bestAdminArea2 ??= itemAdminArea2;
           bestLocality ??= itemLocality;
           bestAdminArea ??= itemAdminArea;
           bestCountry ??= itemCountry;
@@ -248,20 +429,91 @@ class PlacesService {
               (itemRoute.toLowerCase().contains('route sans nom') ||
                   itemRoute.toLowerCase().contains('unnamed road'));
 
-          // Si on trouve une vraie rue nommée (route)
-          if (itemRoute != null && !isUnnamedRoad) {
+          final isConsistentRoute = itemRoute != null &&
+              isRouteConsistentWithArea(
+                route: itemRoute,
+                district: itemNeighborhood ?? bestNeighborhood,
+                sublocality: itemSublocality ?? bestSublocality,
+                lat: lat,
+                lng: lng,
+              );
+
+          // Priorité aux rues résidentielles intérieures sur les voies rapides / VDN (comme Yango)
+          // NE JAMAIS accepter une rue erronée de Grand Yoff (GY) dans Sicap-Liberté
+          if (itemRoute != null && !isUnnamedRoad && isConsistentRoute) {
+            final itemIsExpress = isExpressway(itemRoute);
+            final itemIsLocal = isLocalStreet(itemRoute);
+
+            // 1. Première route trouvée
             if (bestRoute == null) {
               bestRoute = itemRoute;
               bestStreetNumber = itemStreetNumber;
               bestPremise = itemPremise;
-            } else if (itemStreetNumber != null && bestStreetNumber == null) {
-              // Priorité absolue au résultat avec numéro de rue précis
+              bestRouteIsExpressway = itemIsExpress;
+            }
+            // 2. Si la route actuelle est une voie rapide (ex: Voie de dégagement Nord / VDN)
+            // et que Google Maps renvoie aussi la vraie rue intérieure du quartier (ex: "Rue LIB 42", "Rue LIB-24") :
+            // Remplacer immédiatement par la rue locale !
+            else if (bestRouteIsExpressway && (itemIsLocal || !itemIsExpress)) {
               bestRoute = itemRoute;
               bestStreetNumber = itemStreetNumber;
               bestPremise = itemPremise;
+              bestRouteIsExpressway = itemIsExpress;
+            }
+            // 3. Compléter le numéro si c'est la même rue
+            else if (itemRoute.toLowerCase() == bestRoute.toLowerCase() &&
+                bestStreetNumber == null &&
+                itemStreetNumber != null) {
+              bestStreetNumber = itemStreetNumber;
             }
 
-            // Ne pas interrompre prématurément pour permettre la détection du quartier (neighborhood) dans les résultats suivants
+            // Extraire un éventuel numéro en tête du formatted_address (ex: "561 Rue LIB 42")
+            if (bestStreetNumber == null && bestRoute != null) {
+              final prefixNumMatch = RegExp(
+                r'^(\d+)\s*,?\s*(?:Rue|Av|Avenue|Bd|Boulevard)\b',
+                caseSensitive: false,
+              ).firstMatch(formatted);
+              if (prefixNumMatch != null) {
+                bestStreetNumber = prefixNumMatch.group(1);
+              }
+            }
+          }
+        }
+
+        // Fallback extraction de rue depuis formatted_address si Google n'a pas étiqueté 'route'
+        // ou si on n'avait trouvé qu'une voie rapide (VDN) alors qu'une rue locale existe dans formatted_address
+        if (bestRoute == null || bestRouteIsExpressway) {
+          for (final item in results) {
+            final formatted = item['formatted_address'] as String? ?? '';
+            final streetMatch = RegExp(
+              r'\b((?:Rue|Avenue|Av\.|Boulevard|Bd|Route|Rte)\s+[A-Za-z0-9\-_]+(?:\s+[A-Za-z0-9\-_]+)?)',
+              caseSensitive: false,
+            ).firstMatch(formatted);
+            if (streetMatch != null) {
+              final candidate = streetMatch.group(1)!.trim();
+              if (isRouteConsistentWithArea(
+                route: candidate,
+                district: bestNeighborhood,
+                sublocality: bestSublocality,
+                lat: lat,
+                lng: lng,
+              )) {
+                if (bestRoute == null || (bestRouteIsExpressway && !isExpressway(candidate))) {
+                  bestRoute = candidate;
+                  bestRouteIsExpressway = isExpressway(candidate);
+                  final numMatch = RegExp(r'\b(\d{1,4})\s*,\s*' + RegExp.escape(candidate))
+                          .firstMatch(formatted) ??
+                      RegExp(r'\b(\d{1,4})\s+' + RegExp.escape(candidate))
+                          .firstMatch(formatted) ??
+                      RegExp(RegExp.escape(candidate) + r'[\s,]+(\d{1,4})\b')
+                          .firstMatch(formatted);
+                  if (numMatch != null) {
+                    bestStreetNumber = numMatch.group(1);
+                  }
+                  if (!bestRouteIsExpressway) break;
+                }
+              }
+            }
           }
         }
 
@@ -292,27 +544,66 @@ class PlacesService {
           }
         }
 
-        final city = bestLocality ?? bestAdminArea ?? (isSenegal ? 'Dakar' : country);
-        final defaultCityCountry = (city != country) ? '$city, $country' : city;
+        // Construction du sous-titre selon la hiérarchie Yango :
+        // Ex: "Sicap Liberte, Grand Dakar, Département de Dakar"
+        String buildSecondary({String? excludeMain}) {
+          final parts = <String>[];
+          void add(String? s) {
+            if (s == null) return;
+            final t = s.trim();
+            if (t.isEmpty) return;
+            if (excludeMain != null && t.toLowerCase() == excludeMain.toLowerCase()) return;
+            if (parts.any((p) => p.toLowerCase() == t.toLowerCase())) return;
+            parts.add(t);
+          }
 
-        // 2. Préparer le libellé de rue pour le sous-titre (ex: "Rue LIB 42" ou "Rue FN 57")
-        String? streetDetail;
-        if (bestRoute != null && bestRoute.isNotEmpty) {
-          final rawStreet = bestStreetNumber != null
-              ? '$bestStreetNumber $bestRoute'
-              : (bestPremise != null ? '$bestPremise, $bestRoute' : bestRoute);
-          streetDetail = _cleanAddress(rawStreet);
+          // 1. Quartier précis (ex: Sicap Liberte, Point E, Fann Hock)
+          add(district);
+
+          // 2. Commune d'arrondissement (ex: Grand Dakar, Dakar Plateau)
+          if (bestSublocality != null &&
+              (district == null || !bestSublocality!.toLowerCase().contains(district.toLowerCase()))) {
+            add(bestSublocality);
+          }
+
+          // 3. Département / Division administrative 2 (ex: Département de Dakar)
+          if (bestAdminArea2 != null && bestAdminArea2!.isNotEmpty) {
+            final admin2 = bestAdminArea2!;
+            if (isSenegal &&
+                (admin2.toLowerCase() == 'dakar' ||
+                    admin2.toLowerCase() == 'région de dakar')) {
+              add('Département de Dakar');
+            } else {
+              add(admin2);
+            }
+          } else if (bestLocality != null && bestLocality!.isNotEmpty) {
+            add(bestLocality);
+          } else if (isSenegal && !parts.any((p) => p.toLowerCase().contains('dakar'))) {
+            add('Département de Dakar');
+          }
+
+          if (!isSenegal && country.isNotEmpty) {
+            add(country);
+          }
+
+          if (parts.isEmpty) {
+            return isSenegal ? 'Dakar, Sénégal' : country;
+          }
+          return parts.join(', ');
         }
 
-        // Cas 1 : Adresse exacte avec numéro de rue (ex: "77 Rue 4")
-        if (bestStreetNumber != null && bestRoute != null && bestRoute.isNotEmpty) {
-          final cleanMain = _cleanAddress('$bestStreetNumber $bestRoute');
-          final secDistrict = (district != null &&
-                  district.isNotEmpty &&
-                  district.toLowerCase() != 'dakar')
-              ? district
-              : null;
-          final cleanSec = secDistrict != null ? '$secDistrict, $city' : defaultCityCountry;
+        final isUnnamed = bestRoute != null &&
+            (bestRoute.toLowerCase().contains('route sans nom') ||
+                bestRoute.toLowerCase().contains('unnamed road'));
+
+        // Priorité 1 (Comme Yango) : Si une vraie rue nommée est détectée
+        // (ex: "Rue LIB-24, 289", "Rue LIB 42, 561", "Avenue Cheikh Anta Diop", "77 Rue 4")
+        // La rue avec son numéro éventuel est TOUJOURS le grand titre (mainText) !
+        if (bestRoute != null && !isUnnamed && bestRoute.isNotEmpty) {
+          final cleanMain = _cleanAddress(
+            formatStreetWithNumber(bestRoute, bestStreetNumber ?? bestPremise),
+          );
+          final cleanSec = buildSecondary(excludeMain: cleanMain);
           final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
@@ -325,19 +616,10 @@ class PlacesService {
           );
         }
 
-        // Cas 2 : Lieu ou établissement connu dans Google Maps (ex: "Sea Plaza", "Hôtel Radisson Blu", "Pharmacie...")
-        // -> C'est le GRAND TITRE !
-        // -> Et le sous-titre contient la rue (ou quartier) + ville
+        // Priorité 2 : Lieu ou établissement connu dans Google Maps (ex: "Sea Plaza", "Hôtel Radisson Blu", "Auchan...")
         if (bestEstablishment != null && bestEstablishment.isNotEmpty) {
           final cleanMain = _cleanAddress(bestEstablishment);
-          String cleanSec = '';
-          if (streetDetail != null && streetDetail.isNotEmpty) {
-            cleanSec = '$streetDetail, $city';
-          } else if (district != null && district.isNotEmpty && district != cleanMain) {
-            cleanSec = '$district, $city';
-          } else {
-            cleanSec = defaultCityCountry;
-          }
+          final cleanSec = buildSecondary(excludeMain: cleanMain);
           final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
@@ -350,21 +632,14 @@ class PlacesService {
           );
         }
 
-        // Cas 3 : Quartier / lieu connu (ex: "Fann Hock", "Point E", "Liberté 6 Extension", "Almadies", "Grand Yoff")
-        // -> Le quartier / lieu est le GRAND TITRE !
-        // -> Les rues ("Rue LIB 42", "Rue FN 57") se trouvent dans le SOUS-TITRE !
+        // Priorité 3 : Quartier / lieu connu si aucune rue précise n'est disponible (ex: "Fann Hock", "Point E", "Liberté 6 Extension", "Almadies", "Grand Yoff")
         if (district != null &&
             district.isNotEmpty &&
             district.toLowerCase() != 'dakar' &&
             district.toLowerCase() != 'dakar, sénégal' &&
             district.toLowerCase() != 'dakar, senegal') {
           final cleanMain = _cleanAddress(district);
-          String cleanSec = '';
-          if (streetDetail != null && streetDetail.isNotEmpty) {
-            cleanSec = '$streetDetail, $city';
-          } else {
-            cleanSec = defaultCityCountry;
-          }
+          final cleanSec = buildSecondary(excludeMain: cleanMain);
           final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
@@ -377,16 +652,12 @@ class PlacesService {
           );
         }
 
-        // Cas 3 : Si aucun quartier ni établissement n'est détecté, la rue sert de titre
-        if (streetDetail != null && streetDetail.isNotEmpty) {
-          final cleanMain = streetDetail;
-          final secDistrict = (district != null &&
-                  district.isNotEmpty &&
-                  district.toLowerCase() != 'dakar' &&
-                  district.toLowerCase() != 'dakar, sénégal')
-              ? district
-              : null;
-          final cleanSec = secDistrict != null ? '$secDistrict, $city' : defaultCityCountry;
+        // Cas 4 : Rue seule si aucun quartier ou établissement détecté
+        if (bestRoute != null && bestRoute.isNotEmpty) {
+          final cleanMain = _cleanAddress(
+            formatStreetWithNumber(bestRoute, bestStreetNumber ?? bestPremise),
+          );
+          final cleanSec = buildSecondary(excludeMain: cleanMain);
           final full = '$cleanMain, $cleanSec';
 
           return PlaceSearchResult(
@@ -424,7 +695,7 @@ class PlacesService {
               );
             }
 
-            final sec = parts.length > 1 ? parts.sublist(1).join(', ') : defaultCityCountry;
+            final sec = parts.length > 1 ? parts.sublist(1).join(', ') : buildSecondary();
             return PlaceSearchResult(
               id: 'geo_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
               mainText: firstPart,
@@ -499,34 +770,34 @@ class PlacesService {
             ? '$bestDistrict, $city'
             : (bestDistrict ?? (city ?? 'Dakar, Sénégal'));
 
-        // Si un quartier reconnu existe (ex: "Fann Hock")
-        if (bestDistrict != null &&
-            bestDistrict.isNotEmpty &&
-            bestDistrict.toLowerCase() != 'dakar' &&
-            bestDistrict.toLowerCase() != 'dakar, sénégal' &&
-            bestDistrict.toLowerCase() != 'dakar, senegal') {
-          final cleanMain = _cleanAddress(bestDistrict);
-          final cleanSub = bestStreetOrWay != null && bestStreetOrWay.isNotEmpty
-              ? (houseNumber != null
-                  ? '$houseNumber $bestStreetOrWay, ${city ?? 'Dakar'}'
-                  : '$bestStreetOrWay, ${city ?? 'Dakar'}')
-              : (city != null ? '$city, Sénégal' : 'Dakar, Sénégal');
-          return PlaceSearchResult(
-            id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
-            mainText: cleanMain,
-            secondaryText: _cleanAddress(cleanSub),
-            fullAddress: '$cleanMain, $cleanSub',
-            latitude: lat,
-            longitude: lng,
-          );
-        } else if (bestStreetOrWay != null && bestStreetOrWay.isNotEmpty) {
-          final main =
-              houseNumber != null ? '$houseNumber $bestStreetOrWay' : bestStreetOrWay;
+        // Priorité 1 Nominatim : Si une rue est détectée
+        if (bestStreetOrWay != null && bestStreetOrWay.isNotEmpty) {
+          final main = houseNumber != null
+              ? formatStreetWithNumber(bestStreetOrWay, houseNumber)
+              : bestStreetOrWay;
+          final sec = (bestDistrict != null && city != null && bestDistrict != city)
+              ? '$bestDistrict, $city'
+              : (bestDistrict ?? (city ?? 'Dakar, Sénégal'));
           return PlaceSearchResult(
             id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
             mainText: _cleanAddress(main),
             secondaryText: _cleanAddress(sec),
             fullAddress: '$main, $sec',
+            latitude: lat,
+            longitude: lng,
+          );
+        } else if (bestDistrict != null &&
+            bestDistrict.isNotEmpty &&
+            bestDistrict.toLowerCase() != 'dakar' &&
+            bestDistrict.toLowerCase() != 'dakar, sénégal' &&
+            bestDistrict.toLowerCase() != 'dakar, senegal') {
+          final cleanMain = _cleanAddress(bestDistrict);
+          final cleanSub = city != null ? '$city, Sénégal' : 'Dakar, Sénégal';
+          return PlaceSearchResult(
+            id: 'geo_osm_${lat.toStringAsFixed(5)}_${lng.toStringAsFixed(5)}',
+            mainText: cleanMain,
+            secondaryText: _cleanAddress(cleanSub),
+            fullAddress: '$cleanMain, $cleanSub',
             latitude: lat,
             longitude: lng,
           );
@@ -618,10 +889,14 @@ class PlacesService {
       }
       secondary = 'Dakar, Sénégal';
     }
-    // 5. Liberté (Liberté 1 à 6, Sicap)
-    else if (lat >= 14.710 && lat <= 14.735 && lng >= -17.465 && lng <= -17.445) {
-      district = 'Liberté 6 Extension';
-      secondary = 'Rue LIB, Dakar';
+    // 5. Liberté (Liberté 1 à 6, Liberté 6 Extension, Sicap)
+    else if (lat >= 14.710 && lat <= 14.742 && lng >= -17.478 && lng <= -17.445) {
+      if (lng <= -17.466 || lat >= 14.723) {
+        district = 'Liberté 6 Extension';
+      } else {
+        district = 'Sicap Liberté';
+      }
+      secondary = 'Grand Dakar, Département de Dakar';
     }
     // 6. Fann Hock (Sud de Fann, Corniche Ouest sud, Canal 4)
     else if (lat >= 14.672 && lat <= 14.688 && lng > -17.464 && lng <= -17.453) {
@@ -697,6 +972,9 @@ class PlacesService {
     else if (lat >= 14.700 && lat <= 14.750 && lng >= -17.200 && lng <= -17.140) {
       district = 'Diamniadio';
       secondary = 'Dakar Région, Sénégal';
+    } else if (lat >= 14.650 && lat <= 14.780 && lng >= -17.530 && lng <= -17.410) {
+      district = 'Sicap Liberté';
+      secondary = 'Grand Dakar, Département de Dakar';
     } else {
       district = 'Dakar';
       secondary = 'Sénégal';
@@ -824,10 +1102,16 @@ class PlacesService {
     // 4. Sicap - Liberté
     if (lower.contains('sicap') &&
         (lower.contains('liberté') || lower.contains('liberte'))) {
-      if (lowerRoute.contains('lib')) {
+      if (lowerRoute.contains('lib') || (lat != null && lat >= 14.723)) {
         return 'Liberté 6 Extension';
       }
-      return 'Liberté';
+      return 'Sicap Liberté';
+    }
+    if (lower.contains('liberte 6') || lower.contains('liberté 6')) {
+      return 'Liberté 6 Extension';
+    }
+    if (lower.contains('sicap')) {
+      return 'Sicap Liberté';
     }
 
     // Si la chaîne est simplement "Dakar" mais qu'on a des coordonnées précises

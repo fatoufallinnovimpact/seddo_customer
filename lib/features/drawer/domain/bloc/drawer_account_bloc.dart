@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:seddo/features/activity/data/repositories/activity_repository.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
+import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 import 'drawer_account_event.dart';
 import 'drawer_account_state.dart';
 
@@ -93,6 +94,9 @@ class DrawerAccountBloc extends Bloc<DrawerAccountEvent, DrawerAccountState> {
             }
           }
         }).catchError((_) => null),
+
+        // Synchronisation silencieuse du mode de paiement
+        PaymentMethodsService().refreshFromBackend().catchError((_) => null),
 
         // Photo de profil en cache mémoire
         if (AuthRepository.cachedUserPhotoBytes == null)

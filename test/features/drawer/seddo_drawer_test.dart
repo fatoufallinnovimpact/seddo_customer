@@ -7,6 +7,7 @@ import 'package:seddo/features/drawer/presentation/widgets/seddo_drawer_widget.d
 import 'package:seddo/features/onboarding/presentation/pages/onboarding_page.dart';
 import 'package:seddo/features/auth/data/models/user_model.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
+import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 
 class MockDrawerTestAssetLoader extends AssetLoader {
   const MockDrawerTestAssetLoader();
@@ -62,6 +63,8 @@ class MockDrawerTestAssetLoader extends AssetLoader {
             ? 'Dëgg nga bëgg nga génn ci compte Seddo bi ?'
             : 'Êtes-vous sûr de vouloir vous déconnecter de votre compte Seddo ?',
         'payment': isWo ? 'Fey' : 'Paiement',
+        'payment_modes_title': isWo ? 'Mbootaayu fey' : 'Modes de paiement',
+        'payment_methods_title': isWo ? 'Mbootaayu fey' : 'Méthode de paiement',
         'payment_sub': 'Orange Money 77 ••• 45 12',
         'default_mode': isWo ? 'Mànkoon na' : 'Mode par défaut',
       },
@@ -547,5 +550,61 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(didPop, isTrue);
+  });
+
+  testWidgets(
+      'SeddoDrawerWidget displays payment method with real asset icon and updates dynamically',
+      (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    // Initially CASH
+    PaymentMethodsService().selectedCodeNotifier.value = 'CASH';
+
+    await tester.pumpWidget(
+      buildTestableWidget(child: const SeddoDrawerWidget()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Modes de paiement'), findsOneWidget);
+    expect(find.text('Espèces'), findsOneWidget);
+
+    // Verify Cash banknotes image is displayed
+    final cashFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is AssetImage &&
+          (widget.image as AssetImage).assetName ==
+              'assets/images/cash_banknotes.png',
+    );
+    expect(cashFinder, findsOneWidget);
+
+    // Update dynamically to WAVE
+    PaymentMethodsService().selectedCodeNotifier.value = 'WAVE';
+    await tester.pump();
+
+    expect(find.text('Wave'), findsOneWidget);
+    final waveFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is AssetImage &&
+          (widget.image as AssetImage).assetName == 'assets/images/images.png',
+    );
+    expect(waveFinder, findsOneWidget);
+
+    // Update dynamically to ORANGE_MONEY
+    PaymentMethodsService().selectedCodeNotifier.value = 'ORANGE_MONEY';
+    await tester.pump();
+
+    expect(find.text('Orange Money'), findsOneWidget);
+    final omFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is AssetImage &&
+          (widget.image as AssetImage).assetName == 'assets/images/unnamed.png',
+    );
+    expect(omFinder, findsOneWidget);
   });
 }
