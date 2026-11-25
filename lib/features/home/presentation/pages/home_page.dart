@@ -26,6 +26,7 @@ import 'package:seddo/features/ride/presentation/widgets/offline_modal_sheet.dar
 import 'package:seddo/services/network_connectivity_service.dart';
 import 'package:seddo/features/auth/data/repositories/auth_repository.dart';
 import 'package:seddo/features/saved_places/data/models/saved_place_model.dart';
+import 'package:seddo/features/delivery/presentation/pages/delivery_booking_page.dart';
 import 'package:seddo/features/tcu/presentation/pages/public_transport_page.dart';
 import 'package:seddo/features/ride/data/models/nearby_drivers_response_model.dart';
 import 'package:seddo/services/places_service.dart';
@@ -1478,7 +1479,17 @@ class _HomePageContentState extends State<_HomePageContent>
                       fallbackIcon: Icons.two_wheeler_rounded,
                       isDeliveryMoto: true,
                       onTap: () {
-                        // Pas de redirection pour livraison selon la demande utilisateur
+                        final homeBloc = context.read<HomeBloc>();
+                        Navigator.of(context).push(
+                          SlideRightToLeftRoute(
+                            page: DeliveryBookingPage(
+                              initialOrigin: _currentAddressShort,
+                              initialOriginLocation: _currentUserLocation ??
+                                  homeBloc.state.userLocation,
+                              placesService: _placesService,
+                            ),
+                          ),
+                        );
                       },
                     ),
                   ),

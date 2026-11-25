@@ -663,6 +663,306 @@ abstract class MapMarkerHelper {
     return _svgDestinationFlagIcon!;
   }
 
+  /// Marqueur de prise en charge pour la livraison / colis (conforme à la capture Yango/Seddo) :
+  /// Bulle blanche avec "Prise en charge ~9 min", squircle orange avec silhouette Icons.hail_rounded,
+  /// tige verticale noire et point d'ancrage orange au sol.
+  static Future<BitmapDescriptor> getDeliveryPickupMarker({
+    String eta = '~9 min',
+  }) async {
+    const double dpr = 3.0;
+    const double logicalWidth = 148.0;
+    const double logicalHeight = 56.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    canvas.scale(dpr, dpr);
+
+    // 1. Ombre au sol douce sous la pointe
+    final shadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawOval(
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
+      shadowPaint,
+    );
+
+    // 2. Tige verticale noire
+    final stalkPaint = Paint()
+      ..color = const Color(0xFF141414)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(logicalWidth / 2, 36),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
+      stalkPaint,
+    );
+
+    // 3. Point d'ancrage orange au sol
+    final dotPaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(logicalWidth / 2, logicalHeight - 3), 3.5, dotPaint);
+
+    // 4. Bulle blanche (pill) avec ombre
+    final pillRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(0, 0, logicalWidth, 36),
+      const Radius.circular(14),
+    );
+    final pillShadowPaint = Paint()
+      ..color = const Color(0x25000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+    canvas.drawRRect(pillRect.shift(const Offset(0, 2)), pillShadowPaint);
+
+    final pillPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(pillRect, pillPaint);
+
+    // 5. Carré orange arrondi avec icône Icons.hail_rounded (silhouette passager Seddo)
+    final iconBoxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(4, 4, 28, 28),
+      const Radius.circular(8),
+    );
+    final iconBoxPaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(iconBoxRect, iconBoxPaint);
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.hail_rounded.codePoint),
+        style: TextStyle(
+          fontSize: 18.0,
+          fontFamily: Icons.hail_rounded.fontFamily,
+          package: Icons.hail_rounded.fontPackage,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset(4 + (28 - textPainter.width) / 2, 4 + (28 - textPainter.height) / 2),
+    );
+
+    // 6. Textes : "Prise en charge" et "~9 min"
+    final labelPainter = TextPainter(
+      text: TextSpan(
+        children: [
+          const TextSpan(
+            text: 'Prise en charge\n',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF1E1E1E),
+              height: 1.15,
+            ),
+          ),
+          TextSpan(
+            text: eta,
+            style: const TextStyle(
+              fontSize: 12.0,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1E1E1E),
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: logicalWidth - 42);
+    labelPainter.paint(canvas, const Offset(38, 4.5));
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(pixelWidth, pixelHeight);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData == null) {
+      return getDeparturePinMarker();
+    }
+
+    return BitmapDescriptor.bytes(
+      byteData.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
+  }
+
+  /// Marqueur d'itinéraire de départ (conforme à la capture Yango/Seddo) :
+  /// Squircle noir avec icône colis blanche (Icons.inventory_2_rounded),
+  /// tige et point d'ancrage avec ombre au sol.
+  static Future<BitmapDescriptor> getDeliveryRoutePickupMarker() async {
+    const double dpr = 3.0;
+    const double logicalWidth = 44.0;
+    const double logicalHeight = 52.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    canvas.scale(dpr, dpr);
+
+    // 1. Ombre au sol
+    final shadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawOval(
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
+      shadowPaint,
+    );
+
+    // 2. Tige verticale noire
+    final stalkPaint = Paint()
+      ..color = const Color(0xFF1E1E1E)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(logicalWidth / 2, 38),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
+      stalkPaint,
+    );
+
+    // 3. Point d'ancrage noir au sol
+    final dotPaint = Paint()
+      ..color = const Color(0xFF1E1E1E)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(logicalWidth / 2, logicalHeight - 3), 3.0, dotPaint);
+
+    // 4. Squircle noir avec ombre
+    final boxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(2, 0, 40, 40),
+      const Radius.circular(12),
+    );
+    final boxShadowPaint = Paint()
+      ..color = const Color(0x35000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+    canvas.drawRRect(boxRect.shift(const Offset(0, 2)), boxShadowPaint);
+
+    final boxPaint = Paint()
+      ..color = const Color(0xFF1E1E1E)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(boxRect, boxPaint);
+
+    // 5. Icône colis blanche
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(Icons.inventory_2_rounded.codePoint),
+        style: TextStyle(
+          fontSize: 22.0,
+          fontFamily: Icons.inventory_2_rounded.fontFamily,
+          package: Icons.inventory_2_rounded.fontPackage,
+          color: Colors.white,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset(2 + (40 - textPainter.width) / 2, (40 - textPainter.height) / 2),
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(pixelWidth, pixelHeight);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData == null) {
+      return getDeparturePinMarker();
+    }
+
+    return BitmapDescriptor.bytes(
+      byteData.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
+  }
+
+  /// Marqueur d'itinéraire de destination (conforme à la capture Yango/Seddo) :
+  /// Squircle blanc avec badge "1" noir au centre, tige et point d'ancrage.
+  static Future<BitmapDescriptor> getDeliveryRouteDestinationMarker({
+    int stopNumber = 1,
+  }) async {
+    const double dpr = 3.0;
+    const double logicalWidth = 44.0;
+    const double logicalHeight = 52.0;
+    final int pixelWidth = (logicalWidth * dpr).round();
+    final int pixelHeight = (logicalHeight * dpr).round();
+
+    final pictureRecorder = ui.PictureRecorder();
+    final canvas = Canvas(pictureRecorder);
+    canvas.scale(dpr, dpr);
+
+    // 1. Ombre au sol
+    final shadowPaint = Paint()
+      ..color = const Color(0x55000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawOval(
+      const Rect.fromLTWH((logicalWidth - 14) / 2, logicalHeight - 3.5, 14, 3.0),
+      shadowPaint,
+    );
+
+    // 2. Tige verticale noire
+    final stalkPaint = Paint()
+      ..color = const Color(0xFF1E1E1E)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      const Offset(logicalWidth / 2, 38),
+      const Offset(logicalWidth / 2, logicalHeight - 2.5),
+      stalkPaint,
+    );
+
+    // 3. Point d'ancrage noir au sol
+    final dotPaint = Paint()
+      ..color = const Color(0xFF1E1E1E)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(logicalWidth / 2, logicalHeight - 3), 3.0, dotPaint);
+
+    // 4. Squircle blanc avec ombre
+    final boxRect = RRect.fromRectAndRadius(
+      const Rect.fromLTWH(2, 0, 40, 40),
+      const Radius.circular(12),
+    );
+    final boxShadowPaint = Paint()
+      ..color = const Color(0x35000000)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+    canvas.drawRRect(boxRect.shift(const Offset(0, 2)), boxShadowPaint);
+
+    final boxPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(boxRect, boxPaint);
+
+    // 5. Chiffre étape en noir
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '$stopNumber',
+        style: const TextStyle(
+          fontSize: 20.0,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF0F172A),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(
+      canvas,
+      Offset(2 + (40 - textPainter.width) / 2, (40 - textPainter.height) / 2),
+    );
+
+    final picture = pictureRecorder.endRecording();
+    final image = await picture.toImage(pixelWidth, pixelHeight);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    if (byteData == null) {
+      return getDestinationPinMarker();
+    }
+
+    return BitmapDescriptor.bytes(
+      byteData.buffer.asUint8List(),
+      imagePixelRatio: dpr,
+    );
+  }
+
   /// Generate user location pin (Orange circle with white navigation arrow inside).
   static Future<BitmapDescriptor> getUserLocationMarker() async {
     if (_userMarkerIcon != null) return _userMarkerIcon!;
