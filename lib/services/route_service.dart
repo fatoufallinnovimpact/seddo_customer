@@ -146,6 +146,50 @@ class RouteService {
         }
       }
     } catch (_) {
+      // Fallback to backup OSRM server
+    }
+
+    // 2b. Backup OSRM endpoint (OpenStreetMap Routing)
+    try {
+      final mode = isWalking ? 'foot' : 'car';
+      final osrmDeUrl =
+          'https://routing.openstreetmap.de/routed-$mode/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson';
+      final response = await _dio.get(
+        osrmDeUrl,
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data['code'] == 'Ok') {
+        final routes = response.data['routes'] as List<dynamic>;
+        if (routes.isNotEmpty) {
+          final route = routes.first;
+          final geometry = route['geometry'] as Map<String, dynamic>?;
+          final coords = geometry?['coordinates'] as List<dynamic>?;
+          final distMeters =
+              (route['distance'] as num?)?.toDouble() ?? 5000.0;
+          final durSeconds =
+              (route['duration'] as num?)?.toDouble() ?? 900.0;
+
+          if (coords != null && coords.length >= 2) {
+            final points = coords.map<LatLng>((coord) {
+              final lng = (coord[0] as num).toDouble();
+              final lat = (coord[1] as num).toDouble();
+              return LatLng(lat, lng);
+            }).toList();
+
+            return RouteDetails(
+              polylinePoints: points,
+              distanceKm:
+                  double.parse((distMeters / 1000.0).toStringAsFixed(2)),
+              durationMinutes: (durSeconds / 60.0).round().clamp(1, 180),
+            );
+          }
+        }
+      }
+    } catch (_) {
       // Fallback to street-aligned routing
     }
 

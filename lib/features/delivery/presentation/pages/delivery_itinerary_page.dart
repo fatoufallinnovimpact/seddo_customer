@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_colors.dart';
+import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/core/utils/map_config.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_destination_search_modal.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/pickup_map_location_picker_page.dart';
 import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart';
+import 'package:seddo/services/app_params_service.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:seddo/services/route_service.dart';
@@ -94,6 +96,7 @@ class _DeliveryItineraryPageState extends State<DeliveryItineraryPage> {
   @override
   void initState() {
     super.initState();
+    AppParamsService().initParams();
     _placesService = widget.placesService ?? PlacesService();
     _routeService = RouteService();
 
@@ -214,13 +217,17 @@ class _DeliveryItineraryPageState extends State<DeliveryItineraryPage> {
     final northEastLng =
         math.max(_pickupLocation.longitude, _destinationLocation.longitude);
 
+    final latSpan = northEastLat - southWestLat;
+    final adjustedSouth =
+        southWestLat - (latSpan > 0.0001 ? latSpan * 0.45 : 0.005);
+
     final bounds = LatLngBounds(
-      southwest: LatLng(southWestLat, southWestLng),
+      southwest: LatLng(adjustedSouth, southWestLng),
       northeast: LatLng(northEastLat, northEastLng),
     );
 
     _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 80),
+      CameraUpdate.newLatLngBounds(bounds, 60),
     );
   }
 
@@ -283,8 +290,12 @@ class _DeliveryItineraryPageState extends State<DeliveryItineraryPage> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 1. Google Map en plein écran
-          Positioned.fill(
+          // 1. Google Map en plein écran (clipped vers le bas pour masquer le logo Google sur Android)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
             child: GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: _pickupLocation,
@@ -292,7 +303,6 @@ class _DeliveryItineraryPageState extends State<DeliveryItineraryPage> {
               ),
               padding: EdgeInsets.only(
                 top: safeTop + 60,
-                bottom: 240,
               ),
               onMapCreated: (ctrl) {
                 _mapController = ctrl;

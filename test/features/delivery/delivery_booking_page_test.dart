@@ -13,7 +13,14 @@ import 'package:seddo/features/delivery/presentation/widgets/delivery_contact_pi
 import 'package:seddo/features/delivery/presentation/widgets/delivery_destination_search_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_info_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_order_form_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_call_courier_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_order_summary_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_time_option_info_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_tracking_sheet.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_update_order_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_vehicle_details_sheet.dart';
+import 'package:seddo/features/ride/data/models/driver_model.dart';
+import 'package:seddo/features/ride/data/models/ride_option_model.dart';
 import 'package:seddo/services/places_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -756,6 +763,549 @@ void main() {
       // Button now changes to "Commander la livraison"
       expect(find.text('Commander la livraison'), findsOneWidget);
       expect(find.textContaining('à partir de 1000 F'), findsOneWidget);
+    });
+
+    testWidgets('DeliveryTimeOptionInfoModal displays correctly for 30 minutes de plus and closes via J\'ai compris',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => DeliveryTimeOptionInfoModal.show(
+                  context,
+                  title: '30 minutes de plus',
+                  timeOptionId: '30min',
+                ),
+                child: const Text('Open 30min Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Open 30min Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('30 minutes de plus'), findsOneWidget);
+      expect(find.textContaining('Votre commande sera moins chère'), findsOneWidget);
+      expect(find.textContaining('Prise en charge chez l’expéditeur'), findsOneWidget);
+      expect(find.textContaining('Livraison au destinataire'), findsOneWidget);
+      expect(find.text('J’ai compris'), findsOneWidget);
+
+      await tester.tap(find.text('J’ai compris'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('30 minutes de plus'), findsNothing);
+    });
+
+    testWidgets('Tapping 30 minutes de plus or Dans 2 heures in DeliveryOrderFormModal opens DeliveryTimeOptionInfoModal',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Scaffold(
+            body: DeliveryOrderFormModal(
+              pickupAddress: 'Rue FN-55, 175',
+              destinationAddress: 'Avenue Cheikh Anta Diop',
+              deliveryType: 'moto',
+              estimatedPrice: 700,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap on "30 minutes de plus"
+      await tester.ensureVisible(find.text('30 minutes de plus'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('30 minutes de plus'));
+      await tester.pumpAndSettle();
+
+      // Modal should be visible
+      expect(find.byType(DeliveryTimeOptionInfoModal), findsOneWidget);
+      expect(find.text('30 minutes de plus'), findsNWidgets(2)); // Tile + Modal
+      expect(find.text('J’ai compris'), findsOneWidget);
+
+      // Close modal
+      await tester.tap(find.text('J’ai compris'));
+      await tester.pumpAndSettle();
+
+      // Modal is closed
+      expect(find.byType(DeliveryTimeOptionInfoModal), findsNothing);
+
+      // Tap on "Dans 2 heures"
+      await tester.ensureVisible(find.text('Dans 2 heures'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Dans 2 heures'));
+      await tester.pumpAndSettle();
+
+      // Modal for 2 hours should be visible
+      expect(find.byType(DeliveryTimeOptionInfoModal), findsOneWidget);
+      expect(find.text('Dans 2 heures'), findsNWidgets(2)); // Tile + Modal
+      expect(find.text('J’ai compris'), findsOneWidget);
+
+      // Close modal
+      await tester.tap(find.text('J’ai compris'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DeliveryTimeOptionInfoModal), findsNothing);
+    });
+
+    testWidgets('Filled details in preview modal automatically pre-fill DeliveryOrderDetailsPage',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Scaffold(
+            body: DeliveryOrderFormModal(
+              pickupAddress: 'Rue FN-55, 175',
+              destinationAddress: 'Avenue Cheikh Anta Diop',
+              deliveryType: 'moto',
+              estimatedPrice: 700,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Ouvrir le modal d'aperçu de départ en cliquant sur "Point de départ"
+      await tester.tap(find.text('Point de départ'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DeliveryAddressDetailsModal), findsOneWidget);
+
+      // Saisir des détails dans les champs de l'aperçu
+      final textFields = find.byType(TextField);
+      expect(textFields, findsNWidgets(5)); // Entrée, Appartement, Étage, Interphone, Commentaire
+
+      await tester.enterText(textFields.at(0), 'Bâtiment A');
+      await tester.enterText(textFields.at(1), 'Appt 12');
+      await tester.enterText(textFields.at(2), '3ème étage');
+      await tester.enterText(textFields.at(3), 'Sonner 12');
+      await tester.enterText(textFields.at(4), 'Code 1234');
+      await tester.pumpAndSettle();
+
+      // Valider via le bouton "Terminé"
+      await tester.tap(find.text('Terminé'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DeliveryAddressDetailsModal), findsNothing);
+
+      // 2. Cliquer sur "Saisissez les détails" pour accéder à la page récapitulative
+      expect(find.text('Saisissez les détails'), findsOneWidget);
+      await tester.tap(find.text('Saisissez les détails'));
+      await tester.pumpAndSettle();
+
+      // 3. Vérifier qu'on est sur DeliveryOrderDetailsPage et que les champs sont bien pré-remplis
+      expect(find.byType(DeliveryOrderDetailsPage), findsOneWidget);
+      expect(find.text('Bâtiment A'), findsOneWidget);
+      expect(find.text('Appt 12'), findsOneWidget);
+      expect(find.text('3ème étage'), findsOneWidget);
+      expect(find.text('Sonner 12'), findsOneWidget);
+      expect(find.text('Code 1234'), findsOneWidget);
+    });
+
+    testWidgets('DeliveryTrackingSheet renders step 1 (Image 1) and opens DeliveryOrderSummaryModal (Image 3)',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      bool cancelled = false;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: DeliveryTrackingSheet(
+                pickupAddress: 'Rue LIB-41, 165',
+                destinationAddress: 'Rue YF-644, 206',
+                pickupPhone: '+221784226719',
+                destinationPhone: '+221784226719',
+                price: 500,
+                paymentMethod: 'Espèces',
+                initialStep: 1,
+                onCancelOrder: () => cancelled = true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // En-tête étape 1 (Image 1)
+      expect(find.textContaining('Récupération avant'), findsOneWidget);
+      expect(find.text('Cela prend généralement moins de 15 minutes'), findsOneWidget);
+
+      // Boutons circulaires étape 1
+      expect(find.textContaining('Préciser les'), findsOneWidget);
+      expect(find.text('Partager'), findsOneWidget);
+
+      // Switch
+      expect(find.text('Montrer au coursier où je me trouve'), findsOneWidget);
+
+      // Modalité de paiement
+      expect(find.text('Espèces'), findsOneWidget);
+      expect(find.text('500 F'), findsOneWidget);
+
+      // Section Expéditeur & Destinataire
+      expect(find.text('Expéditeur'), findsOneWidget);
+      expect(find.text('Destinataire'), findsOneWidget);
+      expect(find.text('Rue LIB-41, 165'), findsOneWidget);
+      expect(find.text('Rue YF-644, 206'), findsOneWidget);
+      expect(find.text('+221784226719'), findsNWidgets(2));
+
+      // Bouton Annuler
+      expect(find.text('Annuler la commande'), findsOneWidget);
+
+      // Ouvrir le modal Détails de la commande (Image 3)
+      await tester.tap(find.text('Détails de la commande'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DeliveryOrderSummaryModal), findsOneWidget);
+      expect(find.text('Détails de la commande'), findsNWidgets(2)); // row + modal
+      expect(find.text('classe de service Le jour même'), findsOneWidget);
+      expect(find.text('Prix'), findsOneWidget);
+      expect(find.text('Modalité de paiement'), findsNWidgets(2)); // Tracking row + Modal title
+    });
+
+    testWidgets('DeliveryTrackingSheet renders step 2 (Image 2) with driver assigned and handles cancellation',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      bool cancelled = false;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: DeliveryTrackingSheet(
+                pickupAddress: 'Rue LIB-41, 165',
+                destinationAddress: 'Rue YF-644, 206',
+                pickupPhone: '+221784226719',
+                destinationPhone: '+221784226719',
+                price: 500,
+                paymentMethod: 'Espèces',
+                initialStep: 2,
+                onCancelOrder: () => cancelled = true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // En-tête étape 2 (Image 2)
+      expect(find.text('Prise en charge dans ≈4 min'), findsOneWidget);
+      expect(find.textContaining('Livraison d\'autres commandes'), findsOneWidget);
+
+      // Profil du coursier assigné
+      expect(find.text('Amour Juslaure Marland'), findsOneWidget);
+      expect(find.text('4.9'), findsOneWidget);
+
+      // Boutons actions coursier
+      expect(find.textContaining('Appeler'), findsOneWidget);
+      expect(find.textContaining('Chat avec'), findsOneWidget);
+      expect(find.textContaining('Préciser les'), findsOneWidget);
+
+      // Test annulation avec affichage de l'écran d'annulation complet (Images 1 & 2)
+      await tester.ensureVisible(find.text('Annuler la commande'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annuler la commande'));
+      await tester.pumpAndSettle();
+
+      // Titre "Commande annulée" et profil chauffeur figé
+      expect(find.text('Commande annulée'), findsOneWidget);
+      expect(find.text('Amour Juslaure Marland'), findsOneWidget);
+      expect(find.text('4.9'), findsOneWidget);
+
+      // Raisons d'annulation présentes et sélectionnables
+      expect(find.text('La livraison n\'est plus nécessaire'), findsOneWidget);
+      expect(find.text('Attente trop longue'), findsOneWidget);
+      await tester.tap(find.text('Attente trop longue'));
+      await tester.pumpAndSettle();
+
+      // Champ "Pouvez-vous décrire le problème ?"
+      expect(find.text('Pouvez-vous décrire le problème ?'), findsOneWidget);
+      await tester.enterText(
+        find.byType(TextField),
+        'Le livreur est trop en retard',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Le livreur est trop en retard'), findsOneWidget);
+
+      // Modalité 0F et Détails de la commande
+      expect(find.text('0F'), findsOneWidget);
+      expect(find.text('Le jour même · 0F'), findsOneWidget);
+
+      // Les sections Expéditeur / Destinataire ne doivent pas rediriger (isClickable: false)
+      await tester.tap(find.text('Rue LIB-41, 165'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeliveryUpdateOrderModal), findsNothing);
+
+      // Clic sur "Terminer"
+      await tester.ensureVisible(find.text('Terminer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Terminer'));
+      await tester.pumpAndSettle();
+
+      expect(cancelled, isTrue);
+    });
+
+    testWidgets(
+        'DeliveryTrackingSheet cancellation at step 1 displays subtitle without driver (Image 3)',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      bool cancelled = false;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: DeliveryTrackingSheet(
+                pickupAddress: 'Rue LIB-41, 165',
+                destinationAddress: 'Rue DSM-358',
+                pickupPhone: '+221784226719',
+                destinationPhone: '+221784226719',
+                price: 600,
+                initialStep: 1,
+                onCancelOrder: () => cancelled = true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Clic sur "Annuler la commande"
+      await tester.ensureVisible(find.text('Annuler la commande'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Annuler la commande'));
+      await tester.pumpAndSettle();
+
+      // Titre "Commande annulée" et sous-titre (Image 3)
+      expect(find.text('Commande annulée'), findsOneWidget);
+      expect(
+        find.text('Veuillez recommander si vous avez annulé par accident'),
+        findsOneWidget,
+      );
+
+      // Pas de raisons d'annulation ni profil coursier
+      expect(find.text('Amour Juslaure Marland'), findsNothing);
+      expect(find.text('La livraison n\'est plus nécessaire'), findsNothing);
+
+      // Détails de la commande avec 'Any nearest slow · 0F'
+      expect(find.text('0F'), findsOneWidget);
+      expect(find.text('Any nearest slow · 0F'), findsOneWidget);
+
+      // Clic sur Terminer
+      await tester.ensureVisible(find.text('Terminer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Terminer'));
+      await tester.pumpAndSettle();
+
+      expect(cancelled, isTrue);
+    });
+
+    testWidgets(
+        'DeliveryUpdateOrderModal displays according to reference screenshot and saves updated details',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      DeliveryAddressDetails? savedPickup;
+      DeliveryAddressDetails? savedDestination;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          Scaffold(
+            body: DeliveryUpdateOrderModal(
+              pickupAddress: 'Rue LIB-41, 165',
+              destinationAddress: 'Rue DSM-358',
+              initialPickupDetails: const DeliveryAddressDetails(
+                address: 'Rue LIB-41, 165',
+                entry: 'Bâtiment A',
+                apartment: '12',
+                floor: '3',
+                intercom: '12',
+                comment: 'Laisser au gardien',
+                contactPhone: '+221784226719',
+              ),
+              initialDestinationDetails: const DeliveryAddressDetails(
+                address: 'Rue DSM-358',
+                entry: 'Villa 5',
+                apartment: 'Bureau 2',
+                floor: 'RDC',
+                intercom: '5',
+                comment: 'Sonner fort',
+                contactPhone: 'Ne pas lui communiquer',
+              ),
+              onSave: (p, d) {
+                savedPickup = p;
+                savedDestination = d;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // En-tête et sous-titre
+      expect(find.text('Mettez à jour votre commande'), findsOneWidget);
+      expect(
+        find.textContaining('Ces modifications n\'auront pas d\'incidence'),
+        findsOneWidget,
+      );
+
+      // Section Expéditeur (De)
+      expect(find.text('De'), findsOneWidget);
+      expect(find.text('Rue LIB-41, 165'), findsOneWidget);
+      expect(find.text('Bâtiment A'), findsOneWidget);
+      expect(find.text('12'), findsNWidgets(2)); // appt and intercom
+      expect(find.text('Laisser au gardien'), findsOneWidget);
+      expect(find.text('+221784226719'), findsOneWidget);
+
+      // Section Destinataire (Vers)
+      expect(find.text('Vers'), findsOneWidget);
+      expect(find.text('Rue DSM-358'), findsOneWidget);
+      expect(find.text('Villa 5'), findsOneWidget);
+      expect(find.text('Bureau 2'), findsOneWidget);
+      expect(find.text('Sonner fort'), findsOneWidget);
+      expect(find.text('Ne pas lui communiquer'), findsOneWidget);
+
+      // "Numéro de contact" doit toujours être affiché en entier sans "..."
+      expect(find.text('Numéro de contact'), findsNWidgets(2));
+
+      // Cadenas
+      expect(find.byIcon(Icons.lock_rounded), findsNWidgets(2));
+
+      // Bouton Enregistrer
+      await tester.ensureVisible(find.text('Enregistrer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Enregistrer'));
+      await tester.pumpAndSettle();
+
+      expect(savedPickup, isNotNull);
+      expect(savedPickup!.entry, 'Bâtiment A');
+      expect(savedPickup!.contactPhone, '+221784226719');
+      expect(savedDestination, isNotNull);
+      expect(savedDestination!.entry, 'Villa 5');
+      expect(savedDestination!.contactPhone, 'Ne pas lui communiquer');
+    });
+
+    testWidgets('DeliveryCallCourierModal displays in-app and phone options',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      const driver = DriverModel(
+        id: 'courier_1',
+        name: 'Amour Juslaure Marland',
+        phone: '+221784226719',
+        rating: 4.9,
+        totalRides: 100,
+        carModel: 'Moto',
+        carColor: 'Rouge',
+        licensePlate: 'DK-1234',
+        rideType: RideType.eco,
+        currentLocation: LatLng(14.7167, -17.4677),
+        etaMinutes: 4,
+        distanceKm: 1.0,
+      );
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Scaffold(
+            body: DeliveryCallCourierModal(driver: driver),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Appeler le coursier'), findsOneWidget);
+      expect(find.textContaining('Amour Juslaure Marland'), findsOneWidget);
+      expect(find.text('Appeler dans l\'application'), findsOneWidget);
+      expect(find.text('Appeler par téléphone'), findsOneWidget);
+      expect(find.text('Gratuit'), findsOneWidget);
+      expect(find.text('Annuler'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Tapping Préciser les détails in DeliveryTrackingSheet opens DeliveryUpdateOrderModal',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Scaffold(
+            body: SingleChildScrollView(
+              child: DeliveryTrackingSheet(
+                pickupAddress: 'Rue LIB-41, 165',
+                destinationAddress: 'Rue DSM-358',
+                pickupPhone: '+221784226719',
+                destinationPhone: '+221784226719',
+                price: 600,
+                initialStep: 1,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Clic sur "Préciser les détails de l'adresse"
+      await tester.tap(find.textContaining('Préciser les'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DeliveryUpdateOrderModal), findsOneWidget);
+      expect(find.text('Mettez à jour votre commande'), findsOneWidget);
+    });
+
+    testWidgets(
+        'Tapping Appeler le coursier in DeliveryTrackingSheet opens DeliveryCallCourierModal',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.625;
+
+      await tester.pumpWidget(
+        buildTestableWidget(
+          const Scaffold(
+            body: SingleChildScrollView(
+              child: DeliveryTrackingSheet(
+                pickupAddress: 'Rue LIB-41, 165',
+                destinationAddress: 'Rue DSM-358',
+                pickupPhone: '+221784226719',
+                destinationPhone: '+221784226719',
+                price: 600,
+                initialStep: 2,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Clic sur "Appeler le coursier"
+      await tester.tap(find.textContaining('Appeler'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DeliveryCallCourierModal), findsOneWidget);
+      expect(find.text('Appeler le coursier'), findsOneWidget);
+      expect(find.text('Appeler\nle coursier'), findsOneWidget);
+      expect(find.text('Appeler dans l\'application'), findsOneWidget);
+      expect(find.text('Appeler par téléphone'), findsOneWidget);
     });
   });
 }

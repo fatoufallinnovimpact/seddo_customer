@@ -96,7 +96,14 @@ class DeliveryAddressDetailsModal extends StatefulWidget {
     DeliveryAddressDetails? initialDetails,
     PlacesService? placesService,
     VoidCallback? onEditAddress,
+    ValueChanged<DeliveryAddressDetails>? onSave,
   }) {
+    DeliveryAddressDetails lastDetails = initialDetails ??
+        DeliveryAddressDetails(
+          address: address,
+          location: location,
+        );
+
     return showModalBottomSheet<DeliveryAddressDetails>(
       context: context,
       isScrollControlled: true,
@@ -108,8 +115,12 @@ class DeliveryAddressDetailsModal extends StatefulWidget {
         initialDetails: initialDetails,
         placesService: placesService,
         onEditAddress: onEditAddress,
+        onSave: (details) {
+          lastDetails = details;
+          onSave?.call(details);
+        },
       ),
-    );
+    ).then((result) => result ?? lastDetails);
   }
 
   @override
@@ -132,6 +143,24 @@ class _DeliveryAddressDetailsModalState
   late String _contactPhone;
   final List<String> _attachments = [];
 
+  DeliveryAddressDetails _buildCurrentDetails() {
+    return DeliveryAddressDetails(
+      address: _currentAddress,
+      location: _currentLocation,
+      entry: _entryController.text.trim(),
+      apartment: _apartmentController.text.trim(),
+      floor: _floorController.text.trim(),
+      intercom: _intercomController.text.trim(),
+      comment: _commentController.text.trim(),
+      contactPhone: _contactPhone,
+      attachments: List.from(_attachments),
+    );
+  }
+
+  void _onFieldChanged() {
+    widget.onSave?.call(_buildCurrentDetails());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -147,10 +176,22 @@ class _DeliveryAddressDetailsModalState
     if (d?.attachments != null) {
       _attachments.addAll(d!.attachments);
     }
+
+    _entryController.addListener(_onFieldChanged);
+    _apartmentController.addListener(_onFieldChanged);
+    _floorController.addListener(_onFieldChanged);
+    _intercomController.addListener(_onFieldChanged);
+    _commentController.addListener(_onFieldChanged);
   }
 
   @override
   void dispose() {
+    _entryController.removeListener(_onFieldChanged);
+    _apartmentController.removeListener(_onFieldChanged);
+    _floorController.removeListener(_onFieldChanged);
+    _intercomController.removeListener(_onFieldChanged);
+    _commentController.removeListener(_onFieldChanged);
+
     _entryController.dispose();
     _apartmentController.dispose();
     _floorController.dispose();
@@ -177,6 +218,7 @@ class _DeliveryAddressDetailsModalState
         _currentAddress = newAddr;
         _currentLocation = newLoc;
       });
+      _onFieldChanged();
       _mapController?.animateCamera(
         CameraUpdate.newLatLngZoom(newLoc, 16.0),
       );
@@ -184,18 +226,7 @@ class _DeliveryAddressDetailsModalState
   }
 
   void _saveAndClose() {
-    final details = DeliveryAddressDetails(
-      address: _currentAddress,
-      location: _currentLocation,
-      entry: _entryController.text.trim(),
-      apartment: _apartmentController.text.trim(),
-      floor: _floorController.text.trim(),
-      intercom: _intercomController.text.trim(),
-      comment: _commentController.text.trim(),
-      contactPhone: _contactPhone,
-      attachments: _attachments,
-    );
-
+    final details = _buildCurrentDetails();
     widget.onSave?.call(details);
     Navigator.of(context).pop(details);
   }
@@ -212,12 +243,14 @@ class _DeliveryAddressDetailsModalState
         _contactPhone =
             result.phone.isNotEmpty ? result.phone : result.name;
       });
+      _onFieldChanged();
     }
   }
 
   Future<void> _pickFromGallery() async {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       setState(() => _attachments.add('Photo_1.jpg'));
+      _onFieldChanged();
       return;
     }
     try {
@@ -231,6 +264,7 @@ class _DeliveryAddressDetailsModalState
             ? image.name
             : image.path.split(Platform.pathSeparator).last;
         setState(() => _attachments.add(fileName));
+        _onFieldChanged();
       }
     } catch (e) {
       debugPrint('Error picking from gallery: $e');
@@ -240,6 +274,7 @@ class _DeliveryAddressDetailsModalState
   Future<void> _takePhoto() async {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       setState(() => _attachments.add('Camera_1.jpg'));
+      _onFieldChanged();
       return;
     }
     try {
@@ -253,6 +288,7 @@ class _DeliveryAddressDetailsModalState
             ? photo.name
             : photo.path.split(Platform.pathSeparator).last;
         setState(() => _attachments.add(fileName));
+        _onFieldChanged();
       }
     } catch (e) {
       debugPrint('Error taking photo: $e');
@@ -262,6 +298,7 @@ class _DeliveryAddressDetailsModalState
   Future<void> _pickFiles() async {
     if (Platform.environment.containsKey('FLUTTER_TEST')) {
       setState(() => _attachments.add('Document_1.pdf'));
+      _onFieldChanged();
       return;
     }
     try {
@@ -271,6 +308,7 @@ class _DeliveryAddressDetailsModalState
       if (files.isNotEmpty && mounted) {
         final fileName = files.first.name;
         setState(() => _attachments.add(fileName));
+        _onFieldChanged();
       }
     } catch (e) {
       debugPrint('Error picking files: $e');
@@ -284,21 +322,28 @@ class _DeliveryAddressDetailsModalState
     final mapCenter = _currentLocation ??
         const LatLng(MapConfig.dakarCenterLat, MapConfig.dakarCenterLng);
 
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 200),
-      padding: EdgeInsets.only(bottom: bottomInset),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: EdgeInsets.fromLTRB(
-          20,
-          12,
-          20,
-          mediaQuery.padding.bottom + 16,
-        ),
-        child: SingleChildScrollView(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          widget.onSave?.call(_buildCurrentDetails());
+        }
+      },
+      child: AnimatedPadding(
+        duration: const Duration(milliseconds: 200),
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            12,
+            20,
+            mediaQuery.padding.bottom + 16,
+          ),
+          child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -778,7 +823,8 @@ class _DeliveryAddressDetailsModalState
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildUnderlineField({

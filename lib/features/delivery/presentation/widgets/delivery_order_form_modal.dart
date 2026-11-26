@@ -10,6 +10,7 @@ import 'package:seddo/features/delivery/presentation/pages/delivery_itinerary_pa
 import 'package:seddo/features/delivery/presentation/pages/delivery_order_details_page.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_address_details_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_destination_search_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_time_option_info_modal.dart';
 import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 import 'package:seddo/features/payment/presentation/widgets/payment_method_modal.dart';
 import 'package:seddo/services/places_service.dart';
@@ -28,6 +29,8 @@ class DeliveryOrderFormModal extends StatefulWidget {
   final String destinationAddress;
   final LatLng? pickupLocation;
   final LatLng? destinationLocation;
+  final DeliveryAddressDetails? initialPickupDetails;
+  final DeliveryAddressDetails? initialDestinationDetails;
   final PlacesService? placesService;
   final String deliveryType; // 'moto' | 'cargo'
   final int estimatedPrice;
@@ -35,6 +38,8 @@ class DeliveryOrderFormModal extends StatefulWidget {
   final VoidCallback? onEditDestination;
   final Function(String pickup, LatLng? pickupLoc, String dest, LatLng? destLoc)?
       onAddressesUpdated;
+  final Function(DeliveryAddressDetails? pickupDetails, DeliveryAddressDetails? destinationDetails)?
+      onDetailsUpdated;
 
   const DeliveryOrderFormModal({
     super.key,
@@ -42,12 +47,15 @@ class DeliveryOrderFormModal extends StatefulWidget {
     required this.destinationAddress,
     this.pickupLocation,
     this.destinationLocation,
+    this.initialPickupDetails,
+    this.initialDestinationDetails,
     this.placesService,
     required this.deliveryType,
     required this.estimatedPrice,
     this.onEditPickup,
     this.onEditDestination,
     this.onAddressesUpdated,
+    this.onDetailsUpdated,
   });
 
   static Future<bool?> show(
@@ -56,6 +64,8 @@ class DeliveryOrderFormModal extends StatefulWidget {
     required String destinationAddress,
     LatLng? pickupLocation,
     LatLng? destinationLocation,
+    DeliveryAddressDetails? initialPickupDetails,
+    DeliveryAddressDetails? initialDestinationDetails,
     PlacesService? placesService,
     required String deliveryType,
     required int estimatedPrice,
@@ -63,6 +73,8 @@ class DeliveryOrderFormModal extends StatefulWidget {
     VoidCallback? onEditDestination,
     Function(String pickup, LatLng? pickupLoc, String dest, LatLng? destLoc)?
         onAddressesUpdated,
+    Function(DeliveryAddressDetails? pickupDetails, DeliveryAddressDetails? destinationDetails)?
+        onDetailsUpdated,
   }) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -74,12 +86,15 @@ class DeliveryOrderFormModal extends StatefulWidget {
         destinationAddress: destinationAddress,
         pickupLocation: pickupLocation,
         destinationLocation: destinationLocation,
+        initialPickupDetails: initialPickupDetails,
+        initialDestinationDetails: initialDestinationDetails,
         placesService: placesService,
         deliveryType: deliveryType,
         estimatedPrice: estimatedPrice,
         onEditPickup: onEditPickup,
         onEditDestination: onEditDestination,
         onAddressesUpdated: onAddressesUpdated,
+        onDetailsUpdated: onDetailsUpdated,
       ),
     );
   }
@@ -118,6 +133,8 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
         const LatLng(MapConfig.dakarCenterLat, MapConfig.dakarCenterLng);
     _destinationLocation = widget.destinationLocation ??
         const LatLng(14.6937, -17.4441);
+    _pickupDetails = widget.initialPickupDetails;
+    _destinationDetails = widget.initialDestinationDetails;
     _scrollController = ScrollController();
   }
 
@@ -680,6 +697,13 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
               destLoc,
             );
           },
+          onDetailsUpdated: (pickupDet, destDet) {
+            setState(() {
+              _pickupDetails = pickupDet;
+              _destinationDetails = destDet;
+            });
+            widget.onDetailsUpdated?.call(pickupDet, destDet);
+          },
         ),
       ),
     );
@@ -698,6 +722,28 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
       initialDetails: _pickupDetails,
       placesService: widget.placesService ?? PlacesService(),
       onEditAddress: _editPickupAddressDirectly,
+      onSave: (details) {
+        if (!mounted) return;
+        setState(() {
+          _pickupDetails = details;
+          if (details.address.isNotEmpty) {
+            _pickupAddress = details.address;
+          }
+          if (details.location != null) {
+            _pickupLocation = details.location!;
+          }
+        });
+        widget.onAddressesUpdated?.call(
+          _pickupAddress,
+          _pickupLocation,
+          _destinationAddress,
+          _destinationLocation,
+        );
+        widget.onDetailsUpdated?.call(
+          _pickupDetails,
+          _destinationDetails,
+        );
+      },
     );
     if (result != null && mounted) {
       setState(() {
@@ -715,6 +761,10 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
         _destinationAddress,
         _destinationLocation,
       );
+      widget.onDetailsUpdated?.call(
+        _pickupDetails,
+        _destinationDetails,
+      );
     }
   }
 
@@ -727,6 +777,28 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
       initialDetails: _destinationDetails,
       placesService: widget.placesService ?? PlacesService(),
       onEditAddress: _editDestinationAddressDirectly,
+      onSave: (details) {
+        if (!mounted) return;
+        setState(() {
+          _destinationDetails = details;
+          if (details.address.isNotEmpty) {
+            _destinationAddress = details.address;
+          }
+          if (details.location != null) {
+            _destinationLocation = details.location!;
+          }
+        });
+        widget.onAddressesUpdated?.call(
+          _pickupAddress,
+          _pickupLocation,
+          _destinationAddress,
+          _destinationLocation,
+        );
+        widget.onDetailsUpdated?.call(
+          _pickupDetails,
+          _destinationDetails,
+        );
+      },
     );
     if (result != null && mounted) {
       setState(() {
@@ -743,6 +815,10 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
         _pickupLocation,
         _destinationAddress,
         _destinationLocation,
+      );
+      widget.onDetailsUpdated?.call(
+        _pickupDetails,
+        _destinationDetails,
       );
     }
   }
@@ -1302,6 +1378,14 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
     );
   }
 
+  void _showTimeOptionInfoModal({required String id, required String title}) {
+    DeliveryTimeOptionInfoModal.show(
+      context,
+      title: title,
+      timeOptionId: id,
+    );
+  }
+
   Widget _buildTimeOptionTile({
     required String id,
     required String title,
@@ -1310,60 +1394,86 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
   }) {
     final isSelected = _selectedTimeOption == id;
 
-    return InkWell(
-      onTap: () => setState(() => _selectedTimeOption = id),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: GoogleFonts.inter(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF0F172A),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          // En cliquant sur le texte du créneau ou sur l'icône info (i) -> sélectionne et ouvre le modal d'info
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                setState(() => _selectedTimeOption = id);
+                if (hasInfo) {
+                  _showTimeOptionInfoModal(id: id, title: title);
+                }
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: GoogleFonts.inter(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    if (hasInfo) ...[
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 17,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: hasInfo
-                  ? const Icon(
-                      Icons.info_outline_rounded,
-                      size: 16.5,
-                      color: Color(0xFF94A3B8),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              price,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF0F172A),
+          ),
+
+          // En cliquant sur le prix ou le bouton radio -> sélectionne directement l'option
+          InkWell(
+            onTap: () => setState(() => _selectedTimeOption = id),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    price,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected ? AppColors.primary : const Color(0xFFF1F5F9),
+                    ),
+                    child: isSelected
+                        ? const Icon(
+                            Icons.check,
+                            color: Colors.white,
+                            size: 15,
+                          )
+                        : null,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 12),
-            Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected ? AppColors.primary : const Color(0xFFF1F5F9),
-              ),
-              child: isSelected
-                  ? const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 15,
-                    )
-                  : null,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

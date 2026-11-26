@@ -34,6 +34,10 @@ class DeliveryOrderDetailsPage extends StatefulWidget {
     String destinationAddress,
     LatLng? destinationLocation,
   )? onAddressesUpdated;
+  final void Function(
+    DeliveryAddressDetails pickupDetails,
+    DeliveryAddressDetails destinationDetails,
+  )? onDetailsUpdated;
 
   const DeliveryOrderDetailsPage({
     super.key,
@@ -48,6 +52,7 @@ class DeliveryOrderDetailsPage extends StatefulWidget {
     this.estimatedPrice = 700,
     this.placesService,
     this.onAddressesUpdated,
+    this.onDetailsUpdated,
   });
 
   @override
@@ -417,21 +422,63 @@ class _DeliveryOrderDetailsPageState extends State<DeliveryOrderDetailsPage> {
     );
   }
 
+  DeliveryAddressDetails _getPickupDetails() {
+    return DeliveryAddressDetails(
+      address: _pickupAddress,
+      location: _pickupLocation,
+      entry: _pickupEntryController.text.trim(),
+      apartment: _pickupApartmentController.text.trim(),
+      floor: _pickupFloorController.text.trim(),
+      intercom: _pickupIntercomController.text.trim(),
+      comment: _pickupCommentController.text.trim(),
+      contactPhone: _pickupContact,
+      attachments: List.from(_pickupAttachments),
+    );
+  }
+
+  DeliveryAddressDetails _getDestDetails() {
+    return DeliveryAddressDetails(
+      address: _destinationAddress,
+      location: _destinationLocation,
+      entry: _destEntryController.text.trim(),
+      apartment: _destApartmentController.text.trim(),
+      floor: _destFloorController.text.trim(),
+      intercom: _destIntercomController.text.trim(),
+      comment: _destCommentController.text.trim(),
+      contactPhone: _destContact,
+      attachments: List.from(_destAttachments),
+    );
+  }
+
+  void _notifyDetailsUpdated() {
+    widget.onDetailsUpdated?.call(_getPickupDetails(), _getDestDetails());
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final bottomPadding = mediaQuery.padding.bottom;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        centerTitle: true,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _notifyDetailsUpdated();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
+            onPressed: () {
+              _notifyDetailsUpdated();
+              Navigator.of(context).pop();
+            },
+          ),
+          centerTitle: true,
         title: Column(
           children: [
             Text(
@@ -495,8 +542,9 @@ class _DeliveryOrderDetailsPageState extends State<DeliveryOrderDetailsPage> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   // --- WIDGET OPTIONS : PORTE-À-PORTE / À L'ENTRÉE ---
   Widget _buildDeliveryModeOptions() {
@@ -614,7 +662,7 @@ class _DeliveryOrderDetailsPageState extends State<DeliveryOrderDetailsPage> {
     );
   }
 
-  // --- GRAND CARD BLANC RATACHANT DÉPART ET DESTINATION ---
+  // --- GRAND CARD BLANC RATTACHANT DÉPART ET DESTINATION ---
   Widget _buildUnifiedAddressDetailsCard() {
     return Container(
       decoration: BoxDecoration(
@@ -628,35 +676,30 @@ class _DeliveryOrderDetailsPageState extends State<DeliveryOrderDetailsPage> {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Barre rouge/orange verticale le long de la section départ
-              Column(
-                children: [
-                  Container(
-                    width: 4,
-                    height: 280, // Ligne rouge le long de la section Départ
-                    margin: const EdgeInsets.only(top: 24, bottom: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+      padding: const EdgeInsets.fromLTRB(16, 20, 18, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ================= SECTION DÉPART (DE) AVEC BARRE ROUGE VERTICALE =================
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Barre rouge/orange verticale le long de toute la section départ (Images 9 & 10)
+                Container(
+                  width: 3.5,
+                  margin: const EdgeInsets.only(top: 4, bottom: 4, right: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                ],
-              ),
+                ),
 
-              // Contenu complet des deux adresses
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 16, 18, 20),
+                // Contenu complet Départ (De)
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // ================= SECTION DÉPART (DE) =================
                       _buildHeaderRow(
                         isPickup: true,
                         address: _pickupAddress,
@@ -701,68 +744,77 @@ class _DeliveryOrderDetailsPageState extends State<DeliveryOrderDetailsPage> {
                         contact: _pickupContact,
                         onTap: _pickPickupContact,
                       ),
-
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Divider(
-                          height: 1,
-                          thickness: 0.8,
-                          color: Color(0xFFF1F5F9),
-                        ),
-                      ),
-
-                      // ================= SECTION DESTINATION (VERS) =================
-                      _buildHeaderRow(
-                        isPickup: false,
-                        address: _destinationAddress,
-                        onTap: _changeDestinationAddress,
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Mini carte Destination
-                      _buildMiniMap(
-                        isPickup: false,
-                        location: _destinationLocation,
-                        onMapCreated: (c) => _destMapController = c,
-                        onTap: _changeDestinationAddress,
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Champs Destination
-                      _buildFieldsGrid(
-                        entryController: _destEntryController,
-                        apartmentController: _destApartmentController,
-                        floorController: _destFloorController,
-                        intercomController: _destIntercomController,
-                      ),
-                      const SizedBox(height: 6),
-
-                      // Commentaire Destination + trombone
-                      _buildCommentField(
-                        controller: _destCommentController,
-                        attachments: _destAttachments,
-                        isPickup: false,
-                      ),
-
-                      if (_destAttachments.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        _buildAttachmentsChips(_destAttachments),
-                      ],
-
-                      const SizedBox(height: 12),
-
-                      // Contact Destination
-                      _buildContactRow(
-                        contact: _destContact,
-                        onTap: _pickDestContact,
-                      ),
                     ],
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Divider(
+              height: 1,
+              thickness: 0.8,
+              color: Color(0xFFF1F5F9),
+            ),
+          ),
+
+          // ================= SECTION DESTINATION (VERS) =================
+          // Alignée avec la section départ
+          Padding(
+            padding: const EdgeInsets.only(left: 17.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeaderRow(
+                  isPickup: false,
+                  address: _destinationAddress,
+                  onTap: _changeDestinationAddress,
+                ),
+                const SizedBox(height: 12),
+
+                // Mini carte Destination
+                _buildMiniMap(
+                  isPickup: false,
+                  location: _destinationLocation,
+                  onMapCreated: (c) => _destMapController = c,
+                  onTap: _changeDestinationAddress,
+                ),
+                const SizedBox(height: 14),
+
+                // Champs Destination
+                _buildFieldsGrid(
+                  entryController: _destEntryController,
+                  apartmentController: _destApartmentController,
+                  floorController: _destFloorController,
+                  intercomController: _destIntercomController,
+                ),
+                const SizedBox(height: 6),
+
+                // Commentaire Destination + trombone
+                _buildCommentField(
+                  controller: _destCommentController,
+                  attachments: _destAttachments,
+                  isPickup: false,
+                ),
+
+                if (_destAttachments.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _buildAttachmentsChips(_destAttachments),
+                ],
+
+                const SizedBox(height: 12),
+
+                // Contact Destination
+                _buildContactRow(
+                  contact: _destContact,
+                  onTap: _pickDestContact,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1399,18 +1451,27 @@ class _DeliveryOrderDetailsPageState extends State<DeliveryOrderDetailsPage> {
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: Text(
-                      _deliveryMode == null
-                          ? 'Choisissez le mode de\nlivraison'
-                          : 'Commander la livraison',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _deliveryMode == null
+                            ? 'Choisissez le mode de\nlivraison'
+                            : 'Commander la livraison',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),

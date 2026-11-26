@@ -7,9 +7,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:seddo/core/utils/app_constants.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/core/utils/map_config.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_address_details_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_destination_search_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_info_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_order_form_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_order_summary_modal.dart';
+import 'package:seddo/features/delivery/presentation/widgets/delivery_tracking_sheet.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_vehicle_details_sheet.dart';
 import 'package:seddo/features/home/domain/models/place_search_result.dart';
 import 'package:seddo/features/home/presentation/pages/pickup_map_location_picker_page.dart';
@@ -17,8 +20,10 @@ import 'package:seddo/features/home/presentation/widgets/map_marker_helper.dart'
 import 'package:seddo/features/home/presentation/widgets/seddo_map_picker_pin.dart';
 import 'package:seddo/features/payment/data/services/payment_methods_service.dart';
 import 'package:seddo/features/payment/presentation/widgets/payment_method_modal.dart';
+import 'package:seddo/services/app_params_service.dart';
 import 'package:seddo/services/map_style_service.dart';
 import 'package:seddo/services/places_service.dart';
+import 'package:seddo/services/route_service.dart';
 
 enum DeliveryCameraMode {
   tripOverview,
@@ -55,12 +60,19 @@ class DeliveryBookingPage extends StatefulWidget {
 class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
   GoogleMapController? _mapController;
   late PlacesService _placesService;
+  final RouteService _routeService = RouteService();
 
   late LatLng _pickupLocation;
   late String _pickupAddress;
 
   LatLng? _destinationLocation;
   String? _destinationAddress;
+
+  DeliveryAddressDetails? _pickupDetails;
+  DeliveryAddressDetails? _destinationDetails;
+
+  // Mode suivi de livraison en direct après commande (Images 1, 2 & 3)
+  bool _isOrderTracking = false;
 
   // Options de livraison : 'moto' ou 'cargo'
   String _selectedDeliveryType = 'moto';
@@ -91,6 +103,7 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
   @override
   void initState() {
     super.initState();
+    AppParamsService().initParams();
     _placesService = widget.placesService ?? PlacesService();
 
     _pickupLocation = widget.initialOriginLocation ??
@@ -190,14 +203,15 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
         Polyline(
           polylineId: const PolylineId('delivery_route_line'),
           points: [_pickupLocation, _destinationLocation!],
-          color: AppColors.primary,
-          width: 4,
+          color: const Color(0xFF22C55E), // Vert au lieu de orange
+          width: 5,
           jointType: JointType.round,
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
         ),
       );
 
+      _fetchRoutePolyline();
       _fitMapToBounds();
     } else {
       _polylines.clear();
@@ -207,6 +221,37 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
       _markers.clear();
       _markers.addAll(newMarkers);
     });
+  }
+
+  Future<void> _fetchRoutePolyline() async {
+    if (_destinationLocation == null) return;
+    final origin = _pickupLocation;
+    final destination = _destinationLocation!;
+
+    try {
+      final route = await _routeService.getRoute(
+        origin: origin,
+        destination: destination,
+      );
+      if (route.polylinePoints.isNotEmpty && mounted) {
+        if (_destinationLocation == destination && _pickupLocation == origin) {
+          setState(() {
+            _polylines.clear();
+            _polylines.add(
+              Polyline(
+                polylineId: const PolylineId('delivery_route_line'),
+                points: route.polylinePoints,
+                color: const Color(0xFF22C55E), // Vert suivant les vraies routes
+                width: 5,
+                jointType: JointType.round,
+                startCap: Cap.roundCap,
+                endCap: Cap.roundCap,
+              ),
+            );
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _updatePickupLocation(LatLng newPos) async {
@@ -242,13 +287,17 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
     final west = math.min(_pickupLocation.longitude, _destinationLocation!.longitude);
     final east = math.max(_pickupLocation.longitude, _destinationLocation!.longitude);
 
+    final latSpan = north - south;
+    // Compenser la hauteur du modal (55% de l'écran) pour que le tracé soit bien visible en haut
+    final adjustedSouth = south - (latSpan > 0.0001 ? latSpan * 1.0 : 0.008);
+
     final bounds = LatLngBounds(
-      southwest: LatLng(south, west),
-      northeast: LatLng(north, east),
+      southwest: LatLng(adjustedSouth, west),
+      northeast: LatLng(north + (latSpan > 0.0001 ? latSpan * 0.15 : 0.002), east),
     );
 
     _mapController?.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 80),
+      CameraUpdate.newLatLngBounds(bounds, 60),
     );
   }
 
@@ -434,12 +483,14 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
     final estimatedPrice =
         _selectedDeliveryType == 'cargo' ? _cargoPrice : _motoPrice;
 
-    await DeliveryOrderFormModal.show(
+    final result = await DeliveryOrderFormModal.show(
       context,
       pickupAddress: _pickupAddress,
       destinationAddress: _destinationAddress!,
       pickupLocation: _pickupLocation,
       destinationLocation: _destinationLocation,
+      initialPickupDetails: _pickupDetails,
+      initialDestinationDetails: _destinationDetails,
       placesService: _placesService,
       deliveryType: _selectedDeliveryType,
       estimatedPrice: estimatedPrice,
@@ -455,7 +506,37 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
         });
         _updateMapMarkers();
       },
+      onDetailsUpdated: (pickupDet, destDet) {
+        if (!mounted) return;
+        setState(() {
+          _pickupDetails = pickupDet;
+          _destinationDetails = destDet;
+        });
+      },
     );
+
+    if (result == true && mounted) {
+      setState(() {
+        _isOrderTracking = true;
+      });
+      _fitMapToBounds();
+    }
+  }
+
+  Future<void> _openPickupDetailsFromTracking() async {
+    final result = await DeliveryAddressDetailsModal.show(
+      context,
+      address: _pickupAddress,
+      location: _pickupLocation,
+      isPickup: true,
+      initialDetails: _pickupDetails,
+      placesService: _placesService,
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _pickupDetails = result;
+      });
+    }
   }
 
   @override
@@ -481,16 +562,18 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // 1. CARTE EN PLEIN ÉCRAN AVEC PADDING INFÉRIEUR SYNCHRONISÉ AU MODAL
-          Positioned.fill(
+          // 1. CARTE EN PLEIN ÉCRAN (clipped vers le bas pour masquer le logo Google sur Android)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: AppConstants.mapLogoClipOffset,
             child: GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: _pickupLocation,
                 zoom: 16.2,
               ),
-              padding: EdgeInsets.only(
-                bottom: screenHeight * _currentSheetSize,
-              ),
+              padding: EdgeInsets.zero,
               onMapCreated: (controller) {
                 _mapController = controller;
                 MapStyleService.applyStyle(controller);
@@ -619,7 +702,13 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
               elevation: 4,
               shadowColor: Colors.black.withOpacity(0.18),
               child: InkWell(
-                onTap: () => Navigator.of(context).pop(),
+                onTap: () {
+                  if (_isOrderTracking) {
+                    setState(() => _isOrderTracking = false);
+                  } else {
+                    Navigator.of(context).pop();
+                  }
+                },
                 customBorder: const CircleBorder(),
                 child: const SizedBox(
                   width: 44,
@@ -636,7 +725,7 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
 
           // 3. Bouton circulaire blanc flottant directement AU-DESSUS du modal
           // Affiche la flèche de navigation ou cycle entre point de départ, flag et trajet (comme dans les courses Seddo)
-          if (floatingButtonOpacity > 0.05)
+          if (!_isOrderTracking && floatingButtonOpacity > 0.05)
             Positioned(
               bottom: floatingButtonBottom,
               right: 16,
@@ -662,14 +751,54 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
               ),
             ),
 
-          // 4. MODAL INFÉRIEUR COULISSANT "ENVOYER UN COLIS" & PAGE DE DÉTAIL DYNAMIQUE
-          DraggableScrollableSheet(
-            controller: _sheetController,
-            initialChildSize: 0.55, // Position de base
-            minChildSize: 0.55, // Verrouillé à la position de base : ne peut pas descendre plus bas
-            maxChildSize: 1.0,
-            snap: true,
-            snapSizes: const [0.55, 1.0],
+          // 4. MODAL INFÉRIEUR COULISSANT : SUIVI DE COMMANDE OU SÉLECTION VÉHICULE
+          if (_isOrderTracking)
+            DraggableScrollableSheet(
+              initialChildSize: 0.60,
+              minChildSize: 0.38,
+              maxChildSize: 0.94,
+              snap: true,
+              snapSizes: const [0.38, 0.60, 0.94],
+              builder: (context, trackingScrollController) {
+                return SingleChildScrollView(
+                  controller: trackingScrollController,
+                  physics: const ClampingScrollPhysics(),
+                  child: DeliveryTrackingSheet(
+                    pickupAddress: _pickupAddress,
+                    destinationAddress: _destinationAddress ?? '',
+                    pickupPhone: _pickupDetails?.contactPhone ?? '+221784226719',
+                    destinationPhone:
+                        _destinationDetails?.contactPhone ?? '+221784226719',
+                    pickupDetails: _pickupDetails,
+                    destinationDetails: _destinationDetails,
+                    price: _selectedDeliveryType == 'cargo'
+                        ? _cargoPrice
+                        : _motoPrice,
+                    paymentMethod: 'Espèces',
+                    onDetailsUpdated: (pickup, destination) {
+                      setState(() {
+                        _pickupDetails = pickup;
+                        _destinationDetails = destination;
+                      });
+                    },
+                    onShare: () {},
+                    onCancelOrder: () {
+                      setState(() {
+                        _isOrderTracking = false;
+                      });
+                    },
+                  ),
+                );
+              },
+            )
+          else
+            DraggableScrollableSheet(
+              controller: _sheetController,
+              initialChildSize: 0.55, // Position de base
+              minChildSize: 0.55, // Verrouillé à la position de base : ne peut pas descendre plus bas
+              maxChildSize: 1.0,
+              snap: true,
+              snapSizes: const [0.55, 1.0],
             builder: (context, scrollController) {
               final bottomPadding = MediaQuery.of(context).padding.bottom;
 

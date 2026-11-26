@@ -31,11 +31,12 @@ abstract class MapConfig {
   static const int dakarSearchRadiusMeters = 35000;
 
   /// Active API key for Places & Geocoding HTTP requests from Dart.
-  /// On mobile (both Android and iOS), HTTP REST calls to Google Maps web services
-  /// require an API key without iOS bundle restriction. The iOS-restricted key is used
-  /// exclusively in native AppDelegate.swift for GMSServices SDK rendering.
+  /// On iOS returns the iOS key, on Android returns the Android key, on Web returns the Web key.
   static String get apiKey {
     if (kIsWeb) return _googleMapsApiKeyWeb;
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return _googleMapsApiKeyIos;
+    }
     return _googleMapsApiKeyAndroid;
   }
 
