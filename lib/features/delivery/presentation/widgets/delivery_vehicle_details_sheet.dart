@@ -287,7 +287,7 @@ class _DeliveryVehicleDetailsSheetState
                               child: Image.asset(
                                 isMoto
                                     ? 'assets/images/express.png'
-                                    : 'assets/images/cargo.png',
+                                    : 'assets/images/expresscar.png',
                                 fit: BoxFit.contain,
                               ),
                             ),
@@ -397,10 +397,10 @@ class _DeliveryVehicleDetailsSheetState
                               // Carte Express Cargo (Image cargo.png agrandie)
                               Expanded(
                                 child: _buildVehicleCard(
-                                  title: 'Express Cargo',
+                                  title: 'Express Voiture',
                                   timeBadge: '5 min.',
                                   price: 'à partir de ${widget.cargoPrice} F',
-                                  imagePath: 'assets/images/cargo.png',
+                                  imagePath: 'assets/images/expresscar.png',
                                   isSelected: !isMoto,
                                   onTap: () => _selectVehicle('cargo'),
                                 ),
@@ -616,7 +616,7 @@ class _DeliveryVehicleDetailsSheetState
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final isCargo = imagePath.contains('cargo');
+    final isCargo = imagePath.contains('expresscar');
 
     return Material(
       color: isSelected ? const Color(0xFFF1F5F9) : const Color(0xFFFAFAFA),

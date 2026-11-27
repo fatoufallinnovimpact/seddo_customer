@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:seddo/core/utils/app_colors.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_address_details_modal.dart';
 import 'package:seddo/features/delivery/presentation/widgets/delivery_contact_picker_modal.dart';
@@ -204,20 +207,20 @@ class _DeliveryUpdateOrderModalState extends State<DeliveryUpdateOrderModal> {
         maxHeight: mediaQuery.size.height * 0.94,
       ),
       decoration: const BoxDecoration(
-        color: Color(0xFF262626), // Effet grisé élégant derrière les cartes (pas totalement noir)
+        color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Poignée supérieure de glissement sur fond grisé
+          // Poignée supérieure de glissement
           Center(
             child: Container(
               margin: const EdgeInsets.only(top: 10, bottom: 8),
               width: 38,
               height: 4.5,
               decoration: BoxDecoration(
-                color: const Color(0xFF94A3B8),
+                color: const Color(0xFFE2E8F0),
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
@@ -244,7 +247,7 @@ class _DeliveryUpdateOrderModalState extends State<DeliveryUpdateOrderModal> {
 
                   const SizedBox(height: 18),
 
-                  // Bouton Enregistrer surélevé pour être bien au-dessus de la barre de navigation
+                  // Bouton Enregistrer
                   SizedBox(
                     width: double.infinity,
                     height: 54,
@@ -282,7 +285,13 @@ class _DeliveryUpdateOrderModalState extends State<DeliveryUpdateOrderModal> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: null, // Pas de contour coloré
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -437,7 +446,13 @@ class _DeliveryUpdateOrderModalState extends State<DeliveryUpdateOrderModal> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: null, // Pas de contour coloré
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -668,6 +683,340 @@ class _DeliveryUpdateOrderModalState extends State<DeliveryUpdateOrderModal> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// --- MODAL DE PARTAGE (dans le modal de mise à jour) ---
+class _ShareUpdateModal extends StatefulWidget {
+  final String deliveryLink;
+  final String shareText;
+
+  const _ShareUpdateModal({
+    required this.deliveryLink,
+    required this.shareText,
+  });
+
+  @override
+  State<_ShareUpdateModal> createState() => _ShareUpdateModalState();
+}
+
+class _ShareUpdateModalState extends State<_ShareUpdateModal> {
+  List<Contact> _contacts = [];
+  bool _loadingContacts = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    setState(() => _loadingContacts = true);
+    try {
+      final status = await FlutterContacts.permissions.request(
+        PermissionType.read,
+      );
+      if (status == PermissionStatus.granted) {
+        final contacts = await FlutterContacts.getAll(
+          properties: {ContactProperty.phone, ContactProperty.name},
+          
+        );
+        if (mounted) {
+          setState(() {
+            _contacts = contacts.take(10).toList();
+            _loadingContacts = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _loadingContacts = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingContacts = false);
+    }
+  }
+
+  void _shareViaApp() {
+    Navigator.of(context).pop();
+    SharePlus.instance.share(
+      ShareParams(
+        text: widget.shareText,
+        subject: 'Livraison Seddo',
+      ),
+    );
+  }
+
+  void _copyLink() {
+    Clipboard.setData(ClipboardData(text: widget.deliveryLink));
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Lien copié !',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _shareToContact(Contact contact) {
+    final name = contact.displayName ?? '';
+    Navigator.of(context).pop();
+    SharePlus.instance.share(
+      ShareParams(
+        text: 'Bonjour $name,\n\n${widget.shareText}',
+        subject: 'Livraison Seddo',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 38,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+            child: Text(
+              'Partager la livraison',
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF0F172A),
+                letterSpacing: -0.4,
+              ),
+            ),
+          ),
+
+          // Lien Seddo
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: SvgPicture.asset(
+                      'assets/icons/seddo_logo_orange.svg',
+                      width: 22,
+                      height: 22,
+                      colorFilter: ColorFilter.mode(
+                        AppColors.primary,
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Lien de suivi Seddo',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.deliveryLink,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _copyLink,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'Copier',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _shareViaApp,
+                icon: const Icon(Icons.share_rounded, size: 20),
+                label: Text(
+                  'Partager via les applications',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Envoyer à un contact',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          if (_loadingContacts)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_contacts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                'Aucun contact disponible',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 90,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _contacts.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 16),
+                itemBuilder: (ctx, i) {
+                  final contact = _contacts[i];
+                  final name = contact.displayName ?? '';
+                  final initials = name.isNotEmpty
+                      ? name[0].toUpperCase()
+                      : '?';
+                  return GestureDetector(
+                    onTap: () => _shareToContact(contact),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF1F5F9),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            initials,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: 60,
+                          child: Text(
+                            name.split(' ').first,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF475569),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          SizedBox(height: bottomPadding + 20),
         ],
       ),
     );

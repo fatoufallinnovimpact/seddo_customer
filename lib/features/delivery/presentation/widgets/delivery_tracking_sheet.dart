@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -70,6 +72,8 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
   String? _selectedCancelReason;
   final TextEditingController _problemDescriptionController =
       TextEditingController();
+  bool _hasProblemText = false;
+  int _driverRatingSelected = 0;
 
   static const List<String> _cancelReasons = [
     'Le coursier a demandé d\'annuler la commande',
@@ -162,8 +166,15 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
   @override
   void dispose() {
     _stepSimulationTimer?.cancel();
+    _searchCounterTimer?.cancel();
     _problemDescriptionController.dispose();
     super.dispose();
+  }
+
+  String _formatElapsed(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   String get _pickupLimitTime {
@@ -222,6 +233,8 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
   }
 
   void _handleCancelOrder() {
+    // Capturer l'étape courante au moment où l'utilisateur ouvre le modal
+    final stepAtOpen = _currentStep;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -266,9 +279,10 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                 onPressed: () {
                   Navigator.of(ctx).pop();
                   _stepSimulationTimer?.cancel();
+                  _searchCounterTimer?.cancel();
                   setState(() {
                     _isCancelled = true;
-                    _cancelledAtStep = _currentStep;
+                    _cancelledAtStep = stepAtOpen;
                   });
                 },
                 style: OutlinedButton.styleFrom(
@@ -297,7 +311,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
               child: ElevatedButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFEF4444),
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -324,15 +338,14 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
     final deliveryLink =
         'https://seddo.app/delivery/track/${DateTime.now().millisecondsSinceEpoch}';
     final shareText =
-        'Suivez ma livraison Seddo en temps réel !\n\n'
+        'Ma livraison Seddo en direct \n\n'
         'De : ${widget.pickupAddress}\n'
         'Vers : ${widget.destinationAddress}\n\n'
-        '$deliveryLink';
-
+        'Suivez en temps réel : $deliveryLink';
     SharePlus.instance.share(
       ShareParams(
         text: shareText,
-        subject: 'Livraison Seddo',
+        subject: 'Ma livraison Seddo en direct',
       ),
     );
   }
@@ -407,7 +420,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                       Text(
                         isDriverAssigned
                             ? 'Prise en charge dans ≈4 min'
-                            : 'Récupération avant $_pickupLimitTime',
+                            : 'À la recherche d\'un coursier',
                         style: GoogleFonts.inter(
                           fontSize: 21,
                           fontWeight: FontWeight.w800,
@@ -418,7 +431,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                       if (!isDriverAssigned) ...[
                         const SizedBox(height: 3),
                         Text(
-                          'Cela prend généralement moins de 15 minutes',
+                          'La recherche d\'un coursier prend un peu plus de temps que d\'habitude. Merci de patienter, nous poursuivons la recherche',
                           style: GoogleFonts.inter(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w400,
@@ -431,17 +444,19 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                 ),
                 if (!isDriverAssigned)
                   Container(
-                    width: 44,
-                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.directions_run_rounded,
-                      color: Color(0xFF0F172A),
-                      size: 26,
+                    child: Text(
+                      _formatElapsed(_searchElapsedSeconds),
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                        fontFeatures: [const FontFeature.tabularFigures()],
+                      ),
                     ),
                   ),
               ],
@@ -469,17 +484,46 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(
                   5,
-                  (index) => const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 5),
-                    child: Icon(
-                      Icons.star_rounded,
-                      size: 30,
-                      color: Color(0xFFE2E8F0),
+                  (index) => GestureDetector(
+                    onTap: () {
+                      setState(() => _driverRatingSelected = index + 1);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Icon(
+                        Icons.star_rounded,
+                        size: 40,
+                        color: index < _driverRatingSelected
+                            ? AppColors.primary
+                            : const Color(0xFFE2E8F0),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
+            if (_driverRatingSelected > 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Center(
+                  child: Text(
+                    _driverRatingSelected == 5
+                        ? 'Excellent !'
+                        : _driverRatingSelected == 4
+                            ? 'Très bien'
+                            : _driverRatingSelected == 3
+                                ? 'Bien'
+                                : _driverRatingSelected == 2
+                                    ? 'Passable'
+                                    : 'Décevant',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 8),
           ],
 
@@ -524,7 +568,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
             child: Row(
               children: [
                 Image.asset(
-                  'assets/images/cash.png',
+                  'assets/images/cash_banknotes.png',
                   width: 32,
                   height: 24,
                   fit: BoxFit.contain,
@@ -935,10 +979,10 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
             onTap: _handleChatCourier,
           ),
 
-          // 4. Préciser les détails de l'adresse
+          // 4. Partager
           _buildCircularActionButton(
             iconWidget: SvgPicture.asset(
-              'assets/icons/edit-pencil-line-01-svgrepo-com.svg',
+              'assets/icons/share-svgrepo-com.svg',
               width: 22,
               height: 22,
               colorFilter: const ColorFilter.mode(
@@ -946,8 +990,8 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                 BlendMode.srcIn,
               ),
             ),
-            label: 'Préciser les\ndétails de\nl\'adresse',
-            onTap: _openUpdateOrderModal,
+            label: 'Partager',
+            onTap: _handleShare,
           ),
         ],
       ),
@@ -1148,8 +1192,6 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
             Expanded(
               child: Text(
                 reason,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w500,
@@ -1163,7 +1205,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
               height: 22,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? const Color(0xFFEF4444)
+                    ? AppColors.primary
                     : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(6),
               ),
@@ -1185,7 +1227,10 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
   Widget _buildCancelledOrderView(BuildContext context) {
     final hasDriver = _cancelledAtStep >= 2;
 
-    return Container(
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
+      child: Container(
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -1363,15 +1408,16 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // La question est TOUJOURS visible en haut
                     Text(
                       'Pouvez-vous décrire le problème ?',
                       style: GoogleFonts.inter(
                         fontSize: 14.5,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF0F172A),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: _problemDescriptionController,
                       style: GoogleFonts.inter(
@@ -1379,6 +1425,9 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                         color: const Color(0xFF0F172A),
                       ),
                       maxLines: null,
+                      onChanged: (val) {
+                        setState(() => _hasProblemText = val.trim().isNotEmpty);
+                      },
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Décrivez ici...',
@@ -1402,7 +1451,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
             child: Row(
               children: [
                 Image.asset(
-                  'assets/images/cash.png',
+                  'assets/images/cash_banknotes.png',
                   width: 32,
                   height: 24,
                   fit: BoxFit.contain,
@@ -1537,7 +1586,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
 
           const SizedBox(height: 16),
 
-          // Bouton Terminer rouge tout en bas
+          // Bouton Terminer orange tout en bas
           Padding(
             padding: EdgeInsets.fromLTRB(
               20,
@@ -1553,7 +1602,7 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
                   widget.onCancelOrder?.call();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFEF4444),
+                  backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -1571,6 +1620,348 @@ class _DeliveryTrackingSheetState extends State<DeliveryTrackingSheet> {
               ),
             ),
           ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
+// --- MODAL DE PARTAGE DE LIVRAISON ---
+class _ShareDeliveryModal extends StatefulWidget {
+  final String deliveryLink;
+  final String shareText;
+  final String pickupAddress;
+  final String destinationAddress;
+
+  const _ShareDeliveryModal({
+    required this.deliveryLink,
+    required this.shareText,
+    required this.pickupAddress,
+    required this.destinationAddress,
+  });
+
+  @override
+  State<_ShareDeliveryModal> createState() => _ShareDeliveryModalState();
+}
+
+class _ShareDeliveryModalState extends State<_ShareDeliveryModal> {
+  List<Contact> _contacts = [];
+  bool _loadingContacts = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContacts();
+  }
+
+  Future<void> _loadContacts() async {
+    setState(() => _loadingContacts = true);
+    try {
+      final status = await FlutterContacts.permissions.request(
+        PermissionType.read,
+      );
+      if (status == PermissionStatus.granted) {
+        final contacts = await FlutterContacts.getAll(
+          properties: {ContactProperty.phone, ContactProperty.name},
+          
+        );
+        if (mounted) {
+          setState(() {
+            _contacts = contacts.take(10).toList();
+            _loadingContacts = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _loadingContacts = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingContacts = false);
+    }
+  }
+
+  void _shareViaApp() {
+    Navigator.of(context).pop();
+    SharePlus.instance.share(
+      ShareParams(
+        text: widget.shareText,
+        subject: 'Livraison Seddo',
+      ),
+    );
+  }
+
+  void _copyLink() {
+    Clipboard.setData(ClipboardData(text: widget.deliveryLink));
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Lien copié !',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _shareToContact(Contact contact) {
+    final name = contact.displayName;
+    Navigator.of(context).pop();
+    SharePlus.instance.share(
+      ShareParams(
+        text: 'Bonjour $name,\n\n${widget.shareText}',
+        subject: 'Livraison Seddo',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Poignée
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 38,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+            child: Text(
+              'Partager la livraison',
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF0F172A),
+                letterSpacing: -0.4,
+              ),
+            ),
+          ),
+
+          // Lien Seddo
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: SvgPicture.asset(
+                      'assets/icons/seddo_logo_orange.svg',
+                      width: 22,
+                      height: 22,
+                      colorFilter: ColorFilter.mode(
+                        AppColors.primary,
+                        BlendMode.srcIn,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Lien de suivi Seddo',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.deliveryLink,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _copyLink,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'Copier',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Bouton partager via les apps
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _shareViaApp,
+                icon: const Icon(Icons.share_rounded, size: 20),
+                label: Text(
+                  'Partager via les applications',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Contacts
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Envoyer à un contact',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          if (_loadingContacts)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_contacts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Text(
+                'Aucun contact disponible',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              height: 90,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _contacts.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 16),
+                itemBuilder: (ctx, i) {
+                  final contact = _contacts[i];
+                  final name = contact.displayName ?? '';
+                  final initials = name.isNotEmpty
+                      ? name[0].toUpperCase()
+                      : '?';
+                  return GestureDetector(
+                    onTap: () => _shareToContact(contact),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            initials,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: 60,
+                          child: Text(
+                            name.split(' ').first,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF475569),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          SizedBox(height: bottomPadding + 20),
         ],
       ),
     );

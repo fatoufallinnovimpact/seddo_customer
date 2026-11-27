@@ -912,7 +912,7 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
                                     child: Image.asset(
                                       isMoto
                                           ? 'assets/images/express.png'
-                                          : 'assets/images/cargo.png',
+                                          : 'assets/images/expresscar.png',
                                       fit: BoxFit.contain,
                                     ),
                                   ),
@@ -942,7 +942,7 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
                                     Text(
                                       isMoto
                                           ? 'Pour les petits colis et documents'
-                                          : 'Transportez de gros volumes',
+                                          : 'Transportez de gros volumes en voiture',
                                       style: GoogleFonts.inter(
                                         fontSize: 14.5,
                                         fontWeight: FontWeight.w500,
@@ -953,7 +953,7 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
                                     Text(
                                       isMoto
                                           ? 'à partir de $_motoPrice F · 13 min. >'
-                                          : 'à partir de $_cargoPrice F · 5 min. >',
+                                      : 'à partir de $_cargoPrice F · 5 min. >',
                                       style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w700,
@@ -1130,10 +1130,10 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: _buildVehicleCard(
-                                    title: 'Express Cargo',
+                                    title: 'Express Voiture',
                                     timeBadge: '5 min.',
                                     price: 'à partir de $_cargoPrice F',
-                                    imagePath: 'assets/images/cargo.png',
+                                    imagePath: 'assets/images/expresscar.png',
                                     isSelected: !isMoto,
                                     onTap: () => setState(
                                         () => _selectedDeliveryType = 'cargo'),
@@ -1365,7 +1365,7 @@ class _DeliveryBookingPageState extends State<DeliveryBookingPage> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final isCargo = imagePath.contains('cargo');
+    final isCargo = imagePath.contains('expresscar');
 
     return Material(
       color: isSelected ? const Color(0xFFF1F5F9) : const Color(0xFFFAFAFA),

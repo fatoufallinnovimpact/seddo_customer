@@ -990,7 +990,7 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
               child: Image.asset(
                 isMoto
                     ? 'assets/images/Unknown.webp'
-                    : 'assets/images/cargo.png',
+                    : 'assets/images/expresscar.png',
                 height: 148,
                 fit: BoxFit.contain,
               ),

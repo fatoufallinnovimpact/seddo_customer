@@ -27,7 +27,7 @@ class DeliveryInfoModal extends StatelessWidget {
     final isMoto = deliveryType.toLowerCase() == 'moto';
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    final title = isMoto ? 'EXPRESS MOTO' : 'EXPRESS CARGO';
+    final title = isMoto ? 'EXPRESS MOTO' : 'EXPRESS VOITURE';
     final subtitle = isMoto
         ? 'Pour les petits colis et documents'
         : 'Transportez de gros volumes';
