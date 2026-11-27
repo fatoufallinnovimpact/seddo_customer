@@ -66,7 +66,7 @@ class DeliveryInfoModal extends StatelessWidget {
             ),
             const _InfoItemData(
               icon: Icons.local_shipping_outlined,
-              text: 'Les véhicules transportent des charges d\'un poids maximal de 1 500 kg.',
+              text: 'Les véhicules transportent des charges d\'un poids maximal de 500 kg.',
             ),
             const _InfoItemData(
               icon: Icons.verified_user_outlined,

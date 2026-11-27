@@ -990,7 +990,7 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
               child: Image.asset(
                 isMoto
                     ? 'assets/images/Unknown.webp'
-                    : 'assets/images/expresscar.png',
+                    : 'assets/images/livrcar.png',
                 height: 148,
                 fit: BoxFit.contain,
               ),
@@ -1006,7 +1006,7 @@ class _DeliveryOrderFormModalState extends State<DeliveryOrderFormModal> {
                   Text(
                     isMoto
                         ? 'Poids maximal : 10 kg'
-                        : 'Poids maximal : 1 500 kg',
+                        : 'Poids maximal : 500 kg',
                     style: GoogleFonts.inter(
                       fontSize: 14.5,
                       fontWeight: FontWeight.w700,
